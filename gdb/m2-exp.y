@@ -1,5 +1,6 @@
 /* YACC grammar for Modula-2 expressions, for GDB.
-   Copyright (C) 1986, 1989, 1990, 1991, 1993, 1994, 1995
+   Copyright 1986, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1999,
+   2000
    Free Software Foundation, Inc.
    Generated from expread.y (now c-exp.y) and contributed by the Department
    of Computer Science at the State University of New York at Buffalo, 1991.
@@ -44,6 +45,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "expression.h"
 #include "language.h"
 #include "value.h"
+#include "block.h"
 #include "parser-defs.h"
 #include "m2-lang.h"
 #include "bfd.h" /* Required by objfiles.h.  */
@@ -86,6 +88,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #define	yylloc	m2_lloc
 #define	yyreds	m2_reds		/* With YYDEBUG defined */
 #define	yytoks	m2_toks		/* With YYDEBUG defined */
+#define yyname	m2_name		/* With YYDEBUG defined */
+#define yyrule	m2_rule		/* With YYDEBUG defined */
 #define yylhs	m2_yylhs
 #define yylen	m2_yylen
 #define yydefred m2_yydefred
@@ -97,25 +101,22 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #define yycheck	 m2_yycheck
 
 #ifndef YYDEBUG
-#define	YYDEBUG	0		/* Default to no yydebug support */
+#define	YYDEBUG 1		/* Default to yydebug support */
 #endif
 
-int
-yyparse PARAMS ((void));
+#define YYFPRINTF parser_fprintf
 
-static int
-yylex PARAMS ((void));
+int yyparse (void);
 
-void
-yyerror PARAMS ((char *));
+static int yylex (void);
+
+void yyerror (char *);
 
 #if 0
-static char *
-make_qualname PARAMS ((char *, char *));
+static char *make_qualname (char *, char *);
 #endif
 
-static int
-parse_number PARAMS ((int));
+static int parse_number (int);
 
 /* The sign of the number being parsed. */
 static int number_sign = 1;
@@ -825,6 +826,8 @@ yylex ()
 
  retry:
 
+  prev_lexptr = lexptr;
+
   tokstart = lexptr;
 
 
@@ -1094,5 +1097,8 @@ void
 yyerror (msg)
      char *msg;
 {
+  if (prev_lexptr)
+    lexptr = prev_lexptr;
+
   error ("A %s in expression, near `%s'.", (msg ? msg : "error"), lexptr);
 }
