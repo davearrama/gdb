@@ -1,5 +1,5 @@
 /* Native-dependent definitions for Intel 386 running the GNU Hurd
-   Copyright 1994, 1995 Free Software Foundation, Inc.
+   Copyright 1994, 1995, 1996 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -20,4 +20,4 @@
 
 /* Include the generic hurd definitions.  */
 
-#include "nm-gnu.h"
+#include "config/nm-gnu.h"

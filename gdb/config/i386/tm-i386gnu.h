@@ -1,5 +1,5 @@
 /* Macro definitions for i386 running the GNU Hurd.
-   Copyright (C) 1992, 1999 Free Software Foundation, Inc.
+   Copyright 1992, 1999, 2000 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -24,7 +24,7 @@
 /* Include common definitions for GNU systems.
    FIXME: This does not belong here since this is supposed to contain
    only native-dependent information.  */
-#include "nm-gnu.h"
+#include "config/nm-gnu.h"
 
 /* Thread flavors used in re-setting the T bit.
    FIXME: This is native-dependent.  */
@@ -42,10 +42,15 @@
 #define HAVE_I387_REGS
 #include "i386/tm-i386.h"
 
+/* We use stabs-in-ELF with the DWARF register numbering scheme.  */
+
+#undef STAB_REG_TO_REGNUM
+#define STAB_REG_TO_REGNUM(reg) i386_dwarf_reg_to_regnum ((reg))
+
 /* Offset to saved PC in sigcontext.  */
 #define SIGCONTEXT_PC_OFFSET 68
 
 /* We need this file for the SOLIB_TRAMPOLINE stuff.  */
-#include "tm-sysv4.h"
+#include "config/tm-sysv4.h"
 
 #endif /* TM_I386GNU_H */

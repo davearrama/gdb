@@ -1,5 +1,6 @@
 /* Parameters for execution on a z8000 series machine.
-   Copyright 1992, 1993 Free Software Foundation, Inc.
+   Copyright 1992, 1993, 1994, 1998, 1999, 2000, 2001
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,8 +19,6 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-#define IEEE_FLOAT 1
-
 #undef TARGET_INT_BIT
 #undef TARGET_LONG_BIT
 #undef TARGET_SHORT_BIT
@@ -30,9 +29,6 @@
 #define TARGET_LONG_BIT 32
 #define TARGET_PTR_BIT (BIG ? 32: 16)
 
-/* Define the bit, byte, and word ordering of the machine.  */
-#define TARGET_BYTE_ORDER BIG_ENDIAN
-
 /* Offset from address of function to start of its code.
    Zero on most machines.  */
 
@@ -42,7 +38,7 @@
    to reach some "real" code.  */
 
 #define SKIP_PROLOGUE(ip)   (z8k_skip_prologue (ip))
-extern CORE_ADDR z8k_skip_prologue PARAMS ((CORE_ADDR ip));
+extern CORE_ADDR z8k_skip_prologue (CORE_ADDR ip);
 
 
 /* Immediately after a function call, return the saved pc.
@@ -138,7 +134,7 @@ extern int z8k_saved_pc_after_call (struct frame_info *frame);
 /* Store the address of the place in which to copy the structure the
    subroutine will return.  This is called from call_function. */
 
-#define STORE_STRUCT_RETURN(ADDR, SP) abort();
+#define STORE_STRUCT_RETURN(ADDR, SP) internal_error (__FILE__, __LINE__, "failed internal consistency check");
 
 /* Extract from an array REGBUF containing the (raw) register state
    a function return value of type TYPE, and copy that, in virtual format,
@@ -146,19 +142,19 @@ extern int z8k_saved_pc_after_call (struct frame_info *frame);
    as doubles in d0/d1.  */
 
 
-#define EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
+#define DEPRECATED_EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
   memcpy(VALBUF, REGBUF + REGISTER_BYTE(2), TYPE_LENGTH(TYPE));
 
 /* Write into appropriate registers a function return value
    of type TYPE, given in virtual format. */
 
-#define STORE_RETURN_VALUE(TYPE,VALBUF) abort();
+#define STORE_RETURN_VALUE(TYPE,VALBUF) internal_error (__FILE__, __LINE__, "failed internal consistency check");
 
 /* Extract from an array REGBUF containing the (raw) register state
    the address in which a function should return its structure value,
    as a CORE_ADDR (or an expression that can be used as one).  */
 
-#define EXTRACT_STRUCT_VALUE_ADDRESS(REGBUF) (*(CORE_ADDR *)(REGBUF))
+#define DEPRECATED_EXTRACT_STRUCT_VALUE_ADDRESS(REGBUF) (*(CORE_ADDR *)(REGBUF))
 
 /* Describe the pointer in each stack frame to the previous stack frame
    (its caller).  */
@@ -203,7 +199,7 @@ extern CORE_ADDR z8k_frame_saved_pc (struct frame_info *frame);
 #define FRAME_ARGS_SKIP 8
 
 struct frame_info;
-extern void z8k_frame_init_saved_regs PARAMS ((struct frame_info *));
+extern void z8k_frame_init_saved_regs (struct frame_info *);
 #define FRAME_INIT_SAVED_REGS(fi) z8k_frame_init_saved_regs (fi)
 
 
@@ -259,9 +255,9 @@ extern void z8k_frame_init_saved_regs PARAMS ((struct frame_info *));
 
 #define PUSH_DUMMY_FRAME	{ z8k_push_dummy_frame (); }
 
-extern void z8k_push_dummy_frame PARAMS ((void));
+extern void z8k_push_dummy_frame (void);
 
-extern void z8k_pop_frame PARAMS ((void));
+extern void z8k_pop_frame (void);
 
 /* Discard from the stack the innermost frame, restoring all registers.  */
 
@@ -271,7 +267,7 @@ extern void z8k_pop_frame PARAMS ((void));
 
 #define SP_ARG0 (1 * 4)
 
-extern CORE_ADDR z8k_addr_bits_remove PARAMS ((CORE_ADDR));
+extern CORE_ADDR z8k_addr_bits_remove (CORE_ADDR);
 #define ADDR_BITS_REMOVE(addr) z8k_addr_bits_remove (addr)
 int sim_z8001_mode;
 #define BIG (sim_z8001_mode)

@@ -17,126 +17,66 @@
 
 #include "armdefs.h"
 #include "armemu.h"
+#include "ansidecl.h"
 
-/***************************************************************************\
-*                    Definitions for the support routines                   *
-\***************************************************************************/
+/* Definitions for the support routines.  */
 
-ARMword ARMul_GetReg (ARMul_State * state, unsigned mode, unsigned reg);
-void ARMul_SetReg (ARMul_State * state, unsigned mode, unsigned reg,
-		   ARMword value);
-ARMword ARMul_GetPC (ARMul_State * state);
-ARMword ARMul_GetNextPC (ARMul_State * state);
-void ARMul_SetPC (ARMul_State * state, ARMword value);
-ARMword ARMul_GetR15 (ARMul_State * state);
-void ARMul_SetR15 (ARMul_State * state, ARMword value);
-
-ARMword ARMul_GetCPSR (ARMul_State * state);
-void ARMul_SetCPSR (ARMul_State * state, ARMword value);
-void ARMul_FixCPSR (ARMul_State * state, ARMword instr, ARMword rhs);
-ARMword ARMul_GetSPSR (ARMul_State * state, ARMword mode);
-void ARMul_SetSPSR (ARMul_State * state, ARMword mode, ARMword value);
-void ARMul_FixSPSR (ARMul_State * state, ARMword instr, ARMword rhs);
-
-void ARMul_CPSRAltered (ARMul_State * state);
-void ARMul_R15Altered (ARMul_State * state);
-
-ARMword ARMul_SwitchMode (ARMul_State * state, ARMword oldmode,
-			  ARMword newmode);
-static ARMword ModeToBank (ARMul_State * state, ARMword mode);
-
-unsigned ARMul_NthReg (ARMword instr, unsigned number);
-
-void ARMul_NegZero (ARMul_State * state, ARMword result);
-void ARMul_AddCarry (ARMul_State * state, ARMword a, ARMword b,
-		     ARMword result);
-void ARMul_AddOverflow (ARMul_State * state, ARMword a, ARMword b,
-			ARMword result);
-void ARMul_SubCarry (ARMul_State * state, ARMword a, ARMword b,
-		     ARMword result);
-void ARMul_SubOverflow (ARMul_State * state, ARMword a, ARMword b,
-			ARMword result);
-
-void ARMul_LDC (ARMul_State * state, ARMword instr, ARMword address);
-void ARMul_STC (ARMul_State * state, ARMword instr, ARMword address);
-void ARMul_MCR (ARMul_State * state, ARMword instr, ARMword source);
-ARMword ARMul_MRC (ARMul_State * state, ARMword instr);
-void ARMul_CDP (ARMul_State * state, ARMword instr);
-void ARMul_UndefInstr (ARMul_State * state, ARMword instr);
-unsigned IntPending (ARMul_State * state);
-
-ARMword ARMul_Align (ARMul_State * state, ARMword address, ARMword data);
-
-void ARMul_ScheduleEvent (ARMul_State * state, unsigned long delay,
-			  unsigned (*what) ());
-void ARMul_EnvokeEvent (ARMul_State * state);
-unsigned long ARMul_Time (ARMul_State * state);
-static void EnvokeList (ARMul_State * state, unsigned long from,
-			unsigned long to);
+static ARMword ModeToBank (ARMword);
+static void    EnvokeList (ARMul_State *, unsigned long, unsigned long);
 
 struct EventNode
-{				/* An event list node */
-  unsigned (*func) ();		/* The function to call */
+{					/* An event list node.  */
+  unsigned (*func) (ARMul_State *);	/* The function to call.  */
   struct EventNode *next;
 };
 
-/***************************************************************************\
-* This routine returns the value of a register from a mode.                 *
-\***************************************************************************/
+/* This routine returns the value of a register from a mode.  */
 
 ARMword
 ARMul_GetReg (ARMul_State * state, unsigned mode, unsigned reg)
 {
   mode &= MODEBITS;
   if (mode != state->Mode)
-    return (state->RegBank[ModeToBank (state, (ARMword) mode)][reg]);
+    return (state->RegBank[ModeToBank ((ARMword) mode)][reg]);
   else
     return (state->Reg[reg]);
 }
 
-/***************************************************************************\
-* This routine sets the value of a register for a mode.                     *
-\***************************************************************************/
+/* This routine sets the value of a register for a mode.  */
 
 void
 ARMul_SetReg (ARMul_State * state, unsigned mode, unsigned reg, ARMword value)
 {
   mode &= MODEBITS;
   if (mode != state->Mode)
-    state->RegBank[ModeToBank (state, (ARMword) mode)][reg] = value;
+    state->RegBank[ModeToBank ((ARMword) mode)][reg] = value;
   else
     state->Reg[reg] = value;
 }
 
-/***************************************************************************\
-* This routine returns the value of the PC, mode independently.             *
-\***************************************************************************/
+/* This routine returns the value of the PC, mode independently.  */
 
 ARMword
 ARMul_GetPC (ARMul_State * state)
 {
   if (state->Mode > SVC26MODE)
-    return (state->Reg[15]);
+    return state->Reg[15];
   else
-    return (R15PC);
+    return R15PC;
 }
 
-/***************************************************************************\
-* This routine returns the value of the PC, mode independently.             *
-\***************************************************************************/
+/* This routine returns the value of the PC, mode independently.  */
 
 ARMword
 ARMul_GetNextPC (ARMul_State * state)
 {
   if (state->Mode > SVC26MODE)
-    return (state->Reg[15] + isize);
+    return state->Reg[15] + isize;
   else
-    return ((state->Reg[15] + isize) & R15PCBITS);
+    return (state->Reg[15] + isize) & R15PCBITS;
 }
 
-/***************************************************************************\
-* This routine sets the value of the PC.                                    *
-\***************************************************************************/
+/* This routine sets the value of the PC.  */
 
 void
 ARMul_SetPC (ARMul_State * state, ARMword value)
@@ -148,9 +88,7 @@ ARMul_SetPC (ARMul_State * state, ARMword value)
   FLUSHPIPE;
 }
 
-/***************************************************************************\
-* This routine returns the value of register 15, mode independently.        *
-\***************************************************************************/
+/* This routine returns the value of register 15, mode independently.  */
 
 ARMword
 ARMul_GetR15 (ARMul_State * state)
@@ -161,9 +99,7 @@ ARMul_GetR15 (ARMul_State * state)
     return (R15PC | ECC | ER15INT | EMODE);
 }
 
-/***************************************************************************\
-* This routine sets the value of Register 15.                               *
-\***************************************************************************/
+/* This routine sets the value of Register 15.  */
 
 void
 ARMul_SetR15 (ARMul_State * state, ARMword value)
@@ -178,104 +114,91 @@ ARMul_SetR15 (ARMul_State * state, ARMword value)
   FLUSHPIPE;
 }
 
-/***************************************************************************\
-* This routine returns the value of the CPSR                                *
-\***************************************************************************/
+/* This routine returns the value of the CPSR.  */
 
 ARMword
 ARMul_GetCPSR (ARMul_State * state)
 {
-  return (CPSR);
+  return (CPSR | state->Cpsr);
 }
 
-/***************************************************************************\
-* This routine sets the value of the CPSR                                   *
-\***************************************************************************/
+/* This routine sets the value of the CPSR.  */
 
 void
 ARMul_SetCPSR (ARMul_State * state, ARMword value)
 {
-  state->Cpsr = CPSR;
-  SETPSR (state->Cpsr, value);
+  state->Cpsr = value;
   ARMul_CPSRAltered (state);
 }
 
-/***************************************************************************\
-* This routine does all the nasty bits involved in a write to the CPSR,     *
-* including updating the register bank, given a MSR instruction.                    *
-\***************************************************************************/
+/* This routine does all the nasty bits involved in a write to the CPSR,
+   including updating the register bank, given a MSR instruction.  */
 
 void
 ARMul_FixCPSR (ARMul_State * state, ARMword instr, ARMword rhs)
 {
-  state->Cpsr = CPSR;
-  if (state->Bank == USERBANK)
-    {				/* Only write flags in user mode */
-      if (BIT (19))
-	{
-	  SETCC (state->Cpsr, rhs);
-	}
+  state->Cpsr = ARMul_GetCPSR (state);
+
+  if (state->Mode != USER26MODE
+      && state->Mode != USER32MODE)
+    {
+      /* In user mode, only write flags.  */
+      if (BIT (16))
+	SETPSR_C (state->Cpsr, rhs);
+      if (BIT (17))
+	SETPSR_X (state->Cpsr, rhs);
+      if (BIT (18))
+	SETPSR_S (state->Cpsr, rhs);
     }
-  else
-    {				/* Not a user mode */
-      if (BITS (16, 19) == 9)
-	SETPSR (state->Cpsr, rhs);
-      else if (BIT (16))
-	SETINTMODE (state->Cpsr, rhs);
-      else if (BIT (19))
-	SETCC (state->Cpsr, rhs);
-    }
+  if (BIT (19))
+    SETPSR_F (state->Cpsr, rhs);
   ARMul_CPSRAltered (state);
 }
 
-/***************************************************************************\
-* Get an SPSR from the specified mode                                       *
-\***************************************************************************/
+/* Get an SPSR from the specified mode.  */
 
 ARMword
 ARMul_GetSPSR (ARMul_State * state, ARMword mode)
 {
-  ARMword bank = ModeToBank (state, mode & MODEBITS);
-  if (bank == USERBANK || bank == DUMMYBANK)
-    return (CPSR);
-  else
-    return (state->Spsr[bank]);
+  ARMword bank = ModeToBank (mode & MODEBITS);
+
+  if (! BANK_CAN_ACCESS_SPSR (bank))
+    return ARMul_GetCPSR (state);
+
+  return state->Spsr[bank];
 }
 
-/***************************************************************************\
-* This routine does a write to an SPSR                                      *
-\***************************************************************************/
+/* This routine does a write to an SPSR.  */
 
 void
 ARMul_SetSPSR (ARMul_State * state, ARMword mode, ARMword value)
 {
-  ARMword bank = ModeToBank (state, mode & MODEBITS);
-  if (bank != USERBANK && bank != DUMMYBANK)
+  ARMword bank = ModeToBank (mode & MODEBITS);
+  
+  if (BANK_CAN_ACCESS_SPSR (bank))
     state->Spsr[bank] = value;
 }
 
-/***************************************************************************\
-* This routine does a write to the current SPSR, given an MSR instruction   *
-\***************************************************************************/
+/* This routine does a write to the current SPSR, given an MSR instruction.  */
 
 void
 ARMul_FixSPSR (ARMul_State * state, ARMword instr, ARMword rhs)
 {
-  if (state->Bank != USERBANK && state->Bank != DUMMYBANK)
+  if (BANK_CAN_ACCESS_SPSR (state->Bank))
     {
-      if (BITS (16, 19) == 9)
-	SETPSR (state->Spsr[state->Bank], rhs);
-      else if (BIT (16))
-	SETINTMODE (state->Spsr[state->Bank], rhs);
-      else if (BIT (19))
-	SETCC (state->Spsr[state->Bank], rhs);
+      if (BIT (16))
+	SETPSR_C (state->Spsr[state->Bank], rhs);
+      if (BIT (17))
+	SETPSR_X (state->Spsr[state->Bank], rhs);
+      if (BIT (18))
+	SETPSR_S (state->Spsr[state->Bank], rhs);
+      if (BIT (19))
+	SETPSR_F (state->Spsr[state->Bank], rhs);
     }
 }
 
-/***************************************************************************\
-* This routine updates the state of the emulator after the Cpsr has been    *
-* changed.  Both the processor flags and register bank are updated.         *
-\***************************************************************************/
+/* This routine updates the state of the emulator after the Cpsr has been
+   changed.  Both the processor flags and register bank are updated.  */
 
 void
 ARMul_CPSRAltered (ARMul_State * state)
@@ -284,21 +207,33 @@ ARMul_CPSRAltered (ARMul_State * state)
 
   if (state->prog32Sig == LOW)
     state->Cpsr &= (CCBITS | INTBITS | R15MODEBITS);
+
   oldmode = state->Mode;
+  
   if (state->Mode != (state->Cpsr & MODEBITS))
     {
       state->Mode =
 	ARMul_SwitchMode (state, state->Mode, state->Cpsr & MODEBITS);
+      
       state->NtransSig = (state->Mode & 3) ? HIGH : LOW;
     }
+  state->Cpsr &= ~MODEBITS;
 
   ASSIGNINT (state->Cpsr & INTBITS);
+  state->Cpsr &= ~INTBITS;
   ASSIGNN ((state->Cpsr & NBIT) != 0);
+  state->Cpsr &= ~NBIT;
   ASSIGNZ ((state->Cpsr & ZBIT) != 0);
+  state->Cpsr &= ~ZBIT;
   ASSIGNC ((state->Cpsr & CBIT) != 0);
+  state->Cpsr &= ~CBIT;
   ASSIGNV ((state->Cpsr & VBIT) != 0);
+  state->Cpsr &= ~VBIT;
+  ASSIGNS ((state->Cpsr & SBIT) != 0);
+  state->Cpsr &= ~SBIT;
 #ifdef MODET
   ASSIGNT ((state->Cpsr & TBIT) != 0);
+  state->Cpsr &= ~TBIT;
 #endif
 
   if (oldmode > SVC26MODE)
@@ -319,14 +254,11 @@ ARMul_CPSRAltered (ARMul_State * state)
       else
 	state->Reg[15] = ECC | ER15INT | EMODE | R15PC;
     }
-
 }
 
-/***************************************************************************\
-* This routine updates the state of the emulator after register 15 has      *
-* been changed.  Both the processor flags and register bank are updated.    *
-* This routine should only be called from a 26 bit mode.                    *
-\***************************************************************************/
+/* This routine updates the state of the emulator after register 15 has
+   been changed.  Both the processor flags and register bank are updated.
+   This routine should only be called from a 26 bit mode.  */
 
 void
 ARMul_R15Altered (ARMul_State * state)
@@ -336,44 +268,50 @@ ARMul_R15Altered (ARMul_State * state)
       state->Mode = ARMul_SwitchMode (state, state->Mode, R15MODE);
       state->NtransSig = (state->Mode & 3) ? HIGH : LOW;
     }
+
   if (state->Mode > SVC26MODE)
     state->Emulate = CHANGEMODE;
+
   ASSIGNR15INT (R15INT);
+
   ASSIGNN ((state->Reg[15] & NBIT) != 0);
   ASSIGNZ ((state->Reg[15] & ZBIT) != 0);
   ASSIGNC ((state->Reg[15] & CBIT) != 0);
   ASSIGNV ((state->Reg[15] & VBIT) != 0);
 }
 
-/***************************************************************************\
-* This routine controls the saving and restoring of registers across mode   *
-* changes.  The regbank matrix is largely unused, only rows 13 and 14 are   *
-* used across all modes, 8 to 14 are used for FIQ, all others use the USER  *
-* column.  It's easier this way.  old and new parameter are modes numbers.  *
-* Notice the side effect of changing the Bank variable.                     *
-\***************************************************************************/
+/* This routine controls the saving and restoring of registers across mode
+   changes.  The regbank matrix is largely unused, only rows 13 and 14 are
+   used across all modes, 8 to 14 are used for FIQ, all others use the USER
+   column.  It's easier this way.  old and new parameter are modes numbers.
+   Notice the side effect of changing the Bank variable.  */
 
 ARMword
 ARMul_SwitchMode (ARMul_State * state, ARMword oldmode, ARMword newmode)
 {
   unsigned i;
-
-  oldmode = ModeToBank (state, oldmode);
-  state->Bank = ModeToBank (state, newmode);
-  if (oldmode != state->Bank)
-    {				/* really need to do it */
-      switch (oldmode)
-	{			/* save away the old registers */
+  ARMword  oldbank;
+  ARMword  newbank;
+  
+  oldbank = ModeToBank (oldmode);
+  newbank = state->Bank = ModeToBank (newmode);
+  
+  /* Do we really need to do it?  */
+  if (oldbank != newbank)
+    {
+      /* Save away the old registers.  */
+      switch (oldbank)
+	{
 	case USERBANK:
 	case IRQBANK:
 	case SVCBANK:
 	case ABORTBANK:
 	case UNDEFBANK:
-	  if (state->Bank == FIQBANK)
+	  if (newbank == FIQBANK)
 	    for (i = 8; i < 13; i++)
 	      state->RegBank[USERBANK][i] = state->Reg[i];
-	  state->RegBank[oldmode][13] = state->Reg[13];
-	  state->RegBank[oldmode][14] = state->Reg[14];
+	  state->RegBank[oldbank][13] = state->Reg[13];
+	  state->RegBank[oldbank][14] = state->Reg[14];
 	  break;
 	case FIQBANK:
 	  for (i = 8; i < 15; i++)
@@ -383,20 +321,23 @@ ARMul_SwitchMode (ARMul_State * state, ARMword oldmode, ARMword newmode)
 	  for (i = 8; i < 15; i++)
 	    state->RegBank[DUMMYBANK][i] = 0;
 	  break;
-
+	default:
+	  abort ();
 	}
-      switch (state->Bank)
-	{			/* restore the new registers */
+      
+      /* Restore the new registers.  */
+      switch (newbank)
+	{
 	case USERBANK:
 	case IRQBANK:
 	case SVCBANK:
 	case ABORTBANK:
 	case UNDEFBANK:
-	  if (oldmode == FIQBANK)
+	  if (oldbank == FIQBANK)
 	    for (i = 8; i < 13; i++)
 	      state->Reg[i] = state->RegBank[USERBANK][i];
-	  state->Reg[13] = state->RegBank[state->Bank][13];
-	  state->Reg[14] = state->RegBank[state->Bank][14];
+	  state->Reg[13] = state->RegBank[newbank][13];
+	  state->Reg[14] = state->RegBank[newbank][14];
 	  break;
 	case FIQBANK:
 	  for (i = 8; i < 15; i++)
@@ -406,52 +347,53 @@ ARMul_SwitchMode (ARMul_State * state, ARMword oldmode, ARMword newmode)
 	  for (i = 8; i < 15; i++)
 	    state->Reg[i] = 0;
 	  break;
-	}			/* switch */
-    }				/* if */
-  return (newmode);
+	default:
+	  abort ();
+	}
+    }
+  
+  return newmode;
 }
 
-/***************************************************************************\
-* Given a processor mode, this routine returns the register bank that       *
-* will be accessed in that mode.                                            *
-\***************************************************************************/
+/* Given a processor mode, this routine returns the
+   register bank that will be accessed in that mode.  */
 
 static ARMword
-ModeToBank (ARMul_State * state, ARMword mode)
+ModeToBank (ARMword mode)
 {
-  static ARMword bankofmode[] = { USERBANK, FIQBANK, IRQBANK, SVCBANK,
+  static ARMword bankofmode[] =
+  {
+    USERBANK,  FIQBANK,   IRQBANK,   SVCBANK,
     DUMMYBANK, DUMMYBANK, DUMMYBANK, DUMMYBANK,
     DUMMYBANK, DUMMYBANK, DUMMYBANK, DUMMYBANK,
     DUMMYBANK, DUMMYBANK, DUMMYBANK, DUMMYBANK,
-    USERBANK, FIQBANK, IRQBANK, SVCBANK,
+    USERBANK,  FIQBANK,   IRQBANK,   SVCBANK,
     DUMMYBANK, DUMMYBANK, DUMMYBANK, ABORTBANK,
-    DUMMYBANK, DUMMYBANK, DUMMYBANK, UNDEFBANK
+    DUMMYBANK, DUMMYBANK, DUMMYBANK, UNDEFBANK,
+    DUMMYBANK, DUMMYBANK, DUMMYBANK, SYSTEMBANK
   };
 
-  if (mode > UNDEF32MODE)
-    return (DUMMYBANK);
-  else
-    return (bankofmode[mode]);
+  if (mode >= (sizeof (bankofmode) / sizeof (bankofmode[0])))
+    return DUMMYBANK;
+
+  return bankofmode[mode];
 }
 
-/***************************************************************************\
-* Returns the register number of the nth register in a reg list.            *
-\***************************************************************************/
+/* Returns the register number of the nth register in a reg list.  */
 
 unsigned
 ARMul_NthReg (ARMword instr, unsigned number)
 {
   unsigned bit, upto;
 
-  for (bit = 0, upto = 0; upto <= number; bit++)
+  for (bit = 0, upto = 0; upto <= number; bit ++)
     if (BIT (bit))
-      upto++;
+      upto ++;
+
   return (bit - 1);
 }
 
-/***************************************************************************\
-* Assigns the N and Z flags depending on the value of result                *
-\***************************************************************************/
+/* Assigns the N and Z flags depending on the value of result.  */
 
 void
 ARMul_NegZero (ARMul_State * state, ARMword result)
@@ -470,10 +412,11 @@ ARMul_NegZero (ARMul_State * state, ARMword result)
     {
       CLEARN;
       CLEARZ;
-    };
+    }
 }
 
 /* Compute whether an addition of A and B, giving RESULT, overflowed.  */
+
 int
 AddOverflow (ARMword a, ARMword b, ARMword result)
 {
@@ -482,6 +425,7 @@ AddOverflow (ARMword a, ARMword b, ARMword result)
 }
 
 /* Compute whether a subtraction of A and B, giving RESULT, overflowed.  */
+
 int
 SubOverflow (ARMword a, ARMword b, ARMword result)
 {
@@ -489,9 +433,7 @@ SubOverflow (ARMword a, ARMword b, ARMword result)
 	  || (POS (a) && NEG (b) && NEG (result)));
 }
 
-/***************************************************************************\
-* Assigns the C flag after an addition of a and b to give result            *
-\***************************************************************************/
+/* Assigns the C flag after an addition of a and b to give result.  */
 
 void
 ARMul_AddCarry (ARMul_State * state, ARMword a, ARMword b, ARMword result)
@@ -500,9 +442,7 @@ ARMul_AddCarry (ARMul_State * state, ARMword a, ARMword b, ARMword result)
 	   (NEG (a) && POS (result)) || (NEG (b) && POS (result)));
 }
 
-/***************************************************************************\
-* Assigns the V flag after an addition of a and b to give result            *
-\***************************************************************************/
+/* Assigns the V flag after an addition of a and b to give result.  */
 
 void
 ARMul_AddOverflow (ARMul_State * state, ARMword a, ARMword b, ARMword result)
@@ -510,9 +450,7 @@ ARMul_AddOverflow (ARMul_State * state, ARMword a, ARMword b, ARMword result)
   ASSIGNV (AddOverflow (a, b, result));
 }
 
-/***************************************************************************\
-* Assigns the C flag after an subtraction of a and b to give result         *
-\***************************************************************************/
+/* Assigns the C flag after an subtraction of a and b to give result.  */
 
 void
 ARMul_SubCarry (ARMul_State * state, ARMword a, ARMword b, ARMword result)
@@ -521,9 +459,7 @@ ARMul_SubCarry (ARMul_State * state, ARMword a, ARMword b, ARMword result)
 	   (NEG (a) && POS (result)) || (POS (b) && POS (result)));
 }
 
-/***************************************************************************\
-* Assigns the V flag after an subtraction of a and b to give result         *
-\***************************************************************************/
+/* Assigns the V flag after an subtraction of a and b to give result.  */
 
 void
 ARMul_SubOverflow (ARMul_State * state, ARMword a, ARMword b, ARMword result)
@@ -531,12 +467,10 @@ ARMul_SubOverflow (ARMul_State * state, ARMword a, ARMword b, ARMword result)
   ASSIGNV (SubOverflow (a, b, result));
 }
 
-/***************************************************************************\
-* This function does the work of generating the addresses used in an        *
-* LDC instruction.  The code here is always post-indexed, it's up to the    *
-* caller to get the input address correct and to handle base register       *
-* modification. It also handles the Busy-Waiting.                           *
-\***************************************************************************/
+/* This function does the work of generating the addresses used in an
+   LDC instruction.  The code here is always post-indexed, it's up to the
+   caller to get the input address correct and to handle base register
+   modification. It also handles the Busy-Waiting.  */
 
 void
 ARMul_LDC (ARMul_State * state, ARMword instr, ARMword address)
@@ -545,14 +479,21 @@ ARMul_LDC (ARMul_State * state, ARMword instr, ARMword address)
   ARMword data;
 
   UNDEF_LSCPCBaseWb;
-  if (ADDREXCEPT (address))
+
+  if (! CP_ACCESS_ALLOWED (state, CPNum))
     {
-      INTERNALABORT (address);
+      ARMul_UndefInstr (state, instr);
+      return;
     }
+
+  if (ADDREXCEPT (address))
+    INTERNALABORT (address);
+
   cpab = (state->LDC[CPNum]) (state, ARMul_FIRST, instr, 0);
   while (cpab == ARMul_BUSY)
     {
       ARMul_Icycles (state, 1, 0);
+
       if (IntPending (state))
 	{
 	  cpab = (state->LDC[CPNum]) (state, ARMul_INTERRUPT, instr, 0);
@@ -566,30 +507,30 @@ ARMul_LDC (ARMul_State * state, ARMword instr, ARMword address)
       CPTAKEABORT;
       return;
     }
+
   cpab = (state->LDC[CPNum]) (state, ARMul_TRANSFER, instr, 0);
   data = ARMul_LoadWordN (state, address);
   BUSUSEDINCPCN;
+
   if (BIT (21))
     LSBase = state->Base;
   cpab = (state->LDC[CPNum]) (state, ARMul_DATA, instr, data);
+
   while (cpab == ARMul_INC)
     {
       address += 4;
       data = ARMul_LoadWordN (state, address);
       cpab = (state->LDC[CPNum]) (state, ARMul_DATA, instr, data);
     }
+
   if (state->abortSig || state->Aborted)
-    {
-      TAKEABORT;
-    }
+    TAKEABORT;
 }
 
-/***************************************************************************\
-* This function does the work of generating the addresses used in an        *
-* STC instruction.  The code here is always post-indexed, it's up to the    *
-* caller to get the input address correct and to handle base register       *
-* modification. It also handles the Busy-Waiting.                           *
-\***************************************************************************/
+/* This function does the work of generating the addresses used in an
+   STC instruction.  The code here is always post-indexed, it's up to the
+   caller to get the input address correct and to handle base register
+   modification. It also handles the Busy-Waiting.  */
 
 void
 ARMul_STC (ARMul_State * state, ARMword instr, ARMword address)
@@ -598,10 +539,16 @@ ARMul_STC (ARMul_State * state, ARMword instr, ARMword address)
   ARMword data;
 
   UNDEF_LSCPCBaseWb;
-  if (ADDREXCEPT (address) || VECTORACCESS (address))
+
+  if (! CP_ACCESS_ALLOWED (state, CPNum))
     {
-      INTERNALABORT (address);
+      ARMul_UndefInstr (state, instr);
+      return;
     }
+
+  if (ADDREXCEPT (address) || VECTORACCESS (address))
+    INTERNALABORT (address);
+
   cpab = (state->STC[CPNum]) (state, ARMul_FIRST, instr, &data);
   while (cpab == ARMul_BUSY)
     {
@@ -614,6 +561,7 @@ ARMul_STC (ARMul_State * state, ARMword instr, ARMword address)
       else
 	cpab = (state->STC[CPNum]) (state, ARMul_BUSY, instr, &data);
     }
+
   if (cpab == ARMul_CANT)
     {
       CPTAKEABORT;
@@ -621,40 +569,44 @@ ARMul_STC (ARMul_State * state, ARMword instr, ARMword address)
     }
 #ifndef MODE32
   if (ADDREXCEPT (address) || VECTORACCESS (address))
-    {
-      INTERNALABORT (address);
-    }
+    INTERNALABORT (address);
 #endif
   BUSUSEDINCPCN;
   if (BIT (21))
     LSBase = state->Base;
   cpab = (state->STC[CPNum]) (state, ARMul_DATA, instr, &data);
   ARMul_StoreWordN (state, address, data);
+
   while (cpab == ARMul_INC)
     {
       address += 4;
       cpab = (state->STC[CPNum]) (state, ARMul_DATA, instr, &data);
       ARMul_StoreWordN (state, address, data);
     }
+
   if (state->abortSig || state->Aborted)
-    {
-      TAKEABORT;
-    }
+    TAKEABORT;
 }
 
-/***************************************************************************\
-*        This function does the Busy-Waiting for an MCR instruction.        *
-\***************************************************************************/
+/* This function does the Busy-Waiting for an MCR instruction.  */
 
 void
 ARMul_MCR (ARMul_State * state, ARMword instr, ARMword source)
 {
   unsigned cpab;
 
+  if (! CP_ACCESS_ALLOWED (state, CPNum))
+    {
+      ARMul_UndefInstr (state, instr);
+      return;
+    }
+
   cpab = (state->MCR[CPNum]) (state, ARMul_FIRST, instr, source);
+
   while (cpab == ARMul_BUSY)
     {
       ARMul_Icycles (state, 1, 0);
+
       if (IntPending (state))
 	{
 	  cpab = (state->MCR[CPNum]) (state, ARMul_INTERRUPT, instr, 0);
@@ -663,6 +615,7 @@ ARMul_MCR (ARMul_State * state, ARMword instr, ARMword source)
       else
 	cpab = (state->MCR[CPNum]) (state, ARMul_BUSY, instr, source);
     }
+
   if (cpab == ARMul_CANT)
     ARMul_Abort (state, ARMul_UndefinedInstrV);
   else
@@ -672,15 +625,19 @@ ARMul_MCR (ARMul_State * state, ARMword instr, ARMword source)
     }
 }
 
-/***************************************************************************\
-*        This function does the Busy-Waiting for an MRC instruction.        *
-\***************************************************************************/
+/* This function does the Busy-Waiting for an MRC instruction.  */
 
 ARMword
 ARMul_MRC (ARMul_State * state, ARMword instr)
 {
   unsigned cpab;
   ARMword result = 0;
+
+  if (! CP_ACCESS_ALLOWED (state, CPNum))
+    {
+      ARMul_UndefInstr (state, instr);
+      return;
+    }
 
   cpab = (state->MRC[CPNum]) (state, ARMul_FIRST, instr, &result);
   while (cpab == ARMul_BUSY)
@@ -697,7 +654,8 @@ ARMul_MRC (ARMul_State * state, ARMword instr)
   if (cpab == ARMul_CANT)
     {
       ARMul_Abort (state, ARMul_UndefinedInstrV);
-      result = ECC;		/* Parent will destroy the flags otherwise */
+      /* Parent will destroy the flags otherwise.  */
+      result = ECC;
     }
   else
     {
@@ -705,17 +663,22 @@ ARMul_MRC (ARMul_State * state, ARMword instr)
       ARMul_Ccycles (state, 1, 0);
       ARMul_Icycles (state, 1, 0);
     }
-  return (result);
+
+  return result;
 }
 
-/***************************************************************************\
-*        This function does the Busy-Waiting for an CDP instruction.        *
-\***************************************************************************/
+/* This function does the Busy-Waiting for an CDP instruction.  */
 
 void
 ARMul_CDP (ARMul_State * state, ARMword instr)
 {
   unsigned cpab;
+
+  if (! CP_ACCESS_ALLOWED (state, CPNum))
+    {
+      ARMul_UndefInstr (state, instr);
+      return;
+    }
 
   cpab = (state->CDP[CPNum]) (state, ARMul_FIRST, instr);
   while (cpab == ARMul_BUSY)
@@ -735,67 +698,65 @@ ARMul_CDP (ARMul_State * state, ARMword instr)
     BUSUSEDN;
 }
 
-/***************************************************************************\
-*      This function handles Undefined instructions, as CP isntruction      *
-\***************************************************************************/
+/* This function handles Undefined instructions, as CP isntruction.  */
 
 void
-ARMul_UndefInstr (ARMul_State * state, ARMword instr)
+ARMul_UndefInstr (ARMul_State * state, ARMword instr ATTRIBUTE_UNUSED)
 {
   ARMul_Abort (state, ARMul_UndefinedInstrV);
 }
 
-/***************************************************************************\
-*           Return TRUE if an interrupt is pending, FALSE otherwise.        *
-\***************************************************************************/
+/* Return TRUE if an interrupt is pending, FALSE otherwise.  */
 
 unsigned
 IntPending (ARMul_State * state)
 {
   if (state->Exception)
-    {				/* Any exceptions */
+    {
+      /* Any exceptions.  */
       if (state->NresetSig == LOW)
 	{
 	  ARMul_Abort (state, ARMul_ResetV);
-	  return (TRUE);
+	  return TRUE;
 	}
       else if (!state->NfiqSig && !FFLAG)
 	{
 	  ARMul_Abort (state, ARMul_FIQV);
-	  return (TRUE);
+	  return TRUE;
 	}
       else if (!state->NirqSig && !IFLAG)
 	{
 	  ARMul_Abort (state, ARMul_IRQV);
-	  return (TRUE);
+	  return TRUE;
 	}
     }
-  return (FALSE);
+
+  return FALSE;
 }
 
-/***************************************************************************\
-*               Align a word access to a non word boundary                  *
-\***************************************************************************/
+/* Align a word access to a non word boundary.  */
 
 ARMword
-ARMul_Align (ARMul_State * state, ARMword address, ARMword data)
-{				/* this code assumes the address is really unaligned,
-				   as a shift by 32 is undefined in C */
+ARMul_Align (state, address, data)
+     ARMul_State * state ATTRIBUTE_UNUSED;
+     ARMword address;
+     ARMword data;
+{
+  /* This code assumes the address is really unaligned,
+     as a shift by 32 is undefined in C.  */
 
-  address = (address & 3) << 3;	/* get the word address */
+  address = (address & 3) << 3;	/* Get the word address.  */
   return ((data >> address) | (data << (32 - address)));	/* rot right */
 }
 
-/***************************************************************************\
-* This routine is used to call another routine after a certain number of    *
-* cycles have been executed. The first parameter is the number of cycles    *
-* delay before the function is called, the second argument is a pointer     *
-* to the function. A delay of zero doesn't work, just call the function.    *
-\***************************************************************************/
+/* This routine is used to call another routine after a certain number of
+   cycles have been executed. The first parameter is the number of cycles
+   delay before the function is called, the second argument is a pointer
+   to the function. A delay of zero doesn't work, just call the function.  */
 
 void
 ARMul_ScheduleEvent (ARMul_State * state, unsigned long delay,
-		     unsigned (*what) ())
+		     unsigned (*what) (ARMul_State *))
 {
   unsigned long when;
   struct EventNode *event;
@@ -809,10 +770,8 @@ ARMul_ScheduleEvent (ARMul_State * state, unsigned long delay,
   *(state->EventPtr + when) = event;
 }
 
-/***************************************************************************\
-* This routine is called at the beginning of every cycle, to envoke         *
-* scheduled events.                                                         *
-\***************************************************************************/
+/* This routine is called at the beginning of
+   every cycle, to envoke scheduled events.  */
 
 void
 ARMul_EnvokeEvent (ARMul_State * state)
@@ -821,23 +780,26 @@ ARMul_EnvokeEvent (ARMul_State * state)
 
   then = state->Now;
   state->Now = ARMul_Time (state) % EVENTLISTSIZE;
-  if (then < state->Now)	/* schedule events */
+  if (then < state->Now)
+    /* Schedule events.  */
     EnvokeList (state, then, state->Now);
   else if (then > state->Now)
-    {				/* need to wrap around the list */
+    {
+      /* Need to wrap around the list.  */
       EnvokeList (state, then, EVENTLISTSIZE - 1L);
       EnvokeList (state, 0L, state->Now);
     }
 }
 
+/* Envokes all the entries in a range.  */
+
 static void
 EnvokeList (ARMul_State * state, unsigned long from, unsigned long to)
-/* envokes all the entries in a range */
 {
-  struct EventNode *anevent;
-
   for (; from <= to; from++)
     {
+      struct EventNode *anevent;
+
       anevent = *(state->EventPtr + from);
       while (anevent)
 	{
@@ -849,9 +811,7 @@ EnvokeList (ARMul_State * state, unsigned long from, unsigned long to)
     }
 }
 
-/***************************************************************************\
-* This routine is returns the number of clock ticks since the last reset.   *
-\***************************************************************************/
+/* This routine is returns the number of clock ticks since the last reset.  */
 
 unsigned long
 ARMul_Time (ARMul_State * state)

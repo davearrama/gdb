@@ -24,14 +24,16 @@ freed as they might be needed again. A single area of memory may be
 defined to generate aborts. */
 
 #include "armopts.h"
+#include "armos.h"
 #include "armdefs.h"
+#include "ansidecl.h"
 
 #ifdef VALIDATE			/* for running the validate suite */
 #define TUBE 48 * 1024 * 1024	/* write a char on the screen */
 #define ABORTS 1
 #endif
 
-#define ABORTS
+/* #define ABORTS */
 
 #ifdef ABORTS			/* the memory system will abort */
 /* For the old test suite Abort between 32 Kbytes and 32 Mbytes
@@ -48,17 +50,22 @@ defined to generate aborts. */
 #define PAGEBITS 16
 #define OFFSETBITS 0xffff
 
+int SWI_vector_installed = FALSE;
+
 /***************************************************************************\
 *        Get a Word from Virtual Memory, maybe allocating the page          *
 \***************************************************************************/
 
 static ARMword
-GetWord (ARMul_State * state, ARMword address)
+GetWord (ARMul_State * state, ARMword address, int check)
 {
   ARMword page;
   ARMword offset;
   ARMword **pagetable;
   ARMword *pageptr;
+
+  if (check)
+    XScale_check_memacc (state, &address, 0);
 
   page = address >> PAGEBITS;
   offset = (address & OFFSETBITS) >> 2;
@@ -86,12 +93,15 @@ GetWord (ARMul_State * state, ARMword address)
 \***************************************************************************/
 
 static void
-PutWord (ARMul_State * state, ARMword address, ARMword data)
+PutWord (ARMul_State * state, ARMword address, ARMword data, int check)
 {
   ARMword page;
   ARMword offset;
   ARMword **pagetable;
   ARMword *pageptr;
+
+  if (check)
+    XScale_check_memacc (state, &address, 1);
 
   page = address >> PAGEBITS;
   offset = (address & OFFSETBITS) >> 2;
@@ -109,6 +119,9 @@ PutWord (ARMul_State * state, ARMword address, ARMword data)
 
       *(pagetable + page) = pageptr;
     }
+
+  if (address == 0x8)
+    SWI_vector_installed = TRUE;
 
   *(pageptr + offset) = data;
 }
@@ -185,8 +198,8 @@ ARMul_ReLoadInstr (ARMul_State * state, ARMword address, ARMword isize)
   if ((isize == 2) && (address & 0x2))
     {
       /* We return the next two halfwords: */
-      ARMword lo = GetWord (state, address);
-      ARMword hi = GetWord (state, address + 4);
+      ARMword lo = GetWord (state, address, FALSE);
+      ARMword hi = GetWord (state, address + 4, FALSE);
 
       if (state->bigendSig == HIGH)
 	return (lo << 16) | (hi >> 16);
@@ -194,7 +207,7 @@ ARMul_ReLoadInstr (ARMul_State * state, ARMword address, ARMword isize)
 	return ((hi & 0xFFFF) << 16) | (lo >> 16);
     }
 
-  return GetWord (state, address);
+  return GetWord (state, address, TRUE);
 }
 
 /***************************************************************************\
@@ -244,7 +257,7 @@ ARMword ARMul_ReadWord (ARMul_State * state, ARMword address)
     }
 #endif
 
-  return GetWord (state, address);
+  return GetWord (state, address, TRUE);
 }
 
 /***************************************************************************\
@@ -329,7 +342,7 @@ ARMul_WriteWord (ARMul_State * state, ARMword address, ARMword data)
     }
 #endif
 
-  PutWord (state, address, data);
+  PutWord (state, address, data, TRUE);
 }
 
 /***************************************************************************\
@@ -382,7 +395,8 @@ ARMul_StoreHalfWord (ARMul_State * state, ARMword address, ARMword data)
   offset = (((ARMword) state->bigendSig * 2) ^ (address & 2)) << 3;	/* bit offset into the word */
 
   PutWord (state, address,
-	   (temp & ~(0xffffL << offset)) | ((data & 0xffffL) << offset));
+	   (temp & ~(0xffffL << offset)) | ((data & 0xffffL) << offset),
+	   TRUE);
 }
 
 /***************************************************************************\
@@ -398,7 +412,8 @@ ARMul_WriteByte (ARMul_State * state, ARMword address, ARMword data)
   offset = (((ARMword) state->bigendSig * 3) ^ (address & 3)) << 3;	/* bit offset into the word */
 
   PutWord (state, address,
-	   (temp & ~(0xffL << offset)) | ((data & 0xffL) << offset));
+	   (temp & ~(0xffL << offset)) | ((data & 0xffL) << offset),
+	   TRUE);
 }
 
 /***************************************************************************\
@@ -438,7 +453,7 @@ ARMword ARMul_SwapWord (ARMul_State * state, ARMword address, ARMword data)
 
   state->NumNcycles++;
 
-  PutWord (state, address, data);
+  PutWord (state, address, data, TRUE);
 
   return temp;
 }
@@ -462,7 +477,7 @@ ARMword ARMul_SwapByte (ARMul_State * state, ARMword address, ARMword data)
 \***************************************************************************/
 
 void
-ARMul_Icycles (ARMul_State * state, unsigned number, ARMword address)
+ARMul_Icycles (ARMul_State * state, unsigned number, ARMword address ATTRIBUTE_UNUSED)
 {
   state->NumIcycles += number;
   ARMul_CLEARABORT;
@@ -473,8 +488,35 @@ ARMul_Icycles (ARMul_State * state, unsigned number, ARMword address)
 \***************************************************************************/
 
 void
-ARMul_Ccycles (ARMul_State * state, unsigned number, ARMword address)
+ARMul_Ccycles (ARMul_State * state, unsigned number, ARMword address ATTRIBUTE_UNUSED)
 {
   state->NumCcycles += number;
   ARMul_CLEARABORT;
+}
+
+
+/* Read a byte.  Do not check for alignment or access errors.  */
+
+ARMword
+ARMul_SafeReadByte (ARMul_State * state, ARMword address)
+{
+  ARMword temp, offset;
+
+  temp = GetWord (state, address, FALSE);
+  offset = (((ARMword) state->bigendSig * 3) ^ (address & 3)) << 3;
+
+  return (temp >> offset & 0xffL);
+}
+
+void
+ARMul_SafeWriteByte (ARMul_State * state, ARMword address, ARMword data)
+{
+  ARMword temp, offset;
+
+  temp = GetWord (state, address, FALSE);
+  offset = (((ARMword) state->bigendSig * 3) ^ (address & 3)) << 3;
+
+  PutWord (state, address,
+	   (temp & ~(0xffL << offset)) | ((data & 0xffL) << offset),
+	   FALSE);
 }

@@ -1,6 +1,6 @@
 /* Definitions to make GDB run on a Sequent Symmetry under ptx, with
    Weitek 1167 and i387 support.
-   Copyright 1986, 1987, 1989, 1992, 1993, 1996
+   Copyright 1986, 1987, 1989, 1992, 1993, 1994, 1995
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -23,7 +23,7 @@
 /* Symmetry version by Jay Vosburgh (fubar@sequent.com) */
 
 #ifdef _SEQUENT_PTX4_
-#include "xm-sysv4.h"
+#include "config/xm-sysv4.h"
 #endif /* _SEQUENT_PTX4_ */
 
 /* This machine doesn't have the siginterrupt call.  */
@@ -35,8 +35,4 @@
 #define HAVE_TERMIOS
 #define USG
 
-#define NEED_POSIX_SETPGID
-
 #define USE_O_NOCTTY
-
-#define HOST_BYTE_ORDER LITTLE_ENDIAN

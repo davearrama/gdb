@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
+#include <time.h>
 
 #include "adp.h"
 #include "sys.h"
@@ -36,7 +37,6 @@ static int angelDebugLogEnable = 0;
 static void openLogFile ()
 {
   time_t t;
-  struct tm lt;
   
   if (angelDebugFilename == NULL || *angelDebugFilename =='\0')
     return;
@@ -53,7 +53,7 @@ static void openLogFile ()
       /* The following line is equivalent to: */
       /* setlinebuf (angelDebugLogFile); */
       setvbuf(angelDebugLogFile, (char *)NULL, _IOLBF, 0);
-#if defined(__CYGWIN32__) || defined(__CYGWIN__)
+#if defined(__CYGWIN__)
       setmode(fileno(angelDebugLogFile), O_TEXT);
 #endif
     }
@@ -66,7 +66,6 @@ static void openLogFile ()
 static void closeLogFile (void)
 {
   time_t t;
-  struct tm lt;
   
   if (!angelDebugLogFile)
     return;

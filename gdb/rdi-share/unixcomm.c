@@ -36,6 +36,11 @@
 #include <sys/types.h>
 #include <sys/time.h>
 
+#if defined (__FreeBSD__) || defined (__NetBSD__) || defined (__OpenBSD__) || defined (bsdi)
+#undef BSD
+#include <sys/ioctl.h>
+#endif
+
 #ifdef sun
 # include <sys/ioccom.h>
 # ifdef __svr4__
@@ -91,7 +96,15 @@
 #define PARPORT2   "/dev/par1"
 #endif
 
-#if defined (__FreeBSD__) || defined (__NetBSD__) || defined (__OpenBSD__) || defined (bsdi)
+#if defined(_WIN32) || defined (__CYGWIN__) 
+#define SERIAL_PREFIX "com"
+#define SERPORT1   "com1"
+#define SERPORT2   "com2"
+#define PARPORT1   "lpt1"
+#define PARPORT2   "lpt2"
+#endif
+
+#if !defined (SERIAL_PREFIX)
 #define SERIAL_PREFIX "/dev/cuaa"
 #define SERPORT1   "/dev/cuaa0"
 #define SERPORT2   "/dev/cuaa1"
@@ -99,14 +112,6 @@
 #define PARPORT2   "/dev/lpt1"
 #endif
 
-
-#if defined(_WIN32) || defined (__CYGWIN32__) 
-#define SERIAL_PREFIX "com"
-#define SERPORT1   "com1"
-#define SERPORT2   "com2"
-#define PARPORT1   "lpt1"
-#define PARPORT2   "lpt2"
-#endif
 
 
 
@@ -243,7 +248,7 @@ extern int Unix_IsSerialInUse(void)
 
 extern int Unix_OpenSerial(const char *name)
 {
-#if defined(BSD) || defined(__CYGWIN32__)
+#if defined(BSD) || defined(__CYGWIN__)
     serpfd = open(name, O_RDWR);
 #else
     serpfd = open(name, O_RDWR | O_NONBLOCK);
@@ -253,6 +258,13 @@ extern int Unix_OpenSerial(const char *name)
         perror("open");
         return -1;
     }
+#ifdef TIOCEXCL
+    if (ioctl(serpfd, TIOCEXCL) < 0) {
+	close(serpfd);
+        perror("ioctl: TIOCEXCL");
+        return -1;
+    }
+#endif
 
     return 0;
 }

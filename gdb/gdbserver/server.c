@@ -1,5 +1,6 @@
 /* Main code for remote server for GDB.
-   Copyright (C) 1989, 1993 Free Software Foundation, Inc.
+   Copyright 1989, 1993, 1994, 1995, 1997, 1998, 1999, 2000, 2002
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -22,36 +23,108 @@
 
 int cont_thread;
 int general_thread;
+int step_thread;
 int thread_from_wait;
 int old_thread_from_wait;
 int extended_protocol;
+int server_waiting;
+
 jmp_buf toplevel;
-int inferior_pid;
 
 static unsigned char
-start_inferior (argv, statusptr)
-     char *argv[];
-     char *statusptr;
+start_inferior (char *argv[], char *statusptr)
 {
-  inferior_pid = create_inferior (argv[0], argv);
-  fprintf (stderr, "Process %s created; pid = %d\n", argv[0], inferior_pid);
+  /* FIXME Check error? Or turn to void.  */
+  create_inferior (argv[0], argv);
+
+  fprintf (stderr, "Process %s created; pid = %d\n", argv[0],
+	   all_threads.head->id);
 
   /* Wait till we are at 1st instruction in program, return signal number.  */
-  return mywait (statusptr);
+  return mywait (statusptr, 0);
+}
+
+static int
+attach_inferior (int pid, char *statusptr, unsigned char *sigptr)
+{
+  /* myattach should return -1 if attaching is unsupported,
+     0 if it succeeded, and call error() otherwise.  */
+  if (myattach (pid) != 0)
+    return -1;
+
+  *sigptr = mywait (statusptr, 0);
+
+  return 0;
 }
 
 extern int remote_debug;
 
-int
-main (argc, argv)
-     int argc;
-     char *argv[];
+/* Handle all of the extended 'q' packets.  */
+void
+handle_query (char *own_buf)
 {
-  char ch, status, own_buf[PBUFSIZ], mem_buf[2000];
+  static struct inferior_list_entry *thread_ptr;
+
+  if (strcmp ("qSymbol::", own_buf) == 0)
+    {
+      if (the_target->look_up_symbols != NULL)
+	(*the_target->look_up_symbols) ();
+
+      strcpy (own_buf, "OK");
+      return;
+    }
+
+  if (strcmp ("qfThreadInfo", own_buf) == 0)
+    {
+      thread_ptr = all_threads.head;
+      sprintf (own_buf, "m%x", thread_ptr->id);
+      thread_ptr = thread_ptr->next;
+      return;
+    }
+  
+  if (strcmp ("qsThreadInfo", own_buf) == 0)
+    {
+      if (thread_ptr != NULL)
+	{
+	  sprintf (own_buf, "m%x", thread_ptr->id);
+	  thread_ptr = thread_ptr->next;
+	  return;
+	}
+      else
+	{
+	  sprintf (own_buf, "l");
+	  return;
+	}
+    }
+      
+  /* Otherwise we didn't know what packet it was.  Say we didn't
+     understand it.  */
+  own_buf[0] = 0;
+}
+
+static int attached;
+
+static void
+gdbserver_usage (void)
+{
+  error ("Usage:\tgdbserver COMM PROG [ARGS ...]\n"
+	 "\tgdbserver COMM --attach PID\n"
+	 "\n"
+	 "COMM may either be a tty device (for serial debugging), or \n"
+	 "HOST:PORT to listen for a TCP connection.\n");
+}
+
+int
+main (int argc, char *argv[])
+{
+  char ch, status, *own_buf, mem_buf[2000];
   int i = 0;
   unsigned char signal;
   unsigned int len;
   CORE_ADDR mem_addr;
+  int bad_attach;
+  int pid;
+  char *arg_end;
 
   if (setjmp (toplevel))
     {
@@ -59,15 +132,48 @@ main (argc, argv)
       exit (1);
     }
 
-  if (argc < 3)
-    error ("Usage: gdbserver tty prog [args ...]");
+  bad_attach = 0;
+  pid = 0;
+  attached = 0;
+  if (argc >= 3 && strcmp (argv[2], "--attach") == 0)
+    {
+      if (argc == 4
+	  && argv[3] != '\0'
+	  && (pid = strtoul (argv[3], &arg_end, 10)) != 0
+	  && *arg_end == '\0')
+	{
+	  ;
+	}
+      else
+	bad_attach = 1;
+    }
+
+  if (argc < 3 || bad_attach)
+    gdbserver_usage();
 
   initialize_low ();
 
-  /* Wait till we are at first instruction in program.  */
-  signal = start_inferior (&argv[2], &status);
+  own_buf = malloc (PBUFSIZ);
 
-  /* We are now stopped at the first instruction of the target process */
+  if (pid == 0)
+    {
+      /* Wait till we are at first instruction in program.  */
+      signal = start_inferior (&argv[2], &status);
+
+      /* We are now stopped at the first instruction of the target process */
+    }
+  else
+    {
+      switch (attach_inferior (pid, &status, &signal))
+	{
+	case -1:
+	  error ("Attaching not supported on this target");
+	  break;
+	default:
+	  attached = 1;
+	  break;
+	}
+    }
 
   while (1)
     {
@@ -82,12 +188,25 @@ main (argc, argv)
 	  ch = own_buf[i++];
 	  switch (ch)
 	    {
+	    case 'q':
+	      handle_query (own_buf);
+	      break;
 	    case 'd':
 	      remote_debug = !remote_debug;
 	      break;
 	    case '!':
-	      extended_protocol = 1;
-	      prepare_resume_reply (own_buf, status, signal);
+	      if (attached == 0)
+		{
+		  extended_protocol = 1;
+		  prepare_resume_reply (own_buf, status, signal);
+		}
+	      else
+		{
+		  /* We can not use the extended protocol if we are
+		     attached, because we can not restart the running
+		     program.  So return unrecognized.  */
+		  own_buf[0] = '\0';
+		}
 	      break;
 	    case '?':
 	      prepare_resume_reply (own_buf, status, signal);
@@ -98,10 +217,14 @@ main (argc, argv)
 		case 'g':
 		  general_thread = strtol (&own_buf[2], NULL, 16);
 		  write_ok (own_buf);
-		  fetch_inferior_registers (0);
+		  set_desired_inferior (1);
 		  break;
 		case 'c':
 		  cont_thread = strtol (&own_buf[2], NULL, 16);
+		  write_ok (own_buf);
+		  break;
+		case 's':
+		  step_thread = strtol (&own_buf[2], NULL, 16);
 		  write_ok (own_buf);
 		  break;
 		default:
@@ -112,11 +235,12 @@ main (argc, argv)
 		}
 	      break;
 	    case 'g':
-	      convert_int_to_ascii (registers, own_buf, REGISTER_BYTES);
+	      set_desired_inferior (1);
+	      registers_to_string (own_buf);
 	      break;
 	    case 'G':
-	      convert_ascii_to_int (&own_buf[1], registers, REGISTER_BYTES);
-	      store_inferior_registers (-1);
+	      set_desired_inferior (1);
+	      registers_from_string (&own_buf[1]);
 	      write_ok (own_buf);
 	      break;
 	    case 'm':
@@ -133,24 +257,36 @@ main (argc, argv)
 	      break;
 	    case 'C':
 	      convert_ascii_to_int (own_buf + 1, &sig, 1);
-	      myresume (0, sig);
-	      signal = mywait (&status);
+	      if (target_signal_to_host_p (sig))
+		signal = target_signal_to_host (sig);
+	      else
+		signal = 0;
+	      set_desired_inferior (0);
+	      myresume (0, signal);
+	      signal = mywait (&status, 1);
 	      prepare_resume_reply (own_buf, status, signal);
 	      break;
 	    case 'S':
 	      convert_ascii_to_int (own_buf + 1, &sig, 1);
-	      myresume (1, sig);
-	      signal = mywait (&status);
+	      if (target_signal_to_host_p (sig))
+		signal = target_signal_to_host (sig);
+	      else
+		signal = 0;
+	      set_desired_inferior (0);
+	      myresume (1, signal);
+	      signal = mywait (&status, 1);
 	      prepare_resume_reply (own_buf, status, signal);
 	      break;
 	    case 'c':
+	      set_desired_inferior (0);
 	      myresume (0, 0);
-	      signal = mywait (&status);
+	      signal = mywait (&status, 1);
 	      prepare_resume_reply (own_buf, status, signal);
 	      break;
 	    case 's':
+	      set_desired_inferior (0);
 	      myresume (1, 0);
-	      signal = mywait (&status);
+	      signal = mywait (&status, 1);
 	      prepare_resume_reply (own_buf, status, signal);
 	      break;
 	    case 'k':
@@ -253,8 +389,8 @@ main (argc, argv)
 	}
       else
 	{
-	  fprintf (stderr, "Remote side has terminated connection.  GDBserver will reopen the connection.\n");
-
+	  fprintf (stderr, "Remote side has terminated connection.  "
+			   "GDBserver will reopen the connection.\n");
 	  remote_close ();
 	}
     }

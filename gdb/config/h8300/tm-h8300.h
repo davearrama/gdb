@@ -1,5 +1,6 @@
 /* Parameters for execution on a H8/300 series machine.
-   Copyright 1992, 1993 Free Software Foundation, Inc.
+   Copyright 1992, 1993, 1994, 1996, 1998, 1999, 2000
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,6 +19,8 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
+#include "regcache.h"
+
 /* Contributed by Steve Chamberlain sac@cygnus.com */
 
 struct frame_info;
@@ -25,7 +28,12 @@ struct frame_saved_regs;
 struct value;
 struct type;
 
-/* 1 if debugging H8/300H application */
+/* 1 if debugging H8/300H application */ 
+
+/* NOTE: ezannoni 2000-07-18: these variables are part of sim, defined
+   in sim/h8300/compile.c.  They really should not be used this
+   way. Because of this we cannot get rid of the macro
+   GDB_TARGET_IS_H8300 in remote-e7000.c */
 extern int h8300hmode;
 extern int h8300smode;
 
@@ -50,9 +58,6 @@ extern int h8300smode;
 
 extern void h8300_init_extra_frame_info ();
 
-#define IEEE_FLOAT
-/* Define the bit, byte, and word ordering of the machine.  */
-#define TARGET_BYTE_ORDER BIG_ENDIAN
 #undef TARGET_INT_BIT
 #define TARGET_INT_BIT  16
 #undef TARGET_LONG_BIT
@@ -95,7 +100,7 @@ extern CORE_ADDR h8300_skip_prologue ();
 
 #define REGISTER_SIZE 4
 
-#define NUM_REGS 13
+#define NUM_REGS 14
 
 #define REGISTER_BYTES (NUM_REGS * 4)
 
@@ -132,7 +137,7 @@ extern CORE_ADDR h8300_skip_prologue ();
    Entries beyond the first NUM_REGS are ignored.  */
 
 #define REGISTER_NAMES \
-  {"r0", "r1", "r2", "r3", "r4", "r5", "r6", "sp", "ccr","pc","cycles","tick","inst"}
+  {"r0", "r1", "r2", "r3", "r4", "r5", "r6", "sp", "ccr","pc","cycles","tick","inst",""}
 
 /* An array of names of registers. */
 
@@ -152,6 +157,7 @@ extern char **h8300_register_names;
 #define SP_REGNUM      7	/* Contains address of top of stack */
 #define CCR_REGNUM     8	/* Contains processor status */
 #define PC_REGNUM      9	/* Contains program counter */
+#define EXR_REGNUM     11	/* Contains processor status */
 
 /* Extract from an array REGBUF containing the (raw) register state
    a function return value of type TYPE, and copy that, in virtual format,
@@ -159,8 +165,8 @@ extern char **h8300_register_names;
 
 /* FIXME: Won't work with both h8/300's.  */
 
-extern void h8300_extract_return_value PARAMS ((struct type *, char *, char *));
-#define EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
+extern void h8300_extract_return_value (struct type *, char *, char *);
+#define DEPRECATED_EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
     h8300_extract_return_value (TYPE, (char *)(REGBUF), (char *)(VALBUF))
 
 /* Write into appropriate registers a function return value
@@ -168,7 +174,7 @@ extern void h8300_extract_return_value PARAMS ((struct type *, char *, char *));
    in d0/d1.  */
 /* FIXME: Won't work with both h8/300's.  */
 
-extern void h8300_store_return_value PARAMS ((struct type *, char *));
+extern void h8300_store_return_value (struct type *, char *);
 #define STORE_RETURN_VALUE(TYPE,VALBUF) \
     h8300_store_return_value(TYPE, (char *) (VALBUF))
 
@@ -182,7 +188,7 @@ extern void h8300_store_return_value PARAMS ((struct type *, char *));
    the address in which a function should return its structure value,
    as a CORE_ADDR (or an expression that can be used as one).  */
 
-#define EXTRACT_STRUCT_VALUE_ADDRESS(REGBUF) \
+#define DEPRECATED_EXTRACT_STRUCT_VALUE_ADDRESS(REGBUF) \
      extract_address (REGBUF + REGISTER_BYTE (0), \
 		      REGISTER_RAW_SIZE (0))
 
@@ -196,7 +202,7 @@ extern void h8300_store_return_value PARAMS ((struct type *, char *));
    it means the given frame is the outermost one and has no caller.  */
 
 #define FRAME_CHAIN(FRAME) h8300_frame_chain(FRAME)
-CORE_ADDR h8300_frame_chain PARAMS ((struct frame_info *));
+CORE_ADDR h8300_frame_chain (struct frame_info *);
 
 /* In the case of the H8/300, the frame's nominal address
    is the address of a 2-byte word containing the calling frame's address.  */
@@ -227,10 +233,13 @@ CORE_ADDR h8300_frame_chain PARAMS ((struct frame_info *));
  */
 
 #define FRAME_SAVED_PC(FRAME) h8300_frame_saved_pc(FRAME)
+extern CORE_ADDR h8300_frame_saved_pc (struct frame_info *);
 
-#define FRAME_ARGS_ADDRESS(fi) frame_args_address(fi)
+#define FRAME_ARGS_ADDRESS(fi) h8300_frame_args_address(fi)
+extern CORE_ADDR h8300_frame_args_address (struct frame_info *);
 
-#define FRAME_LOCALS_ADDRESS(fi) frame_locals_address(fi);
+#define FRAME_LOCALS_ADDRESS(fi) h8300_frame_locals_address(fi)
+extern CORE_ADDR h8300_frame_locals_address (struct frame_info *);
 
 /* Set VAL to the number of args passed to frame described by FI.
    Can set VAL to -1, meaning no way to tell.  */
@@ -252,16 +261,19 @@ CORE_ADDR h8300_frame_chain PARAMS ((struct frame_info *));
 
 #define FRAME_FIND_SAVED_REGS(frame_info, frame_saved_regs)	    \
    h8300_frame_find_saved_regs(frame_info, &(frame_saved_regs))
+extern void h8300_frame_find_saved_regs (struct frame_info *,
+					 struct frame_saved_regs *);
 
 
 typedef unsigned short INSN_WORD;
 
 
-#define	PRINT_REGISTER_HOOK(regno) print_register_hook(regno)
+#define	PRINT_REGISTER_HOOK(regno) h8300_print_register_hook(regno)
+extern void h8300_print_register_hook (int);
 
 #define GDB_TARGET_IS_H8300
 
-#define NUM_REALREGS 10
+#define NUM_REALREGS (h8300smode?11:10)
 #define NOP { 0x01, 0x80}	/* A sleep insn */
 
 #define BELIEVE_PCC_PROMOTION 1
@@ -278,12 +290,13 @@ typedef unsigned short INSN_WORD;
 #define CALL_DUMMY_START_OFFSET		(0)
 #define CALL_DUMMY_BREAKPOINT_OFFSET	(0)
 
-extern CORE_ADDR h8300_push_arguments PARAMS ((int nargs,
-					       struct value ** args,
-					       CORE_ADDR sp,
-					       unsigned char struct_return,
-					       CORE_ADDR struct_addr));
-extern CORE_ADDR h8300_push_return_address PARAMS ((CORE_ADDR, CORE_ADDR));
+extern CORE_ADDR h8300_push_arguments (int nargs,
+				       struct value **args,
+				       CORE_ADDR sp,
+				       unsigned char struct_return,
+				       CORE_ADDR struct_addr);
+extern CORE_ADDR h8300_push_return_address (CORE_ADDR, CORE_ADDR);
+extern void h8300_pop_frame (void);
 
 #define PC_IN_CALL_DUMMY(PC, SP, FP)	generic_pc_in_call_dummy (PC, SP, FP)
 #define FIX_CALL_DUMMY(DUMMY, START_SP, FUNADDR, NARGS, ARGS, TYPE, GCCP)

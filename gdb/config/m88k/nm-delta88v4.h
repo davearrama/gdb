@@ -1,5 +1,6 @@
 /* Native machine description for Motorola Delta 88 box, for GDB.
-   Copyright 1986, 1987, 1988, 1989, 1990, 1991 Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1993
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,4 +20,4 @@
    Boston, MA 02111-1307, USA.  */
 
 #include "m88k/nm-m88k.h"
-#include "nm-sysv4.h"
+#include "config/nm-sysv4.h"

@@ -1,5 +1,5 @@
 /* Target-specific definition for the Mitsubishi D30V
-   Copyright (C) 1997 Free Software Foundation, Inc.
+   Copyright 1997, 1998, 1999, 2000 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,9 +21,7 @@
 #ifndef TM_D30V_H
 #define TM_D30V_H
 
-/* Define the bit, byte, and word ordering of the machine.  */
-
-#define TARGET_BYTE_ORDER	BIG_ENDIAN
+#include "regcache.h"
 
 /* Offset from address of function to start of its code.
    Zero on most machines.  */
@@ -46,7 +44,7 @@ struct value;
 /* Advance PC across any function entry prologue instructions
    to reach some "real" code.  */
 
-extern CORE_ADDR d30v_skip_prologue PARAMS ((CORE_ADDR));
+extern CORE_ADDR d30v_skip_prologue (CORE_ADDR);
 #define SKIP_PROLOGUE(ip) (d30v_skip_prologue (ip))
 
 
@@ -165,7 +163,7 @@ extern CORE_ADDR d30v_skip_prologue PARAMS ((CORE_ADDR));
 
 #define CANNOT_STORE_REGISTER(regno) ((regno) == R0_REGNUM)
 
-void d30v_do_registers_info PARAMS ((int regnum, int fpregs));
+void d30v_do_registers_info (int regnum, int fpregs);
 
 #define DO_REGISTERS_INFO d30v_do_registers_info
 
@@ -190,7 +188,7 @@ void d30v_do_registers_info PARAMS ((int regnum, int fpregs));
 /* Extract from an array REGBUF containing the (raw) register state
    the address in which a function should return its structure value,
    as a CORE_ADDR (or an expression that can be used as one).  */
-#define EXTRACT_STRUCT_VALUE_ADDRESS(REGBUF) (((CORE_ADDR *)(REGBUF))[2])
+#define DEPRECATED_EXTRACT_STRUCT_VALUE_ADDRESS(REGBUF) (((CORE_ADDR *)(REGBUF))[2])
 
 
 /* Define other aspects of the stack frame. 
@@ -206,7 +204,7 @@ void d30v_do_registers_info PARAMS ((int regnum, int fpregs));
 #define INIT_EXTRA_FRAME_INFO(fromleaf, fi) \
     d30v_init_extra_frame_info(fromleaf, fi)
 
-extern void d30v_init_extra_frame_info PARAMS ((int fromleaf, struct frame_info * fi));
+extern void d30v_init_extra_frame_info (int fromleaf, struct frame_info *fi);
 
 /* A macro that tells us whether the function invocation represented
    by FI does not have a frame on the stack associated with it.  If it
@@ -217,7 +215,7 @@ extern void d30v_init_extra_frame_info PARAMS ((int fromleaf, struct frame_info 
 
 CORE_ADDR d30v_frame_chain (struct frame_info *frame);
 #define FRAME_CHAIN(FRAME)       d30v_frame_chain(FRAME)
-extern int d30v_frame_chain_valid PARAMS ((CORE_ADDR, struct frame_info *));
+extern int d30v_frame_chain_valid (CORE_ADDR, struct frame_info *);
 #define FRAME_CHAIN_VALID(chain, thisframe) d30v_frame_chain_valid (chain, thisframe)
 #define FRAME_SAVED_PC(FRAME)    ((FRAME)->return_pc)
 #define FRAME_ARGS_ADDRESS(fi)   (fi)->frame
@@ -253,7 +251,8 @@ void d30v_init_frame_pc (int fromleaf, struct frame_info *prev);
 #define FRAME_FIND_SAVED_REGS(frame_info, frame_saved_regs)	    \
    d30v_frame_find_saved_regs(frame_info, &(frame_saved_regs))
 
-extern void d30v_frame_find_saved_regs PARAMS ((struct frame_info *, struct frame_saved_regs *));
+extern void d30v_frame_find_saved_regs (struct frame_info *,
+					struct frame_saved_regs *);
 
 /* DUMMY FRAMES.  Need these to support inferior function calls.
    They work like this on D30V:
@@ -271,7 +270,7 @@ extern void d30v_frame_find_saved_regs PARAMS ((struct frame_info *, struct fram
 #define CALL_DUMMY_LOCATION	AT_ENTRY_POINT
 #define CALL_DUMMY_BREAKPOINT_OFFSET (0)
 
-extern CORE_ADDR d30v_call_dummy_address PARAMS ((void));
+extern CORE_ADDR d30v_call_dummy_address (void);
 #define CALL_DUMMY_ADDRESS() d30v_call_dummy_address()
 
 #define FIX_CALL_DUMMY(dummyname, pc, fun, nargs, args, type, gcc_p) \
@@ -279,28 +278,28 @@ sp = d30v_fix_call_dummy (dummyname, pc, fun, nargs, args, type, gcc_p)
 
 #define PC_IN_CALL_DUMMY(pc, sp, frame_address)	( pc == IMEM_START + 4 )
 
-extern CORE_ADDR d30v_fix_call_dummy PARAMS ((char *, CORE_ADDR, CORE_ADDR,
-					      int, struct value **,
-					      struct type *, int));
+extern CORE_ADDR d30v_fix_call_dummy (char *, CORE_ADDR, CORE_ADDR,
+				      int, struct value **,
+				      struct type *, int);
 #define PUSH_ARGUMENTS(nargs, args, sp, struct_return, struct_addr) \
   (d30v_push_arguments((nargs), (args), (sp), (struct_return), (struct_addr)))
-extern CORE_ADDR d30v_push_arguments PARAMS ((int, struct value **, CORE_ADDR, int, CORE_ADDR));
+extern CORE_ADDR d30v_push_arguments (int, struct value **, CORE_ADDR, int,
+				      CORE_ADDR);
 
 
 /* Extract from an array REGBUF containing the (raw) register state
    a function return value of type TYPE, and copy that, in virtual format,
    into VALBUF.  */
 
-#define EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
+#define DEPRECATED_EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
 d30v_extract_return_value(TYPE, REGBUF, VALBUF)
-extern void
-d30v_extract_return_value PARAMS ((struct type *, char *, char *));
+extern void d30v_extract_return_value (struct type *, char *, char *);
 
 
 /* Discard from the stack the innermost frame,
    restoring all saved registers.  */
 #define POP_FRAME d30v_pop_frame();
-extern void d30v_pop_frame PARAMS ((void));
+extern void d30v_pop_frame (void);
 
 #define REGISTER_SIZE 4
 

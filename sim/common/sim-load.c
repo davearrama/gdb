@@ -36,8 +36,8 @@ along with this program; if not, write to the Free Software Foundation, Inc.,
 #include "bfd.h"
 #include "sim-utils.h"
 
-#include "callback.h"
-#include "remote-sim.h"
+#include "gdb/callback.h"
+#include "gdb/remote-sim.h"
 
 static void eprintf PARAMS ((host_callback *, const char *, ...));
 static void xprintf PARAMS ((host_callback *, const char *, ...));
@@ -165,6 +165,8 @@ sim_load_file (sd, myname, callback, prog, prog_bfd, verbose_p, lma_p, do_write)
       xprintf (callback, "\n");
       report_transfer_performance (callback, data_count, start_time, end_time);
     }
+
+  bfd_cache_close (result_bfd);
 
   return result_bfd;
 }

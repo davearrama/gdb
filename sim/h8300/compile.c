@@ -30,11 +30,10 @@
 #ifdef HAVE_SYS_PARAM_H
 #include <sys/param.h>
 #endif
-#include "wait.h"
 #include "ansidecl.h"
 #include "bfd.h"
-#include "callback.h"
-#include "remote-sim.h"
+#include "gdb/callback.h"
+#include "gdb/remote-sim.h"
 
 #ifndef SIGTRAP
 # define SIGTRAP 5
@@ -53,9 +52,9 @@ static char *myname;
    by gdb.  */
 void sim_set_simcache_size PARAMS ((int));
 
-#define X(op, size)  op*4+size
+#define X(op, size)  op * 4 + size
 
-#define SP (h8300hmode ? SL:SW)
+#define SP (h8300hmode ? SL : SW)
 #define SB 0
 #define SW 1
 #define SL 2
@@ -68,30 +67,44 @@ void sim_set_simcache_size PARAMS ((int));
 #define OP_CCR 7
 #define OP_IMM 8
 #define OP_ABS 10
+#define OP_EXR 11
 #define h8_opcodes ops
 #define DEFINE_TABLE
 #include "opcode/h8300.h"
 
 #include "inst.h"
 
-/* The rate at which to call the host's poll_quit callback. */
+/* The rate at which to call the host's poll_quit callback.  */
 
 #define POLL_QUIT_INTERVAL 0x80000
 
 #define LOW_BYTE(x) ((x) & 0xff)
-#define HIGH_BYTE(x) (((x)>>8) & 0xff)
-#define P(X,Y) ((X<<8) | Y)
+#define HIGH_BYTE(x) (((x) >> 8) & 0xff)
+#define P(X,Y) ((X << 8) | Y)
 
-#define BUILDSR()   cpu.ccr = (N << 3) | (Z << 2) | (V<<1) | C;
+#define BUILDSR()   cpu.ccr = (I << 7) | (UI << 6)| (H<<5) | (U<<4) | \
+                              (N << 3) | (Z << 2) | (V<<1) | C;
+
+#define BUILDEXR()	    \
+  if (h8300smode) cpu.exr = (trace<<7) | intMask;
 
 #define GETSR()		    \
   c = (cpu.ccr >> 0) & 1;\
   v = (cpu.ccr >> 1) & 1;\
   nz = !((cpu.ccr >> 2) & 1);\
-  n = (cpu.ccr >> 3) & 1;
+  n = (cpu.ccr >> 3) & 1;\
+  u = (cpu.ccr >> 4) & 1;\
+  h = (cpu.ccr >> 5) & 1;\
+  ui = ((cpu.ccr >> 6) & 1);\
+  intMaskBit = (cpu.ccr >> 7) & 1;
+
+#define GETEXR()	    \
+  if (h8300smode) { \
+    trace = (cpu.exr >> 7) & 1;\
+    intMask = cpu.exr & 7; }
 
 #ifdef __CHAR_IS_SIGNED__
-#define SEXTCHAR(x) ((char)(x))
+#define SEXTCHAR(x) ((char) (x))
 #endif
 
 #ifndef SEXTCHAR
@@ -100,7 +113,7 @@ void sim_set_simcache_size PARAMS ((int));
 
 #define UEXTCHAR(x) ((x) & 0xff)
 #define UEXTSHORT(x) ((x) & 0xffff)
-#define SEXTSHORT(x) ((short)(x))
+#define SEXTSHORT(x) ((short) (x))
 
 static cpu_state_type cpu;
 
@@ -109,14 +122,10 @@ int h8300smode = 0;
 
 static int memory_size;
 
-
 static int
 get_now ()
 {
-#ifndef WIN32
-  return time (0);
-#endif
-  return 0;
+  return time (0);	/* WinXX HAS UNIX like 'time', so why not using it? */
 }
 
 static int
@@ -124,7 +133,6 @@ now_persec ()
 {
   return 1;
 }
-
 
 static int
 bitfrom (x)
@@ -142,8 +150,7 @@ bitfrom (x)
     }
 }
 
-static
-unsigned int
+static unsigned int
 lvalue (x, rn)
 {
   switch (x / 4)
@@ -156,10 +163,10 @@ lvalue (x, rn)
       return X (OP_REG, SP);
 
     case OP_MEM:
-
       return X (OP_MEM, SP);
+
     default:
-      abort ();
+      abort (); /* ?? May be something more usefull? */
     }
 }
 
@@ -174,20 +181,19 @@ decode (addr, data, dst)
   int rd = 0;
   int rdisp = 0;
   int abs = 0;
-  int plen = 0;
   int bit = 0;
-
-  struct h8_opcode *q = h8_opcodes;
+  int plen = 0;
+  struct h8_opcode *q;
   int size = 0;
+
   dst->dst.type = -1;
   dst->src.type = -1;
-  /* Find the exact opcode/arg combo */
-  while (q->name)
-    {
-      op_type *nib;
-      unsigned int len = 0;
 
-      nib = q->data.nib;
+  /* Find the exact opcode/arg combo.  */
+  for (q = h8_opcodes; q->name; q++)
+    {
+      op_type *nib = q->data.nib;
+      unsigned int len = 0;
 
       while (1)
 	{
@@ -207,40 +213,40 @@ decode (addr, data, dst)
 		{
 		  if (!(((int) thisnib & 0x8) != 0))
 		    goto fail;
-		  looking_for = (op_type) ((int) looking_for & ~(int)
-					   B31);
+
+		  looking_for = (op_type) ((int) looking_for & ~(int) B31);
 		  thisnib &= 0x7;
 		}
+
 	      if ((int) looking_for & (int) B30)
 		{
 		  if (!(((int) thisnib & 0x8) == 0))
 		    goto fail;
+
 		  looking_for = (op_type) ((int) looking_for & ~(int) B30);
 		}
+
 	      if (looking_for & DBIT)
 		{
-		  if ((looking_for & 5) != (thisnib & 5))
+		  /* Exclude adds/subs by looking at bit 0 and 2, and
+                     make sure the operand size, either w or l,
+                     matches by looking at bit 1.  */
+		  if ((looking_for & 7) != (thisnib & 7))
 		    goto fail;
+
 		  abs = (thisnib & 0x8) ? 2 : 1;
 		}
 	      else if (looking_for & (REG | IND | INC | DEC))
 		{
 		  if (looking_for & REG)
 		    {
-		      /*
-		       * Can work out size from the
-		       * register
-		       */
+		      /* Can work out size from the register.  */
 		      size = bitfrom (looking_for);
 		    }
 		  if (looking_for & SRC)
-		    {
-		      rs = thisnib;
-		    }
+		    rs = thisnib;
 		  else
-		    {
-		      rd = thisnib;
-		    }
+		    rd = thisnib;
 		}
 	      else if (looking_for & L_16)
 		{
@@ -253,10 +259,7 @@ decode (addr, data, dst)
 		}
 	      else if (looking_for & ABSJMP)
 		{
-		  abs =
-		    (data[1] << 16)
-		    | (data[2] << 8)
-		    | (data[3]);
+		  abs = (data[1] << 16) | (data[2] << 8) | (data[3]);
 		}
 	      else if (looking_for & MEMIND)
 		{
@@ -265,6 +268,7 @@ decode (addr, data, dst)
 	      else if (looking_for & L_32)
 		{
 		  int i = len >> 1;
+
 		  abs = (data[i] << 24)
 		    | (data[i + 1] << 16)
 		    | (data[i + 2] << 8)
@@ -275,12 +279,13 @@ decode (addr, data, dst)
 	      else if (looking_for & L_24)
 		{
 		  int i = len >> 1;
+
 		  abs = (data[i] << 16) | (data[i + 1] << 8) | (data[i + 2]);
 		  plen = 24;
 		}
 	      else if (looking_for & IGNORE)
 		{
-		  /* nothing to do */
+		  ;
 		}
 	      else if (looking_for & DISPREG)
 		{
@@ -299,6 +304,8 @@ decode (addr, data, dst)
 		    case 0:
 		      abs = 1;
 		      break;
+		    default:
+		      goto fail;
 		    }
 		}
 	      else if (looking_for & L_8)
@@ -313,9 +320,9 @@ decode (addr, data, dst)
 		    {
 		      plen = 8;
 		      abs = h8300hmode ? ~0xff0000ff : ~0xffff00ff;
-		      abs |= data[len >> 1] & 0xff ;
+		      abs |= data[len >> 1] & 0xff;
 		    }
-		   else
+		  else
 		    {
 		      abs = data[len >> 1] & 0xff;
 		    }
@@ -330,7 +337,7 @@ decode (addr, data, dst)
 		{
 		  dst->op = q;
 
-		  /* Fill in the args */
+		  /* Fill in the args.  */
 		  {
 		    op_type *args = q->args.nib;
 		    int hadone = 0;
@@ -342,15 +349,11 @@ decode (addr, data, dst)
 			ea_type *p;
 
 			if (x & DST)
-			  {
-			    p = &(dst->dst);
-			  }
+			  p = &(dst->dst);
 			else
-			  {
-			    p = &(dst->src);
-			  }
+			  p = &(dst->src);
 
-			if (x & (L_3))
+			if (x & L_3)
 			  {
 			    p->type = X (OP_IMM, size);
 			    p->literal = bit;
@@ -362,8 +365,8 @@ decode (addr, data, dst)
 			  }
 			else if (x & REG)
 			  {
-			    /* Reset the size, some
-			       ops (like mul) have two sizes */
+			    /* Reset the size.
+			       Some ops (like mul) have two sizes.  */
 
 			    size = bitfrom (x);
 			    p->type = X (OP_REG, size);
@@ -418,6 +421,10 @@ decode (addr, data, dst)
 			  {
 			    p->type = OP_CCR;
 			  }
+			else if (x & EXR)
+			  {
+			    p->type = OP_EXR;
+			  }
 			else
 			  printf ("Hmmmm %x", x);
 
@@ -425,12 +432,9 @@ decode (addr, data, dst)
 		      }
 		  }
 
-		  /*
-		     * But a jmp or a jsr gets
-		     * automagically lvalued, since we
-		     * branch to their address not their
-		     * contents
-		   */
+		  /* But a jmp or a jsr gets automagically lvalued,
+		     since we branch to their address not their
+		     contents.  */
 		  if (q->how == O (O_JSR, SB)
 		      || q->how == O (O_JMP, SB))
 		    {
@@ -443,7 +447,7 @@ decode (addr, data, dst)
 		  dst->opcode = q->how;
 		  dst->cycles = q->time;
 
-		  /* And a jsr to 0xc4 is turned into a magic trap */
+		  /* And a jsr to 0xc4 is turned into a magic trap.  */
 
 		  if (dst->opcode == O (O_JSR, SB))
 		    {
@@ -457,9 +461,7 @@ decode (addr, data, dst)
 		  return;
 		}
 	      else
-		{
-		  printf ("Dont understand %x \n", looking_for);
-		}
+		printf ("Don't understand %x \n", looking_for);
 	    }
 
 	  len++;
@@ -467,20 +469,19 @@ decode (addr, data, dst)
 	}
 
     fail:
-      q++;
+      ;
     }
 
+  /* Fell off the end.  */
   dst->opcode = O (O_ILL, SB);
 }
-
 
 static void
 compile (pc)
 {
   int idx;
 
-  /* find the next cache entry to use */
-
+  /* Find the next cache entry to use.  */
   idx = cpu.cache_top + 1;
   cpu.compiles++;
   if (idx >= cpu.csize)
@@ -489,16 +490,16 @@ compile (pc)
     }
   cpu.cache_top = idx;
 
-  /* Throw away its old meaning */
+  /* Throw away its old meaning.  */
   cpu.cache_idx[cpu.cache[idx].oldpc] = 0;
 
-  /* set to new address */
+  /* Set to new address.  */
   cpu.cache[idx].oldpc = pc;
 
-  /* fill in instruction info */
+  /* Fill in instruction info.  */
   decode (pc, cpu.memory + pc, cpu.cache + idx);
 
-  /* point to new cache entry */
+  /* Point to new cache entry.  */
   cpu.cache_idx[pc] = idx;
 }
 
@@ -622,14 +623,13 @@ fetch (arg, n)
       return t;
 
     default:
-      abort ();
+      abort (); /* ?? May be something more usefull? */
 
     }
 }
 
 
-static
-void
+static void
 store (arg, n)
      ea_type *arg;
      int n;
@@ -705,8 +705,7 @@ static union
 
 littleendian;
 
-static
-void
+static void
 init_pointers ()
 {
   static int init;
@@ -718,7 +717,9 @@ init_pointers ()
       init = 1;
       littleendian.i = 1;
 
-      if (h8300hmode)
+      if (h8300smode)
+	memory_size = H8300S_MSIZE;
+      else if (h8300hmode)
 	memory_size = H8300H_MSIZE;
       else
 	memory_size = H8300_MSIZE;
@@ -726,7 +727,7 @@ init_pointers ()
       cpu.cache_idx = (unsigned short *) calloc (sizeof (short), memory_size);
       cpu.eightbit = (unsigned char *) calloc (sizeof (char), 256);
 
-      /* `msize' must be a power of two */
+      /* `msize' must be a power of two.  */
       if ((memory_size & (memory_size - 1)) != 0)
 	abort ();
       cpu.mask = memory_size - 1;
@@ -773,7 +774,7 @@ init_pointers ()
 
       lreg[8] = &cpu.regs[8];
 
-      /* initialize the seg registers */
+      /* Initialize the seg registers.  */
       if (!cpu.cache)
 	sim_set_simcache_size (CSIZE);
     }
@@ -794,6 +795,10 @@ control_c (sig, code, scp, addr)
 #define Z (nz == 0)
 #define V (v != 0)
 #define N (n != 0)
+#define U (u != 0)
+#define H (h != 0)
+#define UI (ui != 0)
+#define I (intMaskBit != 0)
 
 static int
 mop (code, bsize, sign)
@@ -839,12 +844,13 @@ mop (code, bsize, sign)
     {
       SET_L_REG (code->dst.reg, result);
     }
-/*  return ((n==1) << 1) | (nz==1); */
-
+#if 0
+  return ((n == 1) << 1) | (nz == 1);
+#endif
 }
 
 #define ONOT(name, how) \
-case O(name, SB):				\
+case O (name, SB):				\
 {						\
   int t;					\
   int hm = 0x80;				\
@@ -852,7 +858,7 @@ case O(name, SB):				\
   how; 						\
   goto shift8;					\
 } 						\
-case O(name, SW):				\
+case O (name, SW):				\
 { 						\
   int t;					\
   int hm = 0x8000;				\
@@ -860,7 +866,7 @@ case O(name, SW):				\
   how; 						\
   goto shift16;					\
 } 						\
-case O(name, SL):				\
+case O (name, SL):				\
 {						\
   int t;					\
   int hm = 0x80000000; 				\
@@ -870,7 +876,7 @@ case O(name, SL):				\
 }
 
 #define OSHIFTS(name, how1, how2) \
-case O(name, SB):				\
+case O (name, SB):				\
 {						\
   int t;					\
   int hm = 0x80;				\
@@ -885,7 +891,7 @@ case O(name, SB):				\
     }						\
   goto shift8;					\
 } 						\
-case O(name, SW):				\
+case O (name, SW):				\
 { 						\
   int t;					\
   int hm = 0x8000;				\
@@ -900,7 +906,7 @@ case O(name, SW):				\
     }						\
   goto shift16;					\
 } 						\
-case O(name, SL):				\
+case O (name, SL):				\
 {						\
   int t;					\
   int hm = 0x80000000; 				\
@@ -917,14 +923,14 @@ case O(name, SL):				\
 }
 
 #define OBITOP(name,f, s, op) 			\
-case  O(name, SB):				\
+case O (name, SB):				\
 {						\
   int m;					\
   int b; 					\
   if (f) ea = fetch (&code->dst);		\
-  m=1<< fetch(&code->src);			\
+  m=1<< fetch (&code->src);			\
   op;						\
-  if(s) store (&code->dst,ea); goto next;	\
+  if (s) store (&code->dst,ea); goto next;	\
 }
 
 int
@@ -935,6 +941,28 @@ sim_stop (sd)
   cpu.exception = SIGINT;
   return 1;
 }
+
+#define R0_REGNUM	0
+#define R1_REGNUM	1
+#define R2_REGNUM	2
+#define R3_REGNUM	3
+#define R4_REGNUM	4
+#define R5_REGNUM	5
+#define R6_REGNUM	6
+#define R7_REGNUM	7
+
+#define SP_REGNUM       R7_REGNUM	/* Contains address of top of stack */
+#define FP_REGNUM       R6_REGNUM	/* Contains address of executing
+					 * stack frame */
+
+#define CCR_REGNUM      8	/* Contains processor status */
+#define PC_REGNUM       9	/* Contains program counter */
+
+#define CYCLE_REGNUM    10
+
+#define EXR_REGNUM	11
+#define INST_REGNUM     12
+#define TICK_REGNUM     13
 
 void
 sim_resume (sd, step, siggnal)
@@ -952,7 +980,8 @@ sim_resume (sd, step, siggnal)
   int ea;
   int bit;
   int pc;
-  int c, nz, v, n;
+  int c, nz, v, n, u, h, ui, intMaskBit;
+  int trace, intMask;
   int oldmask;
   init_pointers ();
 
@@ -976,6 +1005,8 @@ sim_resume (sd, step, siggnal)
     abort ();
 
   GETSR ();
+  GETEXR ();
+
   oldmask = cpu.mask;
   if (!h8300hmode)
     cpu.mask = 0xffff;
@@ -990,15 +1021,15 @@ sim_resume (sd, step, siggnal)
 
 
 #define ALUOP(STORE, NAME, HOW) \
-    case O(NAME,SB):  HOW; if(STORE)goto alu8;else goto just_flags_alu8;  \
-    case O(NAME, SW): HOW; if(STORE)goto alu16;else goto just_flags_alu16; \
-    case O(NAME,SL):  HOW; if(STORE)goto alu32;else goto just_flags_alu32;
+    case O (NAME,SB):  HOW; if (STORE)goto alu8;else goto just_flags_alu8;  \
+    case O (NAME, SW): HOW; if (STORE)goto alu16;else goto just_flags_alu16; \
+    case O (NAME,SL):  HOW; if (STORE)goto alu32;else goto just_flags_alu32;
 
 
 #define LOGOP(NAME, HOW) \
-    case O(NAME,SB): HOW; goto log8;\
-    case O(NAME, SW): HOW; goto log16;\
-    case O(NAME,SL): HOW; goto log32;
+    case O (NAME,SB): HOW; goto log8;\
+    case O (NAME, SW): HOW; goto log16;\
+    case O (NAME,SL): HOW; goto log32;
 
 
 
@@ -1012,8 +1043,12 @@ sim_resume (sd, step, siggnal)
 
 #endif
 
-      cycles += code->cycles;
-      insts++;
+      if (code->opcode)
+	{
+	  cycles += code->cycles;
+	  insts++;
+	}
+
       switch (code->opcode)
 	{
 	case 0:
@@ -1040,8 +1075,8 @@ sim_resume (sd, step, siggnal)
 	  res = rd + ea;
 	  goto alu8;
 
-#define EA    ea = fetch(&code->src);
-#define RD_EA ea = fetch(&code->src); rd = fetch(&code->dst);
+#define EA    ea = fetch (&code->src);
+#define RD_EA ea = fetch (&code->src); rd = fetch (&code->dst);
 
 	  ALUOP (1, O_SUB, RD_EA;
 		 ea = -ea;
@@ -1102,6 +1137,37 @@ sim_resume (sd, step, siggnal)
 	  SET_L_REG (code->dst.reg, res);
 	  goto just_flags_log32;
 
+	case O (O_EEPMOV, SB):
+	case O (O_EEPMOV, SW):
+	  if (h8300hmode||h8300smode)
+	    {
+	      register unsigned char *_src,*_dst;
+	      unsigned int count = (code->opcode == O(O_EEPMOV, SW))?cpu.regs[R4_REGNUM]&0xffff:
+		cpu.regs[R4_REGNUM]&0xff;
+
+	      _src = cpu.regs[R5_REGNUM] < memory_size ? cpu.memory+cpu.regs[R5_REGNUM] :
+		cpu.eightbit + (cpu.regs[R5_REGNUM] & 0xff);
+	      if ((_src+count)>=(cpu.memory+memory_size))
+		{
+		  if ((_src+count)>=(cpu.eightbit+0x100))
+		    goto illegal;
+		}
+	      _dst = cpu.regs[R6_REGNUM] < memory_size ? cpu.memory+cpu.regs[R6_REGNUM] :
+	           				       	      cpu.eightbit + (cpu.regs[R6_REGNUM] & 0xff);
+	      if ((_dst+count)>=(cpu.memory+memory_size))
+		{
+		  if ((_dst+count)>=(cpu.eightbit+0x100))
+		    goto illegal;
+		}
+	      memcpy(_dst,_src,count);
+
+	      cpu.regs[R5_REGNUM]+=count;
+	      cpu.regs[R6_REGNUM]+=count;
+	      cpu.regs[R4_REGNUM]&=(code->opcode == O(O_EEPMOV, SW))?(~0xffff):(~0xff);
+	      cycles += 2*count;
+	      goto next;
+	    }
+	  goto illegal;
 
 	case O (O_ADDS, SL):
 	  SET_L_REG (code->dst.reg,
@@ -1181,23 +1247,69 @@ sim_resume (sd, step, siggnal)
 	  SET_L_REG (code->dst.reg, res);
 	  goto just_flags_inc32;
 
-
 #define GET_CCR(x) BUILDSR();x = cpu.ccr
+#define GET_EXR(x) BUILDEXR ();x = cpu.exr
+
+	case O (O_LDC, SB):
+	case O (O_LDC, SW):
+	  res = fetch (&code->src);
+	  goto setc;
+	case O (O_STC, SB):
+	case O (O_STC, SW):
+	  if (code->src.type == OP_CCR)
+	    {
+	      GET_CCR (res);
+	    }
+	  else if (code->src.type == OP_EXR && h8300smode)
+	    {
+	      GET_EXR (res);
+	    }
+	  else
+	    goto illegal;
+	  store (&code->dst, res);
+	  goto next;
 
 	case O (O_ANDC, SB):
-	  GET_CCR (rd);
+	  if (code->dst.type == OP_CCR)
+	    {
+	      GET_CCR (rd);
+	    }
+	  else if (code->dst.type == OP_EXR && h8300smode)
+	    {
+	      GET_EXR (rd);
+	    }
+	  else
+	    goto illegal;
 	  ea = code->src.literal;
 	  res = rd & ea;
 	  goto setc;
 
 	case O (O_ORC, SB):
-	  GET_CCR (rd);
+	  if (code->dst.type == OP_CCR)
+	    {
+	      GET_CCR (rd);
+	    }
+	  else if (code->dst.type == OP_EXR && h8300smode)
+	    {
+	      GET_EXR (rd);
+	    }
+	  else
+	    goto illegal;
 	  ea = code->src.literal;
 	  res = rd | ea;
 	  goto setc;
 
 	case O (O_XORC, SB):
-	  GET_CCR (rd);
+	  if (code->dst.type == OP_CCR)
+	    {
+	      GET_CCR (rd);
+	    }
+	  else if (code->dst.type == OP_EXR && h8300smode)
+	    {
+	      GET_EXR (rd);
+	    }
+	  else
+	    goto illegal;
 	  ea = code->src.literal;
 	  res = rd ^ ea;
 	  goto setc;
@@ -1298,7 +1410,7 @@ sim_resume (sd, step, siggnal)
 		   c = rd & (hm >> 1); v = (rd & (hm >> 1)) != ((rd & (hm >> 2)) << 2); rd <<= 2);
 	  OSHIFTS (O_SHAR,
 		   t = rd & hm; c = rd & 1; v = 0; rd >>= 1; rd |= t,
-		   t = rd & hm; c = rd & 2; v = 0; rd >>= 2; rd |= t | t >> 1 );
+		   t = rd & hm; c = rd & 2; v = 0; rd >>= 2; rd |= t | t >> 1);
 	  OSHIFTS (O_ROTL,
 		   c = rd & hm; v = 0; rd <<= 1; rd |= C,
 		   c = rd & hm; v = 0; rd <<= 1; rd |= C; c = rd & hm; rd <<= 1; rd |= C);
@@ -1370,32 +1482,17 @@ sim_resume (sd, step, siggnal)
 	  cpu.exception = SIGILL;
 	  goto end;
 	case O (O_SLEEP, SN):
-	  /* The format of r0 is defined by devo/include/wait.h.  */
-#if 0 /* FIXME: Ugh.  A breakpoint is the sleep insn.  */
-	  if (WIFEXITED (cpu.regs[0]))
-	    {
-	      cpu.state = SIM_STATE_EXITED;
-	      cpu.exception = WEXITSTATUS (cpu.regs[0]);
-	    }
-	  else if (WIFSTOPPED (cpu.regs[0]))
-	    {
-	      cpu.state = SIM_STATE_STOPPED;
-	      cpu.exception = WSTOPSIG (cpu.regs[0]);
-	    }
-	  else
-	    {
-	      cpu.state = SIM_STATE_SIGNALLED;
-	      cpu.exception = WTERMSIG (cpu.regs[0]);
-	    }
-#else
 	  /* FIXME: Doesn't this break for breakpoints when r0
 	     contains just the right (er, wrong) value?  */
 	  cpu.state = SIM_STATE_STOPPED;
-	  if (! WIFEXITED (cpu.regs[0]) && WIFSIGNALED (cpu.regs[0]))
+	  /* The format of r0 is defined by target newlib.  Expand
+             the macros here instead of looking for .../sys/wait.h.  */
+#define SIM_WIFEXITED(v) (((v) & 0xff) == 0)
+#define SIM_WIFSIGNALED(v) (((v) & 0x7f) > 0 && (((v) & 0x7f) < 0x7f))
+  	  if (! SIM_WIFEXITED (cpu.regs[0]) && SIM_WIFSIGNALED (cpu.regs[0]))
 	    cpu.exception = SIGILL;
 	  else
 	    cpu.exception = SIGTRAP;
-#endif
 	  goto end;
 	case O (O_BPT, SN):
 	  cpu.state = SIM_STATE_STOPPED;
@@ -1405,7 +1502,7 @@ sim_resume (sd, step, siggnal)
 	  OBITOP (O_BNOT, 1, 1, ea ^= m);
 	  OBITOP (O_BTST, 1, 0, nz = ea & m);
 	  OBITOP (O_BCLR, 1, 1, ea &= ~m);
-	  OBITOP (O_BSET, 1, 1, ea |= m);	
+	  OBITOP (O_BSET, 1, 1, ea |= m);
 	  OBITOP (O_BLD, 1, 0, c = ea & m);
 	  OBITOP (O_BILD, 1, 0, c = !(ea & m));
 	  OBITOP (O_BST, 1, 1, ea &= ~m;
@@ -1419,8 +1516,9 @@ sim_resume (sd, step, siggnal)
 	  OBITOP (O_BXOR, 1, 0, c = (ea & m) != C);
 	  OBITOP (O_BIXOR, 1, 0, c = !(ea & m) != C);
 
-
-#define MOP(bsize, signed) mop(code, bsize,signed); goto next;
+#define MOP(bsize, signed)			\
+  mop (code, bsize, signed);			\
+  goto next;
 
 	case O (O_MULS, SB):
 	  MOP (1, 1);
@@ -1435,6 +1533,22 @@ sim_resume (sd, step, siggnal)
 	  MOP (0, 0);
 	  break;
 
+	case O (O_TAS, SB):
+	  if (!h8300smode || code->src.type != X (OP_REG, SL))
+	    goto illegal;
+	  switch (code->src.reg)
+	    {
+	    case R0_REGNUM:
+	    case R1_REGNUM:
+	    case R4_REGNUM:
+	    case R5_REGNUM:
+	      break;
+	    default:
+	      goto illegal;
+	    }
+	  res = fetch (&code->src);
+	  store (&code->src,res|0x80);
+	  goto just_flags_log8;
 
 	case O (O_DIVU, SB):
 	  {
@@ -1442,8 +1556,8 @@ sim_resume (sd, step, siggnal)
 	    ea = GET_B_REG (code->src.reg);
 	    if (ea)
 	      {
-		tmp = (unsigned)rd % ea;
-		rd = (unsigned)rd / ea;
+		tmp = (unsigned) rd % ea;
+		rd = (unsigned) rd / ea;
 	      }
 	    SET_W_REG (code->dst.reg, (rd & 0xff) | (tmp << 8));
 	    n = ea & 0x80;
@@ -1459,8 +1573,8 @@ sim_resume (sd, step, siggnal)
 	    nz = ea & 0xffff;
 	    if (ea)
 	      {
-		tmp = (unsigned)rd % ea;
-		rd = (unsigned)rd / ea;
+		tmp = (unsigned) rd % ea;
+		rd = (unsigned) rd / ea;
 	      }
 	    SET_L_REG (code->dst.reg, (rd & 0xffff) | (tmp << 16));
 	    goto next;
@@ -1558,6 +1672,7 @@ sim_resume (sd, step, siggnal)
 	  goto next;
 
 	default:
+        illegal:
 	  cpu.state = SIM_STATE_STOPPED;
 	  cpu.exception = SIGILL;
 	  goto end;
@@ -1566,8 +1681,19 @@ sim_resume (sd, step, siggnal)
       abort ();
 
     setc:
-      cpu.ccr = res;
-      GETSR ();
+      if (code->dst.type == OP_CCR)
+	{
+	  cpu.ccr = res;
+	  GETSR ();
+	}
+      else if (code->dst.type == OP_EXR && h8300smode)
+	{
+	  cpu.exr = res;
+	  GETEXR ();
+	}
+      else
+	goto illegal;
+
       goto next;
 
     condtrue:
@@ -1726,7 +1852,10 @@ sim_resume (sd, step, siggnal)
 
     end:
       ;
-      /*      if (cpu.regs[8] ) abort(); */
+#if 0
+      if (cpu.regs[8])
+	abort ();
+#endif
 
       if (--poll_count < 0)
 	{
@@ -1741,9 +1870,10 @@ sim_resume (sd, step, siggnal)
   cpu.ticks += get_now () - tick_start;
   cpu.cycles += cycles;
   cpu.insts += insts;
-  
+
   cpu.pc = pc;
   BUILDSR ();
+  BUILDEXR ();
   cpu.mask = oldmask;
   signal (SIGINT, prev);
 }
@@ -1752,7 +1882,7 @@ int
 sim_trace (sd)
      SIM_DESC sd;
 {
-  /* FIXME: unfinished */
+  /* FIXME: Unfinished.  */
   abort ();
 }
 
@@ -1799,27 +1929,6 @@ sim_read (sd, addr, buffer, size)
 }
 
 
-#define R0_REGNUM	0
-#define R1_REGNUM	1
-#define R2_REGNUM	2
-#define R3_REGNUM	3
-#define R4_REGNUM	4
-#define R5_REGNUM	5
-#define R6_REGNUM	6
-#define R7_REGNUM	7
-
-#define SP_REGNUM       R7_REGNUM	/* Contains address of top of stack */
-#define FP_REGNUM       R6_REGNUM	/* Contains address of executing
-					   * stack frame */
-
-#define CCR_REGNUM      8	/* Contains processor status */
-#define PC_REGNUM       9	/* Contains program counter */
-
-#define CYCLE_REGNUM    10
-#define INST_REGNUM     11
-#define TICK_REGNUM     12
-
-
 int
 sim_store_register (sd, rn, value, length)
      SIM_DESC sd;
@@ -1855,6 +1964,9 @@ sim_store_register (sd, rn, value, length)
     case CCR_REGNUM:
       cpu.ccr = intval;
       break;
+    case EXR_REGNUM:
+      cpu.exr = intval;
+      break;
     case CYCLE_REGNUM:
       cpu.cycles = longval;
       break;
@@ -1882,14 +1994,19 @@ sim_fetch_register (sd, rn, buf, length)
 
   init_pointers ();
 
+  if (!h8300smode && rn >=EXR_REGNUM)
+    rn++;
   switch (rn)
     {
     default:
       abort ();
-    case 8:
+    case CCR_REGNUM:
       v = cpu.ccr;
       break;
-    case 9:
+    case EXR_REGNUM:
+      v = cpu.exr;
+      break;
+    case PC_REGNUM:
       v = cpu.pc;
       break;
     case R0_REGNUM:
@@ -1902,15 +2019,15 @@ sim_fetch_register (sd, rn, buf, length)
     case R7_REGNUM:
       v = cpu.regs[rn];
       break;
-    case 10:
+    case CYCLE_REGNUM:
       v = cpu.cycles;
       longreg = 1;
       break;
-    case 11:
+    case TICK_REGNUM:
       v = cpu.ticks;
       longreg = 1;
       break;
-    case 12:
+    case INST_REGNUM:
       v = cpu.insts;
       longreg = 1;
       break;
@@ -2020,17 +2137,18 @@ sim_info (sd, verbose)
 #endif
 }
 
-/* Indicate whether the cpu is an h8/300 or h8/300h.
-   FLAG is non-zero for the h8/300h.  */
+/* Indicate whether the cpu is an H8/300 or H8/300H.
+   FLAG is non-zero for the H8/300H.  */
 
 void
-set_h8300h (flag)
-     int flag;
+set_h8300h (h_flag, s_flag)
+     int h_flag, s_flag;
 {
   /* FIXME: Much of the code in sim_load can be moved to sim_open.
      This function being replaced by a sim_open:ARGV configuration
-     option */
-  h8300hmode = flag;
+     option.  */
+  h8300hmode = h_flag;
+  h8300smode = s_flag;
 }
 
 SIM_DESC
@@ -2040,12 +2158,12 @@ sim_open (kind, ptr, abfd, argv)
      struct _bfd *abfd;
      char **argv;
 {
-  /* FIXME: Much of the code in sim_load can be moved here */
+  /* FIXME: Much of the code in sim_load can be moved here.  */
 
   sim_kind = kind;
   myname = argv[0];
   sim_callback = ptr;
-  /* fudge our descriptor */
+  /* Fudge our descriptor.  */
   return (SIM_DESC) 1;
 }
 
@@ -2054,7 +2172,7 @@ sim_close (sd, quitting)
      SIM_DESC sd;
      int quitting;
 {
-  /* nothing to do */
+  /* Nothing to do.  */
 }
 
 /* Called by gdb to load a program into memory.  */
@@ -2068,10 +2186,10 @@ sim_load (sd, prog, abfd, from_tty)
 {
   bfd *prog_bfd;
 
-  /* FIXME: The code below that sets a specific variant of the h8/300
-     being simulated should be moved to sim_open(). */
+  /* FIXME: The code below that sets a specific variant of the H8/300
+     being simulated should be moved to sim_open().  */
 
-  /* See if the file is for the h8/300 or h8/300h.  */
+  /* See if the file is for the H8/300 or H8/300H.  */
   /* ??? This may not be the most efficient way.  The z8k simulator
      does this via a different mechanism (INIT_EXTRA_SYMTAB_INFO).  */
   if (abfd != NULL)
@@ -2082,11 +2200,11 @@ sim_load (sd, prog, abfd, from_tty)
     {
       /* Set the cpu type.  We ignore failure from bfd_check_format
 	 and bfd_openr as sim_load_file checks too.  */
-      if (bfd_check_format (prog_bfd, bfd_object)) 
+      if (bfd_check_format (prog_bfd, bfd_object))
 	{
 	  unsigned long mach = bfd_get_mach (prog_bfd);
-	  set_h8300h (mach == bfd_mach_h8300h
-		      || mach == bfd_mach_h8300s);
+	  set_h8300h (mach == bfd_mach_h8300h || mach == bfd_mach_h8300s,
+		      mach == bfd_mach_h8300s);
 	}
     }
 
@@ -2098,13 +2216,16 @@ sim_load (sd, prog, abfd, from_tty)
      simulator memory.
 
      The problem is when we do that, we don't know whether we're
-     debugging an h8/300 or h8/300h program.
+     debugging an H8/300 or H8/300H program.
 
      This is the first point at which we can make that determination,
      so we just reallocate memory now; this will also allow us to handle
-     switching between h8/300 and h8/300h programs without exiting
+     switching between H8/300 and H8/300H programs without exiting
      gdb.  */
-  if (h8300hmode)
+
+  if (h8300smode)
+    memory_size = H8300S_MSIZE;
+  else if (h8300hmode)
     memory_size = H8300H_MSIZE;
   else
     memory_size = H8300_MSIZE;
@@ -2120,7 +2241,7 @@ sim_load (sd, prog, abfd, from_tty)
   cpu.cache_idx = (unsigned short *) calloc (sizeof (short), memory_size);
   cpu.eightbit = (unsigned char *) calloc (sizeof (char), 256);
 
-  /* `msize' must be a power of two */
+  /* `msize' must be a power of two.  */
   if ((memory_size & (memory_size - 1)) != 0)
     abort ();
   cpu.mask = memory_size - 1;

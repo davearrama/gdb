@@ -1,5 +1,5 @@
 /* Macro definitions for i386, Mach 3.0
-   Copyright (C) 1992 Free Software Foundation, Inc.
+   Copyright 1992, 1993, 1995, 1999 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,7 +19,7 @@
    Boston, MA 02111-1307, USA.  */
 
 /* Include common definitions for Mach3 systems */
-#include "nm-m3.h"
+#include "config/nm-m3.h"
 
 /* Define offsets to access CPROC stack when it does not have
  * a kernel thread.

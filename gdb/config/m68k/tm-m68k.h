@@ -1,5 +1,6 @@
 /* Parameters for execution on a 68000 series machine.
-   Copyright 1986, 1987, 1989, 1990, 1992 Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1989, 1990, 1992, 1993, 1994, 1995, 1996, 1998,
+   1999, 2000 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,12 +19,13 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
+#include "regcache.h"
+
 /* Generic 68000 stuff, to be included by other tm-*.h files.  */
 
-#define IEEE_FLOAT 1
+#define TARGET_LONG_DOUBLE_FORMAT &floatformat_m68881_ext
 
-/* Define the bit, byte, and word ordering of the machine.  */
-#define TARGET_BYTE_ORDER BIG_ENDIAN
+#define TARGET_LONG_DOUBLE_BIT 96
 
 /* Offset from address of function to start of its code.
    Zero on most machines.  */
@@ -36,7 +38,7 @@
 #if !defined(SKIP_PROLOGUE)
 #define SKIP_PROLOGUE(ip) (m68k_skip_prologue (ip))
 #endif
-extern CORE_ADDR m68k_skip_prologue PARAMS ((CORE_ADDR ip));
+extern CORE_ADDR m68k_skip_prologue (CORE_ADDR ip);
 
 /* Immediately after a function call, return the saved pc.
    Can't always go through the frames for this because on some machines
@@ -46,8 +48,9 @@ extern CORE_ADDR m68k_skip_prologue PARAMS ((CORE_ADDR ip));
 struct frame_info;
 struct frame_saved_regs;
 
-extern CORE_ADDR m68k_saved_pc_after_call PARAMS ((struct frame_info *));
-extern void m68k_find_saved_regs PARAMS ((struct frame_info *, struct frame_saved_regs *));
+extern CORE_ADDR m68k_saved_pc_after_call (struct frame_info *);
+extern void m68k_find_saved_regs (struct frame_info *,
+				  struct frame_saved_regs *);
 
 #define SAVED_PC_AFTER_CALL(frame) \
   m68k_saved_pc_after_call(frame)
@@ -133,9 +136,9 @@ extern void m68k_find_saved_regs PARAMS ((struct frame_info *, struct frame_save
 
 /* Number of bytes of storage in the program's representation
    for register N.  On the 68000, all regs are 4 bytes
-   except the floating point regs which are 8-byte doubles.  */
+   except the floating point regs which are 12-byte long doubles.  */
 
-#define REGISTER_VIRTUAL_SIZE(N) (((unsigned)(N) - FP0_REGNUM) < 8 ? 8 : 4)
+#define REGISTER_VIRTUAL_SIZE(N) (((unsigned)(N) - FP0_REGNUM) < 8 ? 12 : 4)
 
 /* Largest value REGISTER_RAW_SIZE can have.  */
 
@@ -143,39 +146,10 @@ extern void m68k_find_saved_regs PARAMS ((struct frame_info *, struct frame_save
 
 /* Largest value REGISTER_VIRTUAL_SIZE can have.  */
 
-#define MAX_REGISTER_VIRTUAL_SIZE 8
-
-/* Nonzero if register N requires conversion
-   from raw format to virtual format.  */
-
-#define REGISTER_CONVERTIBLE(N) (((unsigned)(N) - FP0_REGNUM) < 8)
-
-#include "floatformat.h"
-
-/* Convert data from raw format for register REGNUM in buffer FROM
-   to virtual format with type TYPE in buffer TO.  */
-
-#define REGISTER_CONVERT_TO_VIRTUAL(REGNUM,TYPE,FROM,TO) \
-do									\
-  {									\
-    DOUBLEST dbl_tmp_val;							\
-    floatformat_to_doublest (&floatformat_m68881_ext, (FROM), &dbl_tmp_val); \
-    store_floating ((TO), TYPE_LENGTH (TYPE), dbl_tmp_val);		\
-  } while (0)
-
-/* Convert data from virtual format with type TYPE in buffer FROM
-   to raw format for register REGNUM in buffer TO.  */
-
-#define REGISTER_CONVERT_TO_RAW(TYPE,REGNUM,FROM,TO)	\
-do									\
-  {									\
-    DOUBLEST dbl_tmp_val;						\
-    dbl_tmp_val = extract_floating ((FROM), TYPE_LENGTH (TYPE));	\
-    floatformat_from_doublest (&floatformat_m68881_ext, &dbl_tmp_val, (TO)); \
-  } while (0)
+#define MAX_REGISTER_VIRTUAL_SIZE 12
 
 /* Return the GDB type object for the "standard" data type of data 
-   in register N.  This should be int for D0-D7, double for FP0-FP7,
+   in register N.  This should be int for D0-D7, long double for FP0-FP7,
    and void pointer for all others (A0-A7, PC, SR, FPCONTROL etc).
    Note, for registers which contain addresses return pointer to void, 
    not pointer to char, because we don't want to attempt to print 
@@ -183,7 +157,7 @@ do									\
 
 #define REGISTER_VIRTUAL_TYPE(N) \
   ((unsigned) (N) >= FPC_REGNUM ? lookup_pointer_type (builtin_type_void) : \
-   (unsigned) (N) >= FP0_REGNUM ? builtin_type_double :                     \
+   (unsigned) (N) >= FP0_REGNUM ? builtin_type_long_double :                \
    (unsigned) (N) >=  A0_REGNUM ? lookup_pointer_type (builtin_type_void) : \
    builtin_type_int)
 
@@ -227,8 +201,8 @@ do									\
    into VALBUF.  This is assuming that floating point values are returned
    as doubles in d0/d1.  */
 
-#if !defined (EXTRACT_RETURN_VALUE)
-#define EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
+#if !defined (DEPRECATED_EXTRACT_RETURN_VALUE)
+#define DEPRECATED_EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
   memcpy ((VALBUF),							\
 	  (char *)(REGBUF) +						\
 	         (TYPE_LENGTH(TYPE) >= 4 ? 0 : 4 - TYPE_LENGTH(TYPE)),	\
@@ -248,7 +222,7 @@ do									\
    the address in which a function should return its structure value,
    as a CORE_ADDR (or an expression that can be used as one).  */
 
-#define EXTRACT_STRUCT_VALUE_ADDRESS(REGBUF) (*(CORE_ADDR *)(REGBUF))
+#define DEPRECATED_EXTRACT_STRUCT_VALUE_ADDRESS(REGBUF) (*(CORE_ADDR *)(REGBUF))
 
 /* Describe the pointer in each stack frame to the previous stack frame
    (its caller).  */
@@ -372,9 +346,9 @@ do									\
 
 #define PUSH_DUMMY_FRAME	{ m68k_push_dummy_frame (); }
 
-extern void m68k_push_dummy_frame PARAMS ((void));
+extern void m68k_push_dummy_frame (void);
 
-extern void m68k_pop_frame PARAMS ((void));
+extern void m68k_pop_frame (void);
 
 /* Discard from the stack the innermost frame, restoring all registers.  */
 
@@ -385,3 +359,10 @@ extern void m68k_pop_frame PARAMS ((void));
 #define SP_ARG0 (1 * 4)
 
 #define TARGET_M68K
+
+/* Figure out where the longjmp will land.  Slurp the args out of the stack.
+   We expect the first arg to be a pointer to the jmp_buf structure from which
+   we extract the pc (JB_PC) that we will land at.  The pc is copied into ADDR.
+   This routine returns true on success */
+
+extern int m68k_get_longjmp_target (CORE_ADDR *);

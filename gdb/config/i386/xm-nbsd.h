@@ -1,5 +1,5 @@
 /* Parameters for execution on a i386 running NetBSD, for GDB.
-   Copyright 1994 Free Software Foundation, Inc.
+   Copyright 1994, 2000 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,4 +19,6 @@
    Boston, MA 02111-1307, USA.  */
 
 /* Get generic NetBSD host definitions. */
-#include "xm-nbsd.h"
+#include "config/xm-nbsd.h"
+
+#define HOST_LONG_DOUBLE_FORMAT &floatformat_i387_ext

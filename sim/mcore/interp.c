@@ -1,5 +1,5 @@
 /* Simulator for Motorola's MCore processor
-   Copyright (C) 1999 Free Software Foundation, Inc.
+   Copyright (C) 1999, 2000 Free Software Foundation, Inc.
    Contributed by Cygnus Solutions.
 
 This file is part of GDB, the GNU debugger.
@@ -24,9 +24,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <sys/param.h>
 #include <netinet/in.h>	/* for byte ordering macros */
 #include "bfd.h"
-#include "callback.h"
+#include "gdb/callback.h"
 #include "libiberty.h"
-#include "remote-sim.h"
+#include "gdb/remote-sim.h"
 
 #ifndef NUM_ELEM
 #define NUM_ELEM(A) (sizeof (A) / sizeof (A)[0])
@@ -36,6 +36,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 typedef long int           word;
 typedef unsigned long int  uword;
 
+static int            target_big_endian = 0;
 static unsigned long  heap_ptr = 0;
 host_callback *       callback;
 
@@ -58,6 +59,12 @@ mcore_extract_unsigned_integer (addr, len)
      the least significant.  */
   retval = 0;
 
+  if (! target_big_endian)
+    {
+      for (p = endaddr; p > startaddr;)
+	retval = (retval << 8) | * -- p;
+    }
+  else
     {
       for (p = startaddr; p < endaddr;)
 	retval = (retval << 8) | * p ++;
@@ -76,6 +83,15 @@ mcore_store_unsigned_integer (addr, len, val)
   unsigned char * startaddr = (unsigned char *)addr;
   unsigned char * endaddr = startaddr + len;
 
+  if (! target_big_endian)
+    {
+      for (p = startaddr; p < endaddr;)
+	{
+	  * p ++ = val & 0xff;
+	  val >>= 8;
+	}
+    }
+  else
     {
       for (p = endaddr; p > startaddr;)
 	{
@@ -92,7 +108,7 @@ mcore_store_unsigned_integer (addr, len, val)
    Keeping this data in target byte order simplifies the register
    read/write functions.  Keeping this data in native order improves
    the performance of the simulator.  Simulation speed is deemed more
-   important. */
+   important.  */
 
 /* The ordering of the mcore_regset structure is matched in the
    gdb/config/mcore/tm-mcore.h file in the REGISTER_NAMES macro.  */
@@ -216,6 +232,14 @@ wlat (x, v)
       
 	  cpu.asregs.exception = SIGBUS;
 	}
+      else if (! target_big_endian)
+	{
+	  unsigned char * p = cpu.mem + x;
+	  p[3] = v >> 24;
+	  p[2] = v >> 16;
+	  p[1] = v >> 8;
+	  p[0] = v;
+	}
       else
 	{
 	  unsigned char * p = cpu.mem + x;
@@ -248,6 +272,12 @@ what (x, v)
       
 	  cpu.asregs.exception = SIGBUS;
 	}
+      else if (! target_big_endian)
+	{
+	  unsigned char * p = cpu.mem + x;
+	  p[1] = v >> 8;
+	  p[0] = v;
+	}
       else
 	{
 	  unsigned char * p = cpu.mem + x;
@@ -257,7 +287,7 @@ what (x, v)
     }
 }
 
-/* Read functions */
+/* Read functions.  */
 static int INLINE 
 rbat (x)
      word x;
@@ -299,6 +329,11 @@ rlat (x)
 	  cpu.asregs.exception = SIGBUS;
 	  return 0;
 	}
+      else if (! target_big_endian)
+	{
+	  unsigned char * p = cpu.mem + x;
+	  return (p[3] << 24) | (p[2] << 16) | (p[1] << 8) | p[0];
+	}
       else
 	{
 	  unsigned char * p = cpu.mem + x;
@@ -329,6 +364,11 @@ rhat (x)
 	  cpu.asregs.exception = SIGBUS;
 	  return 0;
 	}
+      else if (! target_big_endian)
+	{
+	  unsigned char * p = cpu.mem + x;
+	  return (p[1] << 8) | p[0];
+	}
       else
 	{
 	  unsigned char * p = cpu.mem + x;
@@ -349,7 +389,7 @@ IOMEM (addr, write, value)
 {
 }
 
-/* default to a 8 Mbyte (== 2^23) memory space */
+/* Default to a 8 Mbyte (== 2^23) memory space.  */
 static int sim_memory_size = 23;
 
 #define	MEM_SIZE_FLOOR	64
@@ -363,9 +403,9 @@ sim_size (power)
   if (cpu.mem)
     free (cpu.mem);
 
-  /* watch out for the '0 count' problem. There's probably a better
-     way.. e.g., why do we use 64 here? */
-  if (cpu.asregs.msize < 64)	/* ensure a boundary */
+  /* Watch out for the '0 count' problem. There's probably a better
+     way.. e.g., why do we use 64 here?  */
+  if (cpu.asregs.msize < 64)	/* Ensure a boundary.  */
     cpu.mem = (unsigned char *) calloc (64, (64 + cpu.asregs.msize) / 64);
   else
     cpu.mem = (unsigned char *) calloc (64, cpu.asregs.msize / 64);
@@ -505,7 +545,7 @@ handle_trap1 ()
       break;
       
     case 6:
-      a[0] = (unsigned long) (cpu.gr[4]);
+      a[0] = (unsigned long) (cpu.gr[PARM1]);
       /* Watch out for debugger's files. */
       if (is_opened (a[0]))
 	{
@@ -762,11 +802,17 @@ sim_resume (sd, step, siggnal)
       
       if (pc & 02)
 	{
+	  if (! target_big_endian)
+	    inst = ibuf >> 16;
+	  else
 	    inst = ibuf & 0xFFFF;
 	  needfetch = 1;
 	}
       else
 	{
+	  if (! target_big_endian)
+	    inst = ibuf & 0xFFFF;
+	  else
 	    inst = ibuf >> 16;
 	}
 
@@ -1952,6 +1998,7 @@ sim_load (sd, prog, abfd, from_tty)
   if (prog_bfd == NULL)
     return SIM_RC_FAIL;
   
+  target_big_endian = bfd_big_endian (prog_bfd);
     
   if (abfd == NULL)
     bfd_close (prog_bfd);

@@ -1,35 +1,42 @@
 /* run front end support for arm
-   Copyright (C) 1995, 1996, 1997 Free Software Foundation, Inc.
+   Copyright (C) 1995, 1996, 1997, 2000, 2001, 2002
+   Free Software Foundation, Inc.
 
-This file is part of ARM SIM.
+   This file is part of ARM SIM.
 
-GNU CC is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2, or (at your option)
-any later version.
+   GCC is free software; you can redistribute it and/or modify it
+   under the terms of the GNU General Public License as published
+   by the Free Software Foundation; either version 2, or (at your
+   option) any later version.
 
-GNU CC is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+   GCC is distributed in the hope that it will be useful, but
+   WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.   See
+   the GNU General Public License for more details.
 
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
+   You should have received a copy of the GNU General Public
+   License along with this program; if not, write to the Free
+   Software Foundation, Inc., 59 Temple Place - Suite 330,
+   Boston, MA 02111-1307, USA.  */
 
-/* This file provides the interface between the simulator and run.c and gdb
-   (when the simulator is linked with gdb).
+/* This file provides the interface between the simulator and
+   run.c and gdb (when the simulator is linked with gdb).
    All simulator interaction should go through this file.  */
 
 #include <stdio.h>
 #include <stdarg.h>
+#include <string.h>
 #include <bfd.h>
 #include <signal.h>
-#include "callback.h"
-#include "remote-sim.h"
+#include "gdb/callback.h"
+#include "gdb/remote-sim.h"
 #include "armdefs.h"
 #include "armemu.h"
 #include "dbg_rdi.h"
+#include "ansidecl.h"
+#include "sim-utils.h"
+#include "run-sim.h"
+#include "gdb/sim-arm.h"
 
 host_callback *sim_callback;
 
@@ -42,7 +49,7 @@ static SIM_OPEN_KIND sim_kind;
 static char *myname;
 
 /* Memory size in bytes.  */
-static int mem_size = (1 << 21);
+static int mem_size = (1 << 23);
 
 /* Non-zero to display start up banner, and maybe other things.  */
 static int verbosity;
@@ -94,7 +101,9 @@ sim_size (size)
 }
 
 void
-ARMul_ConsolePrint (ARMul_State * state, const char *format, ...)
+ARMul_ConsolePrint VPARAMS ((ARMul_State * state,
+			     const char * format,
+			     ...))
 {
   va_list ap;
 
@@ -106,55 +115,62 @@ ARMul_ConsolePrint (ARMul_State * state, const char *format, ...)
     }
 }
 
-ARMword ARMul_Debug (ARMul_State * state, ARMword pc, ARMword instr)
+ARMword
+ARMul_Debug (state, pc, instr)
+     ARMul_State * state ATTRIBUTE_UNUSED;
+     ARMword       pc    ATTRIBUTE_UNUSED;
+     ARMword       instr ATTRIBUTE_UNUSED;
 {
-
+  return 0;
 }
 
 int
 sim_write (sd, addr, buffer, size)
-     SIM_DESC sd;
+     SIM_DESC sd ATTRIBUTE_UNUSED;
      SIM_ADDR addr;
-     unsigned char *buffer;
+     unsigned char * buffer;
      int size;
 {
   int i;
+
   init ();
+
   for (i = 0; i < size; i++)
-    {
-      ARMul_WriteByte (state, addr + i, buffer[i]);
-    }
+    ARMul_SafeWriteByte (state, addr + i, buffer[i]);
+
   return size;
 }
 
 int
 sim_read (sd, addr, buffer, size)
-     SIM_DESC sd;
+     SIM_DESC sd ATTRIBUTE_UNUSED;
      SIM_ADDR addr;
-     unsigned char *buffer;
+     unsigned char * buffer;
      int size;
 {
   int i;
+
   init ();
+
   for (i = 0; i < size; i++)
-    {
-      buffer[i] = ARMul_ReadByte (state, addr + i);
-    }
+    buffer[i] = ARMul_SafeReadByte (state, addr + i);
+
   return size;
 }
 
 int
 sim_trace (sd)
-     SIM_DESC sd;
+     SIM_DESC sd ATTRIBUTE_UNUSED;
 {  
-  (*sim_callback->printf_filtered) (sim_callback,
-				    "This simulator does not support tracing\n");
+  (*sim_callback->printf_filtered)
+    (sim_callback,
+     "This simulator does not support tracing\n");
   return 1;
 }
 
 int
 sim_stop (sd)
-     SIM_DESC sd;
+     SIM_DESC sd ATTRIBUTE_UNUSED;
 {
   state->Emulate = STOP;
   stop_simulator = 1;
@@ -163,8 +179,9 @@ sim_stop (sd)
 
 void
 sim_resume (sd, step, siggnal)
-     SIM_DESC sd;
-     int step, siggnal;
+     SIM_DESC sd ATTRIBUTE_UNUSED;
+     int step;
+     int siggnal ATTRIBUTE_UNUSED;
 {
   state->EndCondition = 0;
   stop_simulator = 0;
@@ -177,9 +194,7 @@ sim_resume (sd, step, siggnal)
     }
   else
     {
-#if 1				/* JGS */
       state->NextInstr = RESUME;	/* treat as PC change */
-#endif
       state->Reg[15] = ARMul_DoProg (state);
     }
 
@@ -188,12 +203,13 @@ sim_resume (sd, step, siggnal)
 
 SIM_RC
 sim_create_inferior (sd, abfd, argv, env)
-     SIM_DESC sd;
-     struct _bfd *abfd;
-     char **argv;
-     char **env;
+     SIM_DESC sd ATTRIBUTE_UNUSED;
+     struct _bfd * abfd;
+     char ** argv;
+     char ** env;
 {
   int argvlen = 0;
+  int mach;
   char **arg;
 
   if (abfd != NULL)
@@ -201,37 +217,97 @@ sim_create_inferior (sd, abfd, argv, env)
   else
     ARMul_SetPC (state, 0);	/* ??? */
 
-#if 1				/* JGS */
-  /* We explicitly select a processor capable of supporting the ARM
-     32bit mode, and then we force the simulated CPU into the 32bit
-     User mode: */
-  ARMul_SelectProcessor (state, ARM600);
-  ARMul_SetCPSR (state, USER32MODE);
-#endif
+  mach = bfd_get_mach (abfd);
 
+  switch (mach)
+    {
+    default:
+      (*sim_callback->printf_filtered)
+	(sim_callback,
+	 "Unknown machine type '%d'; please update sim_create_inferior.\n",
+	 mach);
+      /* fall through */
+
+    case 0:
+      /* We wouldn't set the machine type with earlier toolchains, so we
+	 explicitly select a processor capable of supporting all ARMs in
+	 32bit mode.  */
+    case bfd_mach_arm_XScale:
+      ARMul_SelectProcessor (state, ARM_v5_Prop | ARM_v5e_Prop | ARM_XScale_Prop);
+      break;
+
+    case bfd_mach_arm_5:
+      if (bfd_family_coff (abfd))
+	{
+	  /* This is a special case in order to support COFF based ARM toolchains.
+	     The COFF header does not have enough room to store all the different
+	     kinds of ARM cpu, so the XScale, v5T and v5TE architectures all default
+	     to v5.  (See coff_set_flags() in bdf/coffcode.h).  So if we see a v5
+	     machine type here, we assume it could be any of the above architectures
+	     and so select the most feature-full.  */
+	  ARMul_SelectProcessor (state, ARM_v5_Prop | ARM_v5e_Prop | ARM_XScale_Prop);
+	  break;
+	}
+      /* Otherwise drop through.  */
+
+    case bfd_mach_arm_5T:
+      ARMul_SelectProcessor (state, ARM_v5_Prop);
+      break;
+
+    case bfd_mach_arm_5TE:
+      ARMul_SelectProcessor (state, ARM_v5_Prop | ARM_v5e_Prop);
+      break;
+
+    case bfd_mach_arm_4:
+    case bfd_mach_arm_4T:
+      ARMul_SelectProcessor (state, ARM_v4_Prop);
+      break;
+
+    case bfd_mach_arm_3:
+    case bfd_mach_arm_3M:
+      ARMul_SelectProcessor (state, ARM_Lock_Prop);
+      break;
+
+    case bfd_mach_arm_2:
+    case bfd_mach_arm_2a:
+      ARMul_SelectProcessor (state, ARM_Fix26_Prop);
+      break;
+    }
+
+  if (   mach != bfd_mach_arm_3
+      && mach != bfd_mach_arm_3M
+      && mach != bfd_mach_arm_2
+      && mach != bfd_mach_arm_2a)
+    {
+      /* Reset mode to ARM.  A gdb user may rerun a program that had entered
+	 THUMB mode from the start and cause the ARM-mode startup code to be
+	 executed in THUMB mode.  */
+      ARMul_SetCPSR (state, SVC32MODE);
+    }
+  
   if (argv != NULL)
     {
-      /*
-         ** Set up the command line (by laboriously stringing together the
-         ** environment carefully picked apart by our caller...)
-       */
-      /* Free any old stuff */
+      /* Set up the command line by laboriously stringing together
+	 the environment carefully picked apart by our caller.  */
+
+      /* Free any old stuff.  */
       if (state->CommandLine != NULL)
 	{
 	  free (state->CommandLine);
 	  state->CommandLine = NULL;
 	}
 
-      /* See how much we need */
+      /* See how much we need.  */
       for (arg = argv; *arg != NULL; arg++)
 	argvlen += strlen (*arg) + 1;
 
-      /* allocate it... */
+      /* Allocate it.  */
       state->CommandLine = malloc (argvlen + 1);
       if (state->CommandLine != NULL)
 	{
 	  arg = argv;
 	  state->CommandLine[0] = '\0';
+
 	  for (arg = argv; *arg != NULL; arg++)
 	    {
 	      strcat (state->CommandLine, *arg);
@@ -242,15 +318,14 @@ sim_create_inferior (sd, abfd, argv, env)
 
   if (env != NULL)
     {
-      /* Now see if there's a MEMSIZE spec in the environment */
+      /* Now see if there's a MEMSIZE spec in the environment.  */
       while (*env)
 	{
 	  if (strncmp (*env, "MEMSIZE=", sizeof ("MEMSIZE=") - 1) == 0)
 	    {
-	      unsigned long top_of_memory;
 	      char *end_of_num;
 
-	      /* Set up memory limit */
+	      /* Set up memory limit.  */
 	      state->MemSize =
 		strtoul (*env + sizeof ("MEMSIZE=") - 1, &end_of_num, 0);
 	    }
@@ -263,11 +338,10 @@ sim_create_inferior (sd, abfd, argv, env)
 
 void
 sim_info (sd, verbose)
-     SIM_DESC sd;
-     int verbose;
+     SIM_DESC sd ATTRIBUTE_UNUSED;
+     int verbose ATTRIBUTE_UNUSED;
 {
 }
-
 
 static int
 frommem (state, memory)
@@ -275,17 +349,12 @@ frommem (state, memory)
      unsigned char *memory;
 {
   if (state->bigendSig == HIGH)
-    {
-      return (memory[0] << 24)
-	| (memory[1] << 16) | (memory[2] << 8) | (memory[3] << 0);
-    }
+    return (memory[0] << 24) | (memory[1] << 16)
+      | (memory[2] << 8) | (memory[3] << 0);
   else
-    {
-      return (memory[3] << 24)
-	| (memory[2] << 16) | (memory[1] << 8) | (memory[0] << 0);
-    }
+    return (memory[3] << 24) | (memory[2] << 16)
+      | (memory[1] << 8) | (memory[0] << 0);
 }
-
 
 static void
 tomem (state, memory, val)
@@ -311,35 +380,231 @@ tomem (state, memory, val)
 
 int
 sim_store_register (sd, rn, memory, length)
-     SIM_DESC sd;
+     SIM_DESC sd ATTRIBUTE_UNUSED;
      int rn;
      unsigned char *memory;
-     int length;
+     int length ATTRIBUTE_UNUSED;
 {
   init ();
-  ARMul_SetReg (state, state->Mode, rn, frommem (state, memory));
+
+  switch ((enum sim_arm_regs) rn)
+    {
+    case SIM_ARM_R0_REGNUM:
+    case SIM_ARM_R1_REGNUM:
+    case SIM_ARM_R2_REGNUM:
+    case SIM_ARM_R3_REGNUM:
+    case SIM_ARM_R4_REGNUM:
+    case SIM_ARM_R5_REGNUM:
+    case SIM_ARM_R6_REGNUM:
+    case SIM_ARM_R7_REGNUM:
+    case SIM_ARM_R8_REGNUM:
+    case SIM_ARM_R9_REGNUM:
+    case SIM_ARM_R10_REGNUM:
+    case SIM_ARM_R11_REGNUM:
+    case SIM_ARM_R12_REGNUM:
+    case SIM_ARM_R13_REGNUM:
+    case SIM_ARM_R14_REGNUM:
+    case SIM_ARM_R15_REGNUM: /* PC */
+    case SIM_ARM_FP0_REGNUM:
+    case SIM_ARM_FP1_REGNUM:
+    case SIM_ARM_FP2_REGNUM:
+    case SIM_ARM_FP3_REGNUM:
+    case SIM_ARM_FP4_REGNUM:
+    case SIM_ARM_FP5_REGNUM:
+    case SIM_ARM_FP6_REGNUM:
+    case SIM_ARM_FP7_REGNUM:
+    case SIM_ARM_FPS_REGNUM:
+      ARMul_SetReg (state, state->Mode, rn, frommem (state, memory));
+      break;
+
+    case SIM_ARM_PS_REGNUM:
+      state->Cpsr = frommem (state, memory);
+      ARMul_CPSRAltered (state);
+      break;
+
+    default:
+      return 0;
+    }
+
   return -1;
 }
 
 int
 sim_fetch_register (sd, rn, memory, length)
-     SIM_DESC sd;
+     SIM_DESC sd ATTRIBUTE_UNUSED;
      int rn;
      unsigned char *memory;
-     int length;
+     int length ATTRIBUTE_UNUSED;
 {
   ARMword regval;
 
   init ();
-  if (rn < 16)
-    regval = ARMul_GetReg (state, state->Mode, rn);
-  else if (rn == 25)		/* FIXME: use PS_REGNUM from gdb/config/arm/tm-arm.h */
-    regval = ARMul_GetCPSR (state);
-  else
-    regval = 0;			/* FIXME: should report an error */
-  tomem (state, memory, regval);
+
+  switch ((enum sim_arm_regs) rn)
+    {
+    case SIM_ARM_R0_REGNUM:
+    case SIM_ARM_R1_REGNUM:
+    case SIM_ARM_R2_REGNUM:
+    case SIM_ARM_R3_REGNUM:
+    case SIM_ARM_R4_REGNUM:
+    case SIM_ARM_R5_REGNUM:
+    case SIM_ARM_R6_REGNUM:
+    case SIM_ARM_R7_REGNUM:
+    case SIM_ARM_R8_REGNUM:
+    case SIM_ARM_R9_REGNUM:
+    case SIM_ARM_R10_REGNUM:
+    case SIM_ARM_R11_REGNUM:
+    case SIM_ARM_R12_REGNUM:
+    case SIM_ARM_R13_REGNUM:
+    case SIM_ARM_R14_REGNUM:
+    case SIM_ARM_R15_REGNUM: /* PC */
+      regval = ARMul_GetReg (state, state->Mode, rn);
+      break;
+
+    case SIM_ARM_FP0_REGNUM:
+    case SIM_ARM_FP1_REGNUM:
+    case SIM_ARM_FP2_REGNUM:
+    case SIM_ARM_FP3_REGNUM:
+    case SIM_ARM_FP4_REGNUM:
+    case SIM_ARM_FP5_REGNUM:
+    case SIM_ARM_FP6_REGNUM:
+    case SIM_ARM_FP7_REGNUM:
+    case SIM_ARM_FPS_REGNUM:
+      memset (memory, 0, length);
+      return 0;
+
+    case SIM_ARM_PS_REGNUM:
+      regval = ARMul_GetCPSR (state);
+      break;
+
+    default:
+      return 0;
+    }
+
+  while (length)
+    {
+      tomem (state, memory, regval);
+
+      length -= 4;
+      memory += 4;
+      regval = 0;
+    }  
+
   return -1;
 }
+
+#ifdef SIM_TARGET_SWITCHES
+
+static void sim_target_parse_arg_array PARAMS ((char **));
+
+typedef struct
+{
+  char * 	swi_option;
+  unsigned int	swi_mask;
+} swi_options;
+
+#define SWI_SWITCH	"--swi-support"
+
+static swi_options options[] =
+  {
+    { "none",    0 },
+    { "demon",   SWI_MASK_DEMON },
+    { "angel",   SWI_MASK_ANGEL },
+    { "redboot", SWI_MASK_REDBOOT },
+    { "all",     -1 },
+    { "NONE",    0 },
+    { "DEMON",   SWI_MASK_DEMON },
+    { "ANGEL",   SWI_MASK_ANGEL },
+    { "REDBOOT", SWI_MASK_REDBOOT },
+    { "ALL",     -1 }
+  };
+
+
+int
+sim_target_parse_command_line (argc, argv)
+     int argc;
+     char ** argv;
+{
+  int i;
+
+  for (i = 1; i < argc; i++)
+    {
+      char * ptr = argv[i];
+      int arg;
+
+      if ((ptr == NULL) || (* ptr != '-'))
+	break;
+
+      if (strncmp (ptr, SWI_SWITCH, sizeof SWI_SWITCH - 1) != 0)
+	continue;
+
+      if (ptr[sizeof SWI_SWITCH - 1] == 0)
+	{
+	  /* Remove this option from the argv array.  */
+	  for (arg = i; arg < argc; arg ++)
+	    argv[arg] = argv[arg + 1];
+	  argc --;
+	  
+	  ptr = argv[i];
+	}
+      else
+	ptr += sizeof SWI_SWITCH;
+
+      swi_mask = 0;
+      
+      while (* ptr)
+	{
+	  int i;
+
+	  for (i = sizeof options / sizeof options[0]; i--;)
+	    if (strncmp (ptr, options[i].swi_option,
+			 strlen (options[i].swi_option)) == 0)
+	      {
+		swi_mask |= options[i].swi_mask;
+		ptr += strlen (options[i].swi_option);
+
+		if (* ptr == ',')
+		  ++ ptr;
+
+		break;
+	      }
+
+	  if (i < 0)
+	    break;
+	}
+
+      if (* ptr != 0)
+	fprintf (stderr, "Ignoring swi options: %s\n", ptr);
+      
+      /* Remove this option from the argv array.  */
+      for (arg = i; arg < argc; arg ++)
+	argv[arg] = argv[arg + 1];
+      argc --;
+      i --;
+    }
+  return argc;
+}
+
+static void
+sim_target_parse_arg_array (argv)
+     char ** argv;
+{
+  int i;
+
+  for (i = 0; argv[i]; i++)
+    ;
+
+  return (void) sim_target_parse_command_line (i, argv);
+}
+
+void
+sim_target_display_usage ()
+{
+  fprintf (stderr, "%s=<list>  Comma seperated list of SWI protocols to supoport.\n\
+                This list can contain: NONE, DEMON, ANGEL, REDBOOT and/or ALL.\n",
+	   SWI_SWITCH);
+}
+#endif
 
 SIM_DESC
 sim_open (kind, ptr, abfd, argv)
@@ -349,9 +614,14 @@ sim_open (kind, ptr, abfd, argv)
      char **argv;
 {
   sim_kind = kind;
-  myname = argv[0];
+  if (myname) free (myname);
+  myname = (char *) xstrdup (argv[0]);
   sim_callback = ptr;
 
+#ifdef SIM_TARGET_SWITCHES
+  sim_target_parse_arg_array (argv);
+#endif
+  
   /* Decide upon the endian-ness of the processor.
      If we can, get the information from the bfd itself.
      Otherwise look to see if we have been given a command
@@ -404,10 +674,12 @@ sim_open (kind, ptr, abfd, argv)
 
 void
 sim_close (sd, quitting)
-     SIM_DESC sd;
-     int quitting;
+     SIM_DESC sd ATTRIBUTE_UNUSED;
+     int quitting ATTRIBUTE_UNUSED;
 {
-  /* nothing to do */
+  if (myname)
+    free (myname);
+  myname = NULL;
 }
 
 SIM_RC
@@ -415,9 +687,8 @@ sim_load (sd, prog, abfd, from_tty)
      SIM_DESC sd;
      char *prog;
      bfd *abfd;
-     int from_tty;
+     int from_tty ATTRIBUTE_UNUSED;
 {
-  extern bfd *sim_load_file ();	/* ??? Don't know where this should live.  */
   bfd *prog_bfd;
 
   prog_bfd = sim_load_file (sd, myname, sim_callback, prog, abfd,
@@ -432,7 +703,7 @@ sim_load (sd, prog, abfd, from_tty)
 
 void
 sim_stop_reason (sd, reason, sigrc)
-     SIM_DESC sd;
+     SIM_DESC sd ATTRIBUTE_UNUSED;
      enum sim_stop *reason;
      int *sigrc;
 {
@@ -458,13 +729,13 @@ sim_stop_reason (sd, reason, sigrc)
 
 void
 sim_do_command (sd, cmd)
-     SIM_DESC sd;
-     char *cmd;
+     SIM_DESC sd ATTRIBUTE_UNUSED;
+     char *cmd ATTRIBUTE_UNUSED;
 {  
-  (*sim_callback->printf_filtered) (sim_callback,
-				    "This simulator does not accept any commands.\n");
+  (*sim_callback->printf_filtered)
+    (sim_callback,
+     "This simulator does not accept any commands.\n");
 }
-
 
 void
 sim_set_callbacks (ptr)

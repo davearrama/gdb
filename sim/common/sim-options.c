@@ -110,6 +110,7 @@ typedef enum {
   OPTION_HELP,
 #ifdef SIM_H8300 /* FIXME: Should be movable to h8300 dir.  */
   OPTION_H8300,
+  OPTION_H8300S,
 #endif
   OPTION_LOAD_LMA,
   OPTION_LOAD_VMA,
@@ -152,7 +153,10 @@ static const OPTION standard_options[] =
 
 #ifdef SIM_H8300 /* FIXME: Should be movable to h8300 dir.  */
   { {"h8300h", no_argument, NULL, OPTION_H8300},
-      'h', NULL, "Indicate the CPU is h8/300h or h8/300s",
+      'h', NULL, "Indicate the CPU is h8/300h",
+      standard_option_handler },
+  { {"h8300s", no_argument, NULL, OPTION_H8300S},
+      'S', NULL, "Indicate the CPU is h8/300s",
       standard_option_handler },
 #endif
 
@@ -354,7 +358,10 @@ standard_option_handler (SIM_DESC sd, sim_cpu *cpu, int opt,
 
 #ifdef SIM_H8300 /* FIXME: Can be moved to h8300 dir.  */
     case OPTION_H8300:
-      set_h8300h (1);
+      set_h8300h (1,0);
+      break;
+    case OPTION_H8300S:
+      set_h8300h (1,1);
       break;
 #endif
 
@@ -499,6 +506,7 @@ sim_parse_args (sd, argv)
   const OPTION *opt;
   OPTION_HANDLER **handlers;
   sim_cpu **opt_cpu;
+  SIM_RC result = SIM_RC_OK;
 
   /* Count the number of arguments.  */
   for (argc = 0; argv[argc] != NULL; ++argc)
@@ -579,7 +587,8 @@ sim_parse_args (sd, argv)
 	    if (opt->shortopt != 0)
 	      {
 		sim_io_eprintf (sd, "internal error, short cpu specific option");
-		return SIM_RC_FAIL;
+		result = SIM_RC_FAIL;
+		break;
 	      }
 	    if (opt->opt.name != NULL)
 	      {
@@ -617,13 +626,24 @@ sim_parse_args (sd, argv)
 	  break;
 	}
       if (optc == '?')
-	return SIM_RC_FAIL;
+	{
+	  result = SIM_RC_FAIL;
+	  break;
+	}
 
       if ((*handlers[optc]) (sd, opt_cpu[optc], orig_val[optc], optarg, 0/*!is_command*/) == SIM_RC_FAIL)
-	return SIM_RC_FAIL;
+	{
+	  result = SIM_RC_FAIL;
+	  break;
+	}
     }
 
-  return SIM_RC_OK;
+  zfree (long_options);
+  zfree (short_options);
+  zfree (handlers);
+  zfree (opt_cpu);
+  zfree (orig_val);
+  return result;
 }
 
 /* Utility of sim_print_help to print a list of option tables.  */
