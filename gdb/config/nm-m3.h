@@ -1,6 +1,6 @@
 /* Mach 3.0 common definitions and global vars.
 
-   Copyright (C) 1992 Free Software Foundation, Inc.
+   Copyright 1992, 1993, 1994, 1996 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -23,6 +23,7 @@
 #define NM_M3_H
 
 #include <mach.h>
+#include "regcache.h"
 
 /* Mach3 doesn't declare errno in <errno.h>.  */
 extern int errno;
@@ -76,7 +77,7 @@ extern int must_suspend_thread;
 
 /* Before storing, we need to read all the registers.  */
 
-#define CHILD_PREPARE_TO_STORE() read_register_bytes (0, NULL, REGISTER_BYTES)
+#define CHILD_PREPARE_TO_STORE() deprecated_read_register_bytes (0, NULL, REGISTER_BYTES)
 
 /* Check if the inferior exists */
 #define MACH_ERROR_NO_INFERIOR \

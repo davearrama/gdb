@@ -1,6 +1,6 @@
 /* Native support for the SGI Iris running IRIX version 4, for GDB.
-   Copyright 1988, 1989, 1990, 1991, 1992, 1993, 1995
-   Free Software Foundation, Inc.
+   Copyright 1988, 1989, 1990, 1991, 1992, 1993, 1995, 1996, 1999, 2000,
+   2001 Free Software Foundation, Inc.
    Contributed by Alessandro Forin(af@cs.cmu.edu) at CMU
    and by Per Bothner(bothner@cs.wisc.edu) at U.Wisconsin.
    Implemented for Irix 4.x by Garrett A. Wollman.
@@ -25,10 +25,14 @@
 #include "defs.h"
 #include "inferior.h"
 #include "gdbcore.h"
+#include "regcache.h"
 
 #include <sys/time.h>
 #include <sys/procfs.h>
 #include <setjmp.h>		/* For JB_XXX.  */
+
+/* Prototypes for supply_gregset etc. */
+#include "gregset.h"
 
 /* Size of elements in jmpbuf */
 
@@ -36,16 +40,14 @@
 
 typedef unsigned int greg_t;	/* why isn't this defined? */
 
-static void
-fetch_core_registers PARAMS ((char *, unsigned int, int, CORE_ADDR));
+static void fetch_core_registers (char *, unsigned int, int, CORE_ADDR);
 
 /*
  * See the comment in m68k-tdep.c regarding the utility of these functions.
  */
 
 void
-supply_gregset (gregsetp)
-     gregset_t *gregsetp;
+supply_gregset (gregset_t *gregsetp)
 {
   register int regi;
   register greg_t *regp = (greg_t *) (gregsetp->gp_regs);
@@ -67,9 +69,7 @@ supply_gregset (gregsetp)
 }
 
 void
-fill_gregset (gregsetp, regno)
-     gregset_t *gregsetp;
-     int regno;
+fill_gregset (gregset_t *gregsetp, int regno)
 {
   int regi;
   register greg_t *regp = (greg_t *) (gregsetp->gp_regs);
@@ -77,19 +77,19 @@ fill_gregset (gregsetp, regno)
   /* same FIXME as above wrt 32 */
   for (regi = 0; regi < 32; regi++)
     if ((regno == -1) || (regno == regi))
-      *(regp + regi) = *(greg_t *) & registers[REGISTER_BYTE (regi)];
+      *(regp + regi) = *(greg_t *) & deprecated_registers[REGISTER_BYTE (regi)];
 
   if ((regno == -1) || (regno == PC_REGNUM))
-    gregsetp->gp_pc = *(greg_t *) & registers[REGISTER_BYTE (PC_REGNUM)];
+    gregsetp->gp_pc = *(greg_t *) & deprecated_registers[REGISTER_BYTE (PC_REGNUM)];
 
   if ((regno == -1) || (regno == CAUSE_REGNUM))
-    gregsetp->gp_cause = *(greg_t *) & registers[REGISTER_BYTE (CAUSE_REGNUM)];
+    gregsetp->gp_cause = *(greg_t *) & deprecated_registers[REGISTER_BYTE (CAUSE_REGNUM)];
 
   if ((regno == -1) || (regno == HI_REGNUM))
-    gregsetp->gp_mdhi = *(greg_t *) & registers[REGISTER_BYTE (HI_REGNUM)];
+    gregsetp->gp_mdhi = *(greg_t *) & deprecated_registers[REGISTER_BYTE (HI_REGNUM)];
 
   if ((regno == -1) || (regno == LO_REGNUM))
-    gregsetp->gp_mdlo = *(greg_t *) & registers[REGISTER_BYTE (LO_REGNUM)];
+    gregsetp->gp_mdlo = *(greg_t *) & deprecated_registers[REGISTER_BYTE (LO_REGNUM)];
 }
 
 /*
@@ -101,8 +101,7 @@ fill_gregset (gregsetp, regno)
  */
 
 void
-supply_fpregset (fpregsetp)
-     fpregset_t *fpregsetp;
+supply_fpregset (fpregset_t *fpregsetp)
 {
   register int regi;
   static char zerobuf[MAX_REGISTER_RAW_SIZE] =
@@ -119,9 +118,7 @@ supply_fpregset (fpregsetp)
 }
 
 void
-fill_fpregset (fpregsetp, regno)
-     fpregset_t *fpregsetp;
-     int regno;
+fill_fpregset (fpregset_t *fpregsetp, int regno)
 {
   int regi;
   char *from, *to;
@@ -130,14 +127,14 @@ fill_fpregset (fpregsetp, regno)
     {
       if ((regno == -1) || (regno == regi))
 	{
-	  from = (char *) &registers[REGISTER_BYTE (regi)];
+	  from = (char *) &deprecated_registers[REGISTER_BYTE (regi)];
 	  to = (char *) &(fpregsetp->fp_r.fp_regs[regi - FP0_REGNUM]);
 	  memcpy (to, from, REGISTER_RAW_SIZE (regi));
 	}
     }
 
   if ((regno == -1) || (regno == FCRCS_REGNUM))
-    fpregsetp->fp_csr = *(unsigned *) &registers[REGISTER_BYTE (FCRCS_REGNUM)];
+    fpregsetp->fp_csr = *(unsigned *) &deprecated_registers[REGISTER_BYTE (FCRCS_REGNUM)];
 }
 
 
@@ -147,12 +144,12 @@ fill_fpregset (fpregsetp, regno)
    This routine returns true on success. */
 
 int
-get_longjmp_target (pc)
-     CORE_ADDR *pc;
+get_longjmp_target (CORE_ADDR *pc)
 {
-  char buf[TARGET_PTR_BIT / TARGET_CHAR_BIT];
+  char *buf;
   CORE_ADDR jb_addr;
 
+  buf = alloca (TARGET_PTR_BIT / TARGET_CHAR_BIT);
   jb_addr = read_register (A0_REGNUM);
 
   if (target_read_memory (jb_addr + JB_PC * JB_ELEMENT_SIZE, buf,
@@ -164,12 +161,22 @@ get_longjmp_target (pc)
   return 1;
 }
 
+/* Provide registers to GDB from a core file.
+
+   CORE_REG_SECT points to an array of bytes, which were obtained from
+   a core file which BFD thinks might contain register contents. 
+   CORE_REG_SIZE is its size.
+
+   Normally, WHICH says which register set corelow suspects this is:
+     0 --- the general-purpose register set
+     2 --- the floating-point register set
+   However, for Irix 4, WHICH isn't used.
+
+   REG_ADDR is also unused.  */
+
 static void
-fetch_core_registers (core_reg_sect, core_reg_size, which, reg_addr)
-     char *core_reg_sect;
-     unsigned core_reg_size;
-     int which;			/* Unused */
-     CORE_ADDR reg_addr;	/* Unused */
+fetch_core_registers (char *core_reg_sect, unsigned core_reg_size,
+		      int which, CORE_ADDR reg_addr)
 {
   if (core_reg_size != REGISTER_BYTES)
     {
@@ -177,7 +184,7 @@ fetch_core_registers (core_reg_sect, core_reg_size, which, reg_addr)
       return;
     }
 
-  memcpy ((char *) registers, core_reg_sect, core_reg_size);
+  memcpy ((char *) deprecated_registers, core_reg_sect, core_reg_size);
 }
 
 
@@ -194,7 +201,7 @@ static struct core_fns irix4_core_fns =
 };
 
 void
-_initialize_core_irix4 ()
+_initialize_core_irix4 (void)
 {
   add_core_fns (&irix4_core_fns);
 }

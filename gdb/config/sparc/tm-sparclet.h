@@ -1,5 +1,5 @@
 /* Target machine definitions for GDB for an embedded SPARC.
-   Copyright 1996 Free Software Foundation, Inc.
+   Copyright 1996, 1997, 2000 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,9 +18,27 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
+#include "regcache.h"
+
+#define TARGET_SPARCLET 1	/* Still needed for non-multi-arch case */
+
 #include "sparc/tm-sparc.h"
 
-#define TARGET_SPARCLET 1
+/* Note: we are not defining GDB_MULTI_ARCH for the sparclet target
+   at this time, because we have not figured out how to detect the
+   sparclet target from the bfd structure.  */
+
+/* Sparclet regs, for debugging purposes.  */
+
+enum { 
+  CCSR_REGNUM   = 72,
+  CCPR_REGNUM   = 73, 
+  CCCRCR_REGNUM = 74,
+  CCOR_REGNUM   = 75, 
+  CCOBR_REGNUM  = 76,
+  CCIBR_REGNUM  = 77,
+  CCIR_REGNUM   = 78
+};
 
 /* Select the sparclet disassembler.  Slightly different instruction set from
    the V8 sparc.  */
@@ -31,12 +49,16 @@
 /* overrides of tm-sparc.h */
 
 #undef TARGET_BYTE_ORDER
-#define TARGET_BYTE_ORDER_SELECTABLE
 
 /* Sequence of bytes for breakpoint instruction (ta 1). */
 #undef BREAKPOINT
 #define BIG_BREAKPOINT {0x91, 0xd0, 0x20, 0x01}
 #define LITTLE_BREAKPOINT {0x01, 0x20, 0xd0, 0x91}
+
+#if !defined (GDB_MULTI_ARCH) || (GDB_MULTI_ARCH == 0)
+/*
+ * The following defines must go away for MULTI_ARCH.
+ */
 
 #undef  NUM_REGS		/* formerly "72" */
 /*                WIN  FP   CPU  CCP  ASR  AWR  APSR */
@@ -80,14 +102,14 @@
 
 /* Remove FP dependant code which was defined in tm-sparc.h */
 #undef	FP0_REGNUM		/* Floating point register 0 */
-#undef	FPS_REGNUM		/* Floating point status register */
+#undef  FPS_REGNUM		/* Floating point status register */
 #undef 	CPS_REGNUM		/* Coprocessor status register */
 
 /* sparclet register numbers */
 #define CCSR_REGNUM 72
 
-#undef EXTRACT_RETURN_VALUE
-#define EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF)                       \
+#undef DEPRECATED_EXTRACT_RETURN_VALUE
+#define DEPRECATED_EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF)            \
   {                                                                    \
     memcpy ((VALBUF),                                                  \
 	    (char *)(REGBUF) + REGISTER_RAW_SIZE (O0_REGNUM) * 8 +     \
@@ -95,16 +117,20 @@
 	     ? 0 : REGISTER_RAW_SIZE (O0_REGNUM) - TYPE_LENGTH(TYPE)), \
 	    TYPE_LENGTH(TYPE));                                        \
   }
-#undef STORE_RETURN_VALUE
-#define STORE_RETURN_VALUE(TYPE,VALBUF) \
+#undef DEPRECATED_STORE_RETURN_VALUE
+#define DEPRECATED_STORE_RETURN_VALUE(TYPE,VALBUF) \
   {                                                                    \
     /* Other values are returned in register %o0.  */                  \
-    write_register_bytes (REGISTER_BYTE (O0_REGNUM), (VALBUF),         \
+    deprecated_write_register_bytes (REGISTER_BYTE (O0_REGNUM), (VALBUF),         \
 			  TYPE_LENGTH (TYPE));                         \
   }
 
-#undef PRINT_REGISTER_HOOK
-#define PRINT_REGISTER_HOOK(regno)
+#endif /* GDB_MULTI_ARCH */
+
+extern void sparclet_do_registers_info (int regnum, int all);
+#undef DEPRECATED_DO_REGISTERS_INFO
+#define DEPRECATED_DO_REGISTERS_INFO(REGNUM,ALL) sparclet_do_registers_info (REGNUM, ALL)
+
 
 /* Offsets into jmp_buf.  Not defined by Sun, but at least documented in a
    comment in <machine/setjmp.h>! */
@@ -127,7 +153,6 @@
    extract the pc (JB_PC) that we will land at.  The pc is copied into ADDR.
    This routine returns true on success */
 
-extern int
-get_longjmp_target PARAMS ((CORE_ADDR *));
+extern int get_longjmp_target (CORE_ADDR *);
 
 #define GET_LONGJMP_TARGET(ADDR) get_longjmp_target(ADDR)

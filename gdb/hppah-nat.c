@@ -1,5 +1,6 @@
 /* Native support code for HPUX PA-RISC.
-   Copyright 1986, 1987, 1989, 1990, 1991, 1992, 1993, 1998, 1999
+   Copyright 1986, 1987, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
+   1998, 1999, 2000, 2001
    Free Software Foundation, Inc.
 
    Contributed by the Center for Software Science at the
@@ -28,16 +29,16 @@
 #include "target.h"
 #include <sys/ptrace.h>
 #include "gdbcore.h"
-#include <wait.h>
+#include "gdb_wait.h"
+#include "regcache.h"
 #include <signal.h>
 
 extern CORE_ADDR text_end;
 
-static void fetch_register PARAMS ((int));
+static void fetch_register (int);
 
 void
-fetch_inferior_registers (regno)
-     int regno;
+fetch_inferior_registers (int regno)
 {
   if (regno == -1)
     for (regno = 0; regno < NUM_REGS; regno++)
@@ -54,8 +55,7 @@ fetch_inferior_registers (regno)
    Otherwise, REGNO specifies which register (so we can save time).  */
 
 void
-store_inferior_registers (regno)
-     int regno;
+store_inferior_registers (int regno)
 {
   register unsigned int regaddr;
   char buf[80];
@@ -108,7 +108,8 @@ store_inferior_registers (regno)
 	addr = (HPPAH_OFFSETOF (save_state_t, ss_narrow)
 		+ (REGISTER_BYTE (regno) - REGISTER_BYTE (1)));
       else
-	internal_error ("hppah-nat.c (write_register): unexpected register size");
+	internal_error (__FILE__, __LINE__,
+			"hppah-nat.c (write_register): unexpected register size");
 
 #ifdef GDB_TARGET_IS_HPPA_20W
       /* Unbelieveable.  The PC head and tail must be written in 64bit hunks
@@ -120,12 +121,13 @@ store_inferior_registers (regno)
 	{
 	  CORE_ADDR temp;
 
-	  temp = *(CORE_ADDR *)&registers[REGISTER_BYTE (regno)];
+	  temp = *(CORE_ADDR *)&deprecated_registers[REGISTER_BYTE (regno)];
 
 	  /* Set the priv level (stored in the low two bits of the PC.  */
 	  temp |= 0x3;
 
-	  ttrace_write_reg_64 (inferior_pid, (CORE_ADDR)addr, (CORE_ADDR)&temp);
+	  ttrace_write_reg_64 (PIDGET (inferior_ptid), (CORE_ADDR)addr,
+	                       (CORE_ADDR)&temp);
 
 	  /* If we fail to write the PC, give a true error instead of
 	     just a warning.  */
@@ -144,14 +146,15 @@ store_inferior_registers (regno)
 	 the high part of IPSW.  What will it take for HP to catch a
 	 clue about building sensible interfaces?  */
      if (regno == IPSW_REGNUM && len == 8)
-	*(int *)&registers[REGISTER_BYTE (regno)] = 0;
+	*(int *)&deprecated_registers[REGISTER_BYTE (regno)] = 0;
 #endif
 
       for (i = 0; i < len; i += sizeof (int))
 	{
 	  errno = 0;
-	  call_ptrace (PT_WUREGS, inferior_pid, (PTRACE_ARG3_TYPE) addr + i,
-		       *(int *) &registers[REGISTER_BYTE (regno) + i]);
+	  call_ptrace (PT_WUREGS, PIDGET (inferior_ptid),
+	               (PTRACE_ARG3_TYPE) addr + i,
+		       *(int *) &deprecated_registers[REGISTER_BYTE (regno) + i]);
 	  if (errno != 0)
 	    {
 	      /* Warning, not error, in case we are attached; sometimes
@@ -178,8 +181,7 @@ store_inferior_registers (regno)
 
 /* Fetch a register's value from the process's U area.  */
 static void
-fetch_register (regno)
-     int regno;
+fetch_register (int regno)
 {
   char buf[MAX_REGISTER_RAW_SIZE];
   unsigned int addr, len, offset;
@@ -225,7 +227,8 @@ fetch_register (regno)
 	    + (REGISTER_BYTE (regno) - REGISTER_BYTE (1)));
 
   else
-    internal_error ("hppa-nat.c (fetch_register): unexpected register size");
+    internal_error (__FILE__, __LINE__,
+		    "hppa-nat.c (fetch_register): unexpected register size");
 
   for (i = 0; i < len; i += sizeof (int))
     {
@@ -233,7 +236,7 @@ fetch_register (regno)
       /* Copy an int from the U area to buf.  Fill the least
          significant end if len != raw_size.  */
       * (int *) &buf[offset + i] =
-	  call_ptrace (PT_RUREGS, inferior_pid,
+	  call_ptrace (PT_RUREGS, PIDGET (inferior_ptid),
 		       (PTRACE_ARG3_TYPE) addr + i, 0);
       if (errno != 0)
 	{
@@ -265,15 +268,12 @@ fetch_register (regno)
    Returns the length copied, which is either the LEN argument or zero.
    This xfer function does not do partial moves, since child_ops
    doesn't allow memory operations to cross below us in the target stack
-   anyway.  */
+   anyway.  TARGET is ignored.  */
 
 int
-child_xfer_memory (memaddr, myaddr, len, write, target)
-     CORE_ADDR memaddr;
-     char *myaddr;
-     int len;
-     int write;
-     struct target_ops *target;	/* ignored */
+child_xfer_memory (CORE_ADDR memaddr, char *myaddr, int len, int write,
+		   struct mem_attrib *mem,
+		   struct target_ops *target)
 {
   register int i;
   /* Round starting address down to longword boundary.  */
@@ -299,14 +299,15 @@ child_xfer_memory (memaddr, myaddr, len, write, target)
 	{
 	  /* Need part of initial word -- fetch it.  */
 	  buffer[0] = call_ptrace (addr < text_end ? PT_RIUSER : PT_RDUSER,
-				   inferior_pid, (PTRACE_ARG3_TYPE) addr, 0);
+				   PIDGET (inferior_ptid),
+				   (PTRACE_ARG3_TYPE) addr, 0);
 	}
 
       if (count > 1)		/* FIXME, avoid if even boundary */
 	{
 	  buffer[count - 1]
 	    = call_ptrace (addr < text_end ? PT_RIUSER : PT_RDUSER,
-			   inferior_pid,
+			   PIDGET (inferior_ptid),
 			   (PTRACE_ARG3_TYPE) (addr
 					       + (count - 1) * sizeof (int)),
 			   0);
@@ -328,7 +329,7 @@ child_xfer_memory (memaddr, myaddr, len, write, target)
 	  errno = 0;
 	  pt_request = (addr < text_end) ? PT_WIUSER : PT_WDUSER;
 	  pt_status = call_ptrace (pt_request,
-				   inferior_pid,
+				   PIDGET (inferior_ptid),
 				   (PTRACE_ARG3_TYPE) addr,
 				   buffer[i]);
 
@@ -340,14 +341,14 @@ child_xfer_memory (memaddr, myaddr, len, write, target)
 	      errno = 0;
 	      pt_request = (pt_request == PT_WIUSER) ? PT_WDUSER : PT_WIUSER;
 	      pt_status = call_ptrace (pt_request,
-				       inferior_pid,
+				       PIDGET (inferior_ptid),
 				       (PTRACE_ARG3_TYPE) addr,
 				       buffer[i]);
 
 	      /* No, we still fail.  Okay, time to punt. */
 	      if ((pt_status == -1) && errno)
 		{
-		  free (buffer);
+		  xfree (buffer);
 		  return 0;
 		}
 	    }
@@ -360,10 +361,11 @@ child_xfer_memory (memaddr, myaddr, len, write, target)
 	{
 	  errno = 0;
 	  buffer[i] = call_ptrace (addr < text_end ? PT_RIUSER : PT_RDUSER,
-				   inferior_pid, (PTRACE_ARG3_TYPE) addr, 0);
+				   PIDGET (inferior_ptid),
+				   (PTRACE_ARG3_TYPE) addr, 0);
 	  if (errno)
 	    {
-	      free (buffer);
+	      xfree (buffer);
 	      return 0;
 	    }
 	  QUIT;
@@ -372,13 +374,13 @@ child_xfer_memory (memaddr, myaddr, len, write, target)
       /* Copy appropriate bytes out of the buffer.  */
       memcpy (myaddr, (char *) buffer + (memaddr & (sizeof (int) - 1)), len);
     }
-  free (buffer);
+  xfree (buffer);
   return len;
 }
 
 
 void
-child_post_follow_inferior_by_clone ()
+child_post_follow_inferior_by_clone (void)
 {
   int status;
 
@@ -391,16 +393,13 @@ child_post_follow_inferior_by_clone ()
      At this point, the clone has attached to the child.  Because of
      the SIGSTOP, we must now deliver a SIGCONT to the child, or it
      won't behave properly. */
-  status = kill (inferior_pid, SIGCONT);
+  status = kill (PIDGET (inferior_ptid), SIGCONT);
 }
 
 
 void
-child_post_follow_vfork (parent_pid, followed_parent, child_pid, followed_child)
-     int parent_pid;
-     int followed_parent;
-     int child_pid;
-     int followed_child;
+child_post_follow_vfork (int parent_pid, int followed_parent, int child_pid,
+			 int followed_child)
 {
   /* Are we a debugger that followed the parent of a vfork?  If so,
      then recall that the child's vfork event was delivered to us
@@ -438,14 +437,14 @@ child_post_follow_vfork (parent_pid, followed_parent, child_pid, followed_child)
 /* Format a process id, given PID.  Be sure to terminate
    this with a null--it's going to be printed via a "%s".  */
 char *
-child_pid_to_str (pid)
-     pid_t pid;
+child_pid_to_str (ptid_t ptid)
 {
   /* Static because address returned */
   static char buf[30];
+  pid_t pid = PIDGET (ptid);
 
-  /* Extra NULLs for paranoia's sake */
-  sprintf (buf, "process %d\0\0\0\0", pid);
+  /* Extra NUL for paranoia's sake */
+  sprintf (buf, "process %d%c", pid, '\0');
 
   return buf;
 }
@@ -456,14 +455,16 @@ child_pid_to_str (pid)
    Note: This is a core-gdb tid, not the actual system tid.
    See infttrace.c for details.  */
 char *
-hppa_tid_to_str (tid)
-     pid_t tid;
+hppa_tid_to_str (ptid_t ptid)
 {
   /* Static because address returned */
   static char buf[30];
+  /* This seems strange, but when I did the ptid conversion, it looked
+     as though a pid was always being passed.  - Kevin Buettner  */
+  pid_t tid = PIDGET (ptid);
 
   /* Extra NULLs for paranoia's sake */
-  sprintf (buf, "system thread %d\0\0\0\0", tid);
+  sprintf (buf, "system thread %d%c", tid, '\0');
 
   return buf;
 }
@@ -492,7 +493,7 @@ startup_semaphore_t;
 
 static startup_semaphore_t startup_semaphore;
 
-extern int parent_attach_all PARAMS ((int, PTRACE_ARG3_TYPE, int));
+extern int parent_attach_all (int, PTRACE_ARG3_TYPE, int);
 
 #ifdef PT_SETTRC
 /* This function causes the caller's process to be traced by its
@@ -515,10 +516,7 @@ extern int parent_attach_all PARAMS ((int, PTRACE_ARG3_TYPE, int));
    child_acknowledge_created_inferior.)  */
 
 int
-parent_attach_all (pid, addr, data)
-     int pid;
-     PTRACE_ARG3_TYPE addr;
-     int data;
+parent_attach_all (int pid, PTRACE_ARG3_TYPE addr, int data)
 {
   int pt_status = 0;
 
@@ -555,8 +553,7 @@ parent_attach_all (pid, addr, data)
 #endif
 
 int
-hppa_require_attach (pid)
-     int pid;
+hppa_require_attach (int pid)
 {
   int pt_status;
   CORE_ADDR pc;
@@ -589,9 +586,7 @@ hppa_require_attach (pid)
 }
 
 int
-hppa_require_detach (pid, signal)
-     int pid;
-     int signal;
+hppa_require_detach (int pid, int signal)
 {
   errno = 0;
   call_ptrace (PT_DETACH, pid, (PTRACE_ARG3_TYPE) 1, signal);
@@ -604,58 +599,42 @@ hppa_require_detach (pid, signal)
    dummy versions, which perform no useful work.  */
 
 void
-hppa_enable_page_protection_events (pid)
-     int pid;
+hppa_enable_page_protection_events (int pid)
 {
 }
 
 void
-hppa_disable_page_protection_events (pid)
-     int pid;
+hppa_disable_page_protection_events (int pid)
 {
 }
 
 int
-hppa_insert_hw_watchpoint (pid, start, len, type)
-     int pid;
-     CORE_ADDR start;
-     LONGEST len;
-     int type;
+hppa_insert_hw_watchpoint (int pid, CORE_ADDR start, LONGEST len, int type)
 {
   error ("Hardware watchpoints not implemented on this platform.");
 }
 
 int
-hppa_remove_hw_watchpoint (pid, start, len, type)
-     int pid;
-     CORE_ADDR start;
-     LONGEST len;
-     enum bptype type;
+hppa_remove_hw_watchpoint (int pid, CORE_ADDR start, LONGEST len,
+			   enum bptype type)
 {
   error ("Hardware watchpoints not implemented on this platform.");
 }
 
 int
-hppa_can_use_hw_watchpoint (type, cnt, ot)
-     enum bptype type;
-     int cnt;
-     enum bptype ot;
+hppa_can_use_hw_watchpoint (enum bptype type, int cnt, enum bptype ot)
 {
   return 0;
 }
 
 int
-hppa_range_profitable_for_hw_watchpoint (pid, start, len)
-     int pid;
-     CORE_ADDR start;
-     LONGEST len;
+hppa_range_profitable_for_hw_watchpoint (int pid, CORE_ADDR start, LONGEST len)
 {
   error ("Hardware watchpoints not implemented on this platform.");
 }
 
 char *
-hppa_pid_or_tid_to_str (id)
-     pid_t id;
+hppa_pid_or_tid_to_str (ptid_t id)
 {
   /* In the ptrace world, there are only processes. */
   return child_pid_to_str (id);
@@ -666,15 +645,13 @@ hppa_pid_or_tid_to_str (id)
    hppa-tdep.c. */
 
 pid_t
-hppa_switched_threads (pid)
-     pid_t pid;
+hppa_switched_threads (pid_t pid)
 {
   return (pid_t) 0;
 }
 
 void
-hppa_ensure_vforking_parent_remains_stopped (pid)
-     int pid;
+hppa_ensure_vforking_parent_remains_stopped (int pid)
 {
   /* This assumes that the vforked parent is presently stopped, and
      that the vforked child has just delivered its first exec event.
@@ -686,14 +663,13 @@ hppa_ensure_vforking_parent_remains_stopped (pid)
 }
 
 int
-hppa_resume_execd_vforking_child_to_get_parent_vfork ()
+hppa_resume_execd_vforking_child_to_get_parent_vfork (void)
 {
   return 1;			/* Yes, the child must be resumed. */
 }
 
 void
-require_notification_of_events (pid)
-     int pid;
+require_notification_of_events (int pid)
 {
 #if defined(PT_SET_EVENT_MASK)
   int pt_status;
@@ -758,8 +734,7 @@ require_notification_of_events (pid)
 }
 
 void
-require_notification_of_exec_events (pid)
-     int pid;
+require_notification_of_exec_events (int pid)
 {
 #if defined(PT_SET_EVENT_MASK)
   int pt_status;
@@ -800,8 +775,7 @@ require_notification_of_exec_events (pid)
    ID of the child process, after the debugger has forked.  */
 
 void
-child_acknowledge_created_inferior (pid)
-     int pid;
+child_acknowledge_created_inferior (int pid)
 {
   /* We need a memory home for a constant.  */
   int tc_magic_parent = PT_VERSION;
@@ -848,22 +822,19 @@ child_acknowledge_created_inferior (pid)
 }
 
 void
-child_post_startup_inferior (pid)
-     int pid;
+child_post_startup_inferior (ptid_t ptid)
 {
-  require_notification_of_events (pid);
+  require_notification_of_events (PIDGET (ptid));
 }
 
 void
-child_post_attach (pid)
-     int pid;
+child_post_attach (int pid)
 {
   require_notification_of_events (pid);
 }
 
 int
-child_insert_fork_catchpoint (pid)
-     int pid;
+child_insert_fork_catchpoint (int pid)
 {
   /* This request is only available on HPUX 10.0 and later.  */
 #if !defined(PT_SET_EVENT_MASK)
@@ -877,8 +848,7 @@ child_insert_fork_catchpoint (pid)
 }
 
 int
-child_remove_fork_catchpoint (pid)
-     int pid;
+child_remove_fork_catchpoint (int pid)
 {
   /* This request is only available on HPUX 10.0 and later.  */
 #if !defined(PT_SET_EVENT_MASK)
@@ -892,8 +862,7 @@ child_remove_fork_catchpoint (pid)
 }
 
 int
-child_insert_vfork_catchpoint (pid)
-     int pid;
+child_insert_vfork_catchpoint (int pid)
 {
   /* This request is only available on HPUX 10.0 and later.  */
 #if !defined(PT_SET_EVENT_MASK)
@@ -907,8 +876,7 @@ child_insert_vfork_catchpoint (pid)
 }
 
 int
-child_remove_vfork_catchpoint (pid)
-     int pid;
+child_remove_vfork_catchpoint (int pid)
 {
   /* This request is only available on HPUX 10.0 and later.  */
 #if !defined(PT_SET_EVENT_MASK)
@@ -922,9 +890,7 @@ child_remove_vfork_catchpoint (pid)
 }
 
 int
-child_has_forked (pid, childpid)
-     int pid;
-     int *childpid;
+child_has_forked (int pid, int *childpid)
 {
   /* This request is only available on HPUX 10.0 and later.  */
 #if !defined(PT_GET_PROCESS_STATE)
@@ -955,9 +921,7 @@ child_has_forked (pid, childpid)
 }
 
 int
-child_has_vforked (pid, childpid)
-     int pid;
-     int *childpid;
+child_has_vforked (int pid, int *childpid)
 {
   /* This request is only available on HPUX 10.0 and later.  */
 #if !defined(PT_GET_PROCESS_STATE)
@@ -989,15 +953,14 @@ child_has_vforked (pid, childpid)
 }
 
 int
-child_can_follow_vfork_prior_to_exec ()
+child_can_follow_vfork_prior_to_exec (void)
 {
   /* ptrace doesn't allow this. */
   return 0;
 }
 
 int
-child_insert_exec_catchpoint (pid)
-     int pid;
+child_insert_exec_catchpoint (int pid)
 {
   /* This request is only available on HPUX 10.0 and later.   */
 #if !defined(PT_SET_EVENT_MASK)
@@ -1012,8 +975,7 @@ child_insert_exec_catchpoint (pid)
 }
 
 int
-child_remove_exec_catchpoint (pid)
-     int pid;
+child_remove_exec_catchpoint (int pid)
 {
   /* This request is only available on HPUX 10.0 and later.  */
 #if !defined(PT_SET_EVENT_MASK)
@@ -1028,9 +990,7 @@ child_remove_exec_catchpoint (pid)
 }
 
 int
-child_has_execd (pid, execd_pathname)
-     int pid;
-     char **execd_pathname;
+child_has_execd (int pid, char **execd_pathname)
 {
   /* This request is only available on HPUX 10.0 and later.  */
 #if !defined(PT_GET_PROCESS_STATE)
@@ -1063,16 +1023,13 @@ child_has_execd (pid, execd_pathname)
 }
 
 int
-child_reported_exec_events_per_exec_call ()
+child_reported_exec_events_per_exec_call (void)
 {
   return 2;			/* ptrace reports the event twice per call. */
 }
 
 int
-child_has_syscall_event (pid, kind, syscall_id)
-     int pid;
-     enum target_waitkind *kind;
-     int *syscall_id;
+child_has_syscall_event (int pid, enum target_waitkind *kind, int *syscall_id)
 {
   /* This request is only available on HPUX 10.30 and later, via
      the ttrace interface.  */
@@ -1083,8 +1040,7 @@ child_has_syscall_event (pid, kind, syscall_id)
 }
 
 char *
-child_pid_to_exec_file (pid)
-     int pid;
+child_pid_to_exec_file (int pid)
 {
   static char exec_file_buffer[1024];
   int pt_status;
@@ -1092,7 +1048,7 @@ child_pid_to_exec_file (pid)
   char four_chars[4];
   int name_index;
   int i;
-  int saved_inferior_pid;
+  ptid_t saved_inferior_ptid;
   boolean done;
 
 #ifdef PT_GET_PROCESS_PATHNAME
@@ -1114,19 +1070,19 @@ child_pid_to_exec_file (pid)
   name_index = 0;
   done = 0;
 
-  /* On the chance that pid != inferior_pid, set inferior_pid
-     to pid, so that (grrrr!) implicit uses of inferior_pid get
+  /* On the chance that pid != inferior_ptid, set inferior_ptid
+     to pid, so that (grrrr!) implicit uses of inferior_ptid get
      the right id.  */
 
-  saved_inferior_pid = inferior_pid;
-  inferior_pid = pid;
+  saved_inferior_ptid = inferior_ptid;
+  inferior_ptid = pid_to_ptid (pid);
 
   /* Try to grab a null-terminated string. */
   while (!done)
     {
       if (target_read_memory (top_of_stack, four_chars, 4) != 0)
 	{
-	  inferior_pid = saved_inferior_pid;
+	  inferior_ptid = saved_inferior_ptid;
 	  return NULL;
 	}
       for (i = 0; i < 4; i++)
@@ -1141,16 +1097,16 @@ child_pid_to_exec_file (pid)
 
   if (exec_file_buffer[0] == '\0')
     {
-      inferior_pid = saved_inferior_pid;
+      inferior_ptid = saved_inferior_ptid;
       return NULL;
     }
 
-  inferior_pid = saved_inferior_pid;
+  inferior_ptid = saved_inferior_ptid;
   return exec_file_buffer;
 }
 
 void
-pre_fork_inferior ()
+pre_fork_inferior (void)
 {
   int status;
 
@@ -1176,8 +1132,7 @@ pre_fork_inferior ()
    return "TRUE".  */
 
 int
-child_thread_alive (pid)
-     int pid;
+child_thread_alive (ptid_t ptid)
 {
   return 1;
 }

@@ -1,5 +1,5 @@
 /* Native support for MIPS running SVR4, for GDB.
-   Copyright 1994, 1995 Free Software Foundation, Inc.
+   Copyright 1994, 1995, 2000, 2001 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -22,10 +22,14 @@
 #include "inferior.h"
 #include "gdbcore.h"
 #include "target.h"
+#include "regcache.h"
 
 #include <sys/time.h>
 #include <sys/procfs.h>
 #include <setjmp.h>		/* For JB_XXX.  */
+
+/* Prototypes for supply_gregset etc. */
+#include "gregset.h"
 
 /* Size of elements in jmpbuf */
 
@@ -39,8 +43,7 @@
  */
 
 void
-supply_gregset (gregsetp)
-     gregset_t *gregsetp;
+supply_gregset (gregset_t *gregsetp)
 {
   register int regi;
   register greg_t *regp = &(*gregsetp)[0];
@@ -65,28 +68,26 @@ supply_gregset (gregsetp)
 }
 
 void
-fill_gregset (gregsetp, regno)
-     gregset_t *gregsetp;
-     int regno;
+fill_gregset (gregset_t *gregsetp, int regno)
 {
   int regi;
   register greg_t *regp = &(*gregsetp)[0];
 
   for (regi = 0; regi <= 32; regi++)
     if ((regno == -1) || (regno == regi))
-      *(regp + regi) = *(greg_t *) & registers[REGISTER_BYTE (regi)];
+      *(regp + regi) = *(greg_t *) & deprecated_registers[REGISTER_BYTE (regi)];
 
   if ((regno == -1) || (regno == PC_REGNUM))
-    *(regp + CXT_EPC) = *(greg_t *) & registers[REGISTER_BYTE (PC_REGNUM)];
+    *(regp + CXT_EPC) = *(greg_t *) & deprecated_registers[REGISTER_BYTE (PC_REGNUM)];
 
   if ((regno == -1) || (regno == CAUSE_REGNUM))
-    *(regp + CXT_CAUSE) = *(greg_t *) & registers[REGISTER_BYTE (CAUSE_REGNUM)];
+    *(regp + CXT_CAUSE) = *(greg_t *) & deprecated_registers[REGISTER_BYTE (CAUSE_REGNUM)];
 
   if ((regno == -1) || (regno == HI_REGNUM))
-    *(regp + CXT_MDHI) = *(greg_t *) & registers[REGISTER_BYTE (HI_REGNUM)];
+    *(regp + CXT_MDHI) = *(greg_t *) & deprecated_registers[REGISTER_BYTE (HI_REGNUM)];
 
   if ((regno == -1) || (regno == LO_REGNUM))
-    *(regp + CXT_MDLO) = *(greg_t *) & registers[REGISTER_BYTE (LO_REGNUM)];
+    *(regp + CXT_MDLO) = *(greg_t *) & deprecated_registers[REGISTER_BYTE (LO_REGNUM)];
 }
 
 /*
@@ -98,8 +99,7 @@ fill_gregset (gregsetp, regno)
  */
 
 void
-supply_fpregset (fpregsetp)
-     fpregset_t *fpregsetp;
+supply_fpregset (fpregset_t *fpregsetp)
 {
   register int regi;
   static char zerobuf[MAX_REGISTER_RAW_SIZE] =
@@ -116,9 +116,7 @@ supply_fpregset (fpregsetp)
 }
 
 void
-fill_fpregset (fpregsetp, regno)
-     fpregset_t *fpregsetp;
-     int regno;
+fill_fpregset (fpregset_t *fpregsetp, int regno)
 {
   int regi;
   char *from, *to;
@@ -127,14 +125,14 @@ fill_fpregset (fpregsetp, regno)
     {
       if ((regno == -1) || (regno == regi))
 	{
-	  from = (char *) &registers[REGISTER_BYTE (regi)];
+	  from = (char *) &deprecated_registers[REGISTER_BYTE (regi)];
 	  to = (char *) &(fpregsetp->fp_r.fp_regs[regi - FP0_REGNUM]);
 	  memcpy (to, from, REGISTER_RAW_SIZE (regi));
 	}
     }
 
   if ((regno == -1) || (regno == FCRCS_REGNUM))
-    fpregsetp->fp_csr = *(unsigned *) &registers[REGISTER_BYTE (FCRCS_REGNUM)];
+    fpregsetp->fp_csr = *(unsigned *) &deprecated_registers[REGISTER_BYTE (FCRCS_REGNUM)];
 }
 
 
@@ -144,12 +142,12 @@ fill_fpregset (fpregsetp, regno)
    This routine returns true on success. */
 
 int
-get_longjmp_target (pc)
-     CORE_ADDR *pc;
+get_longjmp_target (CORE_ADDR *pc)
 {
-  char buf[TARGET_PTR_BIT / TARGET_CHAR_BIT];
+  char *buf;
   CORE_ADDR jb_addr;
 
+  buf = alloca (TARGET_PTR_BIT / TARGET_CHAR_BIT);
   jb_addr = read_register (A0_REGNUM);
 
   if (target_read_memory (jb_addr + _JB_PC * JB_ELEMENT_SIZE, buf,

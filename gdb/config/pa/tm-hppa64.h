@@ -1,6 +1,6 @@
 /* Parameters for execution on any Hewlett-Packard PA-RISC machine.
-   Copyright 1986, 1987, 1989, 1990, 1991, 1992, 1993, 1995
-   Free Software Foundation, Inc. 
+   Copyright 1986, 1987, 1989, 1990, 1991, 1992, 1993, 1995, 1999, 2000
+   Free Software Foundation, Inc.
 
    Contributed by the Center for Software Science at the
    University of Utah (pa-gdb-bugs@cs.utah.edu).
@@ -140,7 +140,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
    of variables on the stack.  Ugh.  jimb: why? */
 #define HPREAD_ADJUST_STACK_ADDRESS(ADDR) hpread_adjust_stack_address(ADDR)
 
-extern int hpread_adjust_stack_address PARAMS ((CORE_ADDR));
+extern int hpread_adjust_stack_address (CORE_ADDR);
 
 
 /* jimb: omitted dynamic linking stuff here */
@@ -221,13 +221,13 @@ call_dummy
 
 #undef REG_STRUCT_HAS_ADDR
 
-#undef EXTRACT_RETURN_VALUE
+#undef DEPRECATED_EXTRACT_RETURN_VALUE
 /* RM: floats are returned in FR4R, doubles in FR4
  *     integral values are in r28, padded on the left 
  *     aggregates less that 65 bits are in r28, right padded 
  *     aggregates upto 128 bits are in r28 and r29, right padded
  */ 
-#define EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
+#define DEPRECATED_EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
   { \
     if (TYPE_CODE (TYPE) == TYPE_CODE_FLT && !SOFT_FLOAT) \
       memcpy ((VALBUF), \
@@ -260,33 +260,33 @@ call_dummy
   (TYPE_LENGTH (value_type) > 16)                
 
 /* RM: for return command */
-#undef STORE_RETURN_VALUE
-#define STORE_RETURN_VALUE(TYPE,VALBUF) \
+#undef DEPRECATED_STORE_RETURN_VALUE
+#define DEPRECATED_STORE_RETURN_VALUE(TYPE,VALBUF) \
   { \
     if (TYPE_CODE (TYPE) == TYPE_CODE_FLT && !SOFT_FLOAT) \
-      write_register_bytes \
+      deprecated_write_register_bytes \
 	      (REGISTER_BYTE (FP4_REGNUM) + \
               (REGISTER_SIZE - TYPE_LENGTH (TYPE)), \
               (VALBUF), \
 	      TYPE_LENGTH (TYPE)); \
     else if (is_integral_type(TYPE) || SOFT_FLOAT)   \
-       write_register_bytes \
+       deprecated_write_register_bytes \
               (REGISTER_BYTE (28) + \
                  (REGISTER_SIZE - TYPE_LENGTH (TYPE)), \
                (VALBUF), \
                TYPE_LENGTH (TYPE)); \
     else if (TYPE_LENGTH (TYPE) <= 8)   \
-       write_register_bytes \
+       deprecated_write_register_bytes \
              ( REGISTER_BYTE (28), \
                (VALBUF), \
                TYPE_LENGTH (TYPE)); \
     else if (TYPE_LENGTH (TYPE) <= 16)   \
       { \
-        write_register_bytes \
+        deprecated_write_register_bytes \
                (REGISTER_BYTE (28), \
                 (VALBUF), \
                 8); \
-        write_register_bytes \
+        deprecated_write_register_bytes \
                (REGISTER_BYTE (29), \
                 ((char *) VALBUF + 8), \
                 TYPE_LENGTH (TYPE) - 8); \

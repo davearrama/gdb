@@ -1,6 +1,7 @@
 /* Definitions to make GDB run on a Sequent Symmetry under dynix 3.0,
    with Weitek 1167 and i387 support.
-   Copyright 1986, 1987, 1989, 1992  Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1989, 1992, 1994, 1996, 1998, 2000
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,17 +20,19 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
+#include "regcache.h"
+
 /* Override copies of {fetch,store}_inferior_registers in infptrace.c.  */
 
 #define FETCH_INFERIOR_REGISTERS
 
 /* We must fetch all the regs before storing, since we store all at once.  */
 
-#define CHILD_PREPARE_TO_STORE() read_register_bytes (0, NULL, REGISTER_BYTES)
+#define CHILD_PREPARE_TO_STORE() deprecated_read_register_bytes (0, NULL, REGISTER_BYTES)
 
 #ifdef _SEQUENT_
 #define CHILD_WAIT
-extern int child_wait PARAMS ((int, struct target_waitstatus *));
+extern ptid_t child_wait (ptid_t, struct target_waitstatus *);
 #endif
 
 /* This is the amount to subtract from u.u_ar0

@@ -1,6 +1,7 @@
 /* Remote target communications for the Macraigor Systems BDM Wiggler
    talking to a Motorola PPC 8xx ADS board
-   Copyright 1996, 1997 Free Software Foundation, Inc.
+   Copyright 1996, 1997, 1998, 1999, 2000, 2001
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -28,23 +29,23 @@
 #include "bfd.h"
 #include "symfile.h"
 #include "target.h"
-#include "wait.h"
 #include "gdbcmd.h"
 #include "objfiles.h"
 #include "gdb-stabs.h"
 #include <sys/types.h>
-#include <signal.h>
 #include "serial.h"
 #include "ocd.h"
+#include "ppc-tdep.h"
+#include "regcache.h"
 
-static void bdm_ppc_open PARAMS ((char *name, int from_tty));
+static void bdm_ppc_open (char *name, int from_tty);
 
-static int bdm_ppc_wait PARAMS ((int pid,
-				 struct target_waitstatus * target_status));
+static ptid_t bdm_ppc_wait (ptid_t ptid,
+                            struct target_waitstatus *target_status);
 
-static void bdm_ppc_fetch_registers PARAMS ((int regno));
+static void bdm_ppc_fetch_registers (int regno);
 
-static void bdm_ppc_store_registers PARAMS ((int regno));
+static void bdm_ppc_store_registers (int regno);
 
 extern struct target_ops bdm_ppc_ops;	/* Forward decl */
 
@@ -78,9 +79,7 @@ char nowatchdog[4] =
    NAME is the filename used for communication.  */
 
 static void
-bdm_ppc_open (name, from_tty)
-     char *name;
-     int from_tty;
+bdm_ppc_open (char *name, int from_tty)
 {
   CORE_ADDR watchdogaddr = 0xff000004;
 
@@ -99,10 +98,8 @@ bdm_ppc_open (name, from_tty)
    Returns "pid" (though it's not clear what, if anything, that
    means in the case of this target).  */
 
-static int
-bdm_ppc_wait (pid, target_status)
-     int pid;
-     struct target_waitstatus *target_status;
+static ptid_t
+bdm_ppc_wait (ptid_t ptid, struct target_waitstatus *target_status)
 {
   int stop_reason;
 
@@ -113,7 +110,7 @@ bdm_ppc_wait (pid, target_status)
   if (stop_reason)
     {
       target_status->value.sig = TARGET_SIGNAL_INT;
-      return inferior_pid;
+      return inferior_ptid;
     }
 
   target_status->value.sig = TARGET_SIGNAL_TRAP;	/* XXX for now */
@@ -128,7 +125,7 @@ bdm_ppc_wait (pid, target_status)
   }
 #endif
 
-  return inferior_pid;
+  return inferior_ptid;
 }
 
 static int bdm_regmap[] =
@@ -154,8 +151,7 @@ static int bdm_regmap[] =
  */
 
 static void
-bdm_ppc_fetch_registers (regno)
-     int regno;
+bdm_ppc_fetch_registers (int regno)
 {
   int i;
   unsigned char *regs, *beginregs, *endregs, *almostregs;
@@ -204,8 +200,9 @@ bdm_ppc_fetch_registers (regno)
 /*      printf("Asking for register %d\n", first_regno); */
 
       /* if asking for an invalid register */
-      if ((first_regno == MQ_REGNUM) ||
-	  ((first_regno >= FP0_REGNUM) && (first_regno <= FPLAST_REGNUM)))
+      if ((first_regno == gdbarch_tdep (current_gdbarch)->ppc_mq_regnum)
+          || (first_regno == gdbarch_tdep (current_gdbarch)->ppc_fpscr_regnum)
+	  || ((first_regno >= FP0_REGNUM) && (first_regno <= FPLAST_REGNUM)))
 	{
 /*          printf("invalid reg request!\n"); */
 	  supply_register (first_regno, NULL);
@@ -259,8 +256,7 @@ bdm_ppc_fetch_registers (regno)
    of REGISTERS.  FIXME: ignores errors.  */
 
 static void
-bdm_ppc_store_registers (regno)
-     int regno;
+bdm_ppc_store_registers (int regno)
 {
   int i;
   int first_regno, last_regno;
@@ -294,14 +290,16 @@ bdm_ppc_store_registers (regno)
 
       /* only attempt to write if it's a valid ppc 8xx register */
       /* (need to avoid FP regs and MQ reg) */
-      if ((i != MQ_REGNUM) && ((i < FP0_REGNUM) || (i > FPLAST_REGNUM)))
+      if ((i != gdbarch_tdep (current_gdbarch)->ppc_mq_regnum) 
+          && (i != gdbarch_tdep (current_gdbarch)->ppc_fpscr_regnum) 
+          && ((i < FP0_REGNUM) || (i > FPLAST_REGNUM)))
 	{
 /*          printf("write valid reg %d\n", bdm_regno); */
-	  ocd_write_bdm_registers (bdm_regno, registers + REGISTER_BYTE (i), 4);
+	  ocd_write_bdm_registers (bdm_regno, deprecated_registers + REGISTER_BYTE (i), 4);
 	}
 /*
-   else if (i == MQ_REGNUM)
-   printf("don't write invalid reg %d (MQ_REGNUM)\n", bdm_regno);
+   else if (i == gdbarch_tdep (current_gdbarch)->ppc_mq_regnum)
+   printf("don't write invalid reg %d (PPC_MQ_REGNUM)\n", bdm_regno);
    else
    printf("don't write invalid reg %d\n", bdm_regno);
  */
@@ -323,14 +321,9 @@ a wiggler, specify wiggler and then the port it is connected to\n\
 (e.g. wiggler lpt1).";		/* to_doc */
   bdm_ppc_ops.to_open = bdm_ppc_open;
   bdm_ppc_ops.to_close = ocd_close;
-  bdm_ppc_ops.to_attach = NULL;
-  bdm_ppc_ops.to_post_attach = NULL;
-  bdm_ppc_ops.to_require_attach = NULL;
   bdm_ppc_ops.to_detach = ocd_detach;
-  bdm_ppc_ops.to_require_detach = NULL;
   bdm_ppc_ops.to_resume = ocd_resume;
   bdm_ppc_ops.to_wait = bdm_ppc_wait;
-  bdm_ppc_ops.to_post_wait = NULL;
   bdm_ppc_ops.to_fetch_registers = bdm_ppc_fetch_registers;
   bdm_ppc_ops.to_store_registers = bdm_ppc_store_registers;
   bdm_ppc_ops.to_prepare_to_store = ocd_prepare_to_store;
@@ -338,53 +331,23 @@ a wiggler, specify wiggler and then the port it is connected to\n\
   bdm_ppc_ops.to_files_info = ocd_files_info;
   bdm_ppc_ops.to_insert_breakpoint = ocd_insert_breakpoint;
   bdm_ppc_ops.to_remove_breakpoint = ocd_remove_breakpoint;
-  bdm_ppc_ops.to_terminal_init = NULL;
-  bdm_ppc_ops.to_terminal_inferior = NULL;
-  bdm_ppc_ops.to_terminal_ours_for_output = NULL;
-  bdm_ppc_ops.to_terminal_ours = NULL;
-  bdm_ppc_ops.to_terminal_info = NULL;
   bdm_ppc_ops.to_kill = ocd_kill;
   bdm_ppc_ops.to_load = ocd_load;
-  bdm_ppc_ops.to_lookup_symbol = NULL;
   bdm_ppc_ops.to_create_inferior = ocd_create_inferior;
-  bdm_ppc_ops.to_post_startup_inferior = NULL;
-  bdm_ppc_ops.to_acknowledge_created_inferior = NULL;
-  bdm_ppc_ops.to_clone_and_follow_inferior = NULL;
-  bdm_ppc_ops.to_post_follow_inferior_by_clone = NULL;
-  bdm_ppc_ops.to_insert_fork_catchpoint = NULL;
-  bdm_ppc_ops.to_remove_fork_catchpoint = NULL;
-  bdm_ppc_ops.to_insert_vfork_catchpoint = NULL;
-  bdm_ppc_ops.to_remove_vfork_catchpoint = NULL;
-  bdm_ppc_ops.to_has_forked = NULL;
-  bdm_ppc_ops.to_has_vforked = NULL;
-  bdm_ppc_ops.to_can_follow_vfork_prior_to_exec = NULL;
-  bdm_ppc_ops.to_post_follow_vfork = NULL;
-  bdm_ppc_ops.to_insert_exec_catchpoint = NULL;
-  bdm_ppc_ops.to_remove_exec_catchpoint = NULL;
-  bdm_ppc_ops.to_has_execd = NULL;
-  bdm_ppc_ops.to_reported_exec_events_per_exec_call = NULL;
-  bdm_ppc_ops.to_has_exited = NULL;
   bdm_ppc_ops.to_mourn_inferior = ocd_mourn;
-  bdm_ppc_ops.to_can_run = 0;
-  bdm_ppc_ops.to_notice_signals = 0;
   bdm_ppc_ops.to_thread_alive = ocd_thread_alive;
   bdm_ppc_ops.to_stop = ocd_stop;
-  bdm_ppc_ops.to_pid_to_exec_file = NULL;
-  bdm_ppc_ops.to_core_file_to_sym_file = NULL;
   bdm_ppc_ops.to_stratum = process_stratum;
-  bdm_ppc_ops.DONT_USE = NULL;
   bdm_ppc_ops.to_has_all_memory = 1;
   bdm_ppc_ops.to_has_memory = 1;
   bdm_ppc_ops.to_has_stack = 1;
   bdm_ppc_ops.to_has_registers = 1;
   bdm_ppc_ops.to_has_execution = 1;
-  bdm_ppc_ops.to_sections = NULL;
-  bdm_ppc_ops.to_sections_end = NULL;
   bdm_ppc_ops.to_magic = OPS_MAGIC;
 }				/* init_bdm_ppc_ops */
 
 void
-_initialize_bdm_ppc ()
+_initialize_bdm_ppc (void)
 {
   init_bdm_ppc_ops ();
   add_target (&bdm_ppc_ops);

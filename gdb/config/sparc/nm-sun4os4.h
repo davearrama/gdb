@@ -1,5 +1,5 @@
 /* Macro definitions for running gdb on a Sun 4 running sunos 4.
-   Copyright (C) 1989, 1992, 1996 Free Software Foundation, Inc.
+   Copyright 1989, 1992, 1996, 2000 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,6 +18,8 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
+#include "regcache.h"
+
 /* Do implement the attach and detach commands.  */
 
 #define ATTACH_DETACH
@@ -28,9 +30,13 @@
 
 /* Before storing, we need to read all the registers.  */
 
-#define CHILD_PREPARE_TO_STORE() read_register_bytes (0, NULL, REGISTER_BYTES)
+#define CHILD_PREPARE_TO_STORE() deprecated_read_register_bytes (0, NULL, REGISTER_BYTES)
 
 /* Return sizeof user struct to callers in less machine dependent routines */
 
 #define KERNEL_U_SIZE kernel_u_size()
-extern int kernel_u_size PARAMS ((void));
+extern int kernel_u_size (void);
+
+/* SunOS 4.x uses nonstandard "char *" as type of third argument to ptrace() */
+
+#define PTRACE_ARG3_TYPE char*

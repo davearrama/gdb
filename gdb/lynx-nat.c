@@ -1,5 +1,6 @@
 /* Native-dependent code for LynxOS.
-   Copyright 1993, 1994 Free Software Foundation, Inc.
+   Copyright 1993, 1994, 1995, 1996, 1999, 2000, 2001
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -23,13 +24,14 @@
 #include "inferior.h"
 #include "target.h"
 #include "gdbcore.h"
+#include "regcache.h"
 
 #include <sys/ptrace.h>
 #include <sys/wait.h>
 #include <sys/fpp.h>
 
-static unsigned long registers_addr PARAMS ((int pid));
-static void fetch_core_registers PARAMS ((char *, unsigned, int, CORE_ADDR));
+static unsigned long registers_addr (int pid);
+static void fetch_core_registers (char *, unsigned, int, CORE_ADDR);
 
 #define X(ENTRY)(offsetof(struct econtext, ENTRY))
 
@@ -260,8 +262,7 @@ static int regmap[] =
    It also handles knows where to find the I & L regs on the stack.  */
 
 void
-fetch_inferior_registers (regno)
-     int regno;
+fetch_inferior_registers (int regno)
 {
   int whatregs = 0;
 
@@ -286,8 +287,8 @@ fetch_inferior_registers (regno)
       int i;
 
       errno = 0;
-      retval = ptrace (PTRACE_GETREGS, inferior_pid, (PTRACE_ARG3_TYPE) & ec,
-		       0);
+      retval = ptrace (PTRACE_GETREGS, PIDGET (inferior_ptid),
+                       (PTRACE_ARG3_TYPE) & ec, 0);
       if (errno)
 	perror_with_name ("ptrace(PTRACE_GETREGS)");
 
@@ -295,10 +296,10 @@ fetch_inferior_registers (regno)
       supply_register (G0_REGNUM, buf);
       supply_register (TBR_REGNUM, (char *) &ec.tbr);
 
-      memcpy (&registers[REGISTER_BYTE (G1_REGNUM)], &ec.g1,
+      memcpy (&deprecated_registers[REGISTER_BYTE (G1_REGNUM)], &ec.g1,
 	      4 * REGISTER_RAW_SIZE (G1_REGNUM));
       for (i = G1_REGNUM; i <= G1_REGNUM + 3; i++)
-	register_valid[i] = 1;
+	deprecated_register_valid[i] = 1;
 
       supply_register (PS_REGNUM, (char *) &ec.psr);
       supply_register (Y_REGNUM, (char *) &ec.y);
@@ -306,10 +307,10 @@ fetch_inferior_registers (regno)
       supply_register (NPC_REGNUM, (char *) &ec.npc);
       supply_register (WIM_REGNUM, (char *) &ec.wim);
 
-      memcpy (&registers[REGISTER_BYTE (O0_REGNUM)], ec.o,
+      memcpy (&deprecated_registers[REGISTER_BYTE (O0_REGNUM)], ec.o,
 	      8 * REGISTER_RAW_SIZE (O0_REGNUM));
       for (i = O0_REGNUM; i <= O0_REGNUM + 7; i++)
-	register_valid[i] = 1;
+	deprecated_register_valid[i] = 1;
     }
 
   if (whatregs & WHATREGS_STACK)
@@ -319,17 +320,17 @@ fetch_inferior_registers (regno)
 
       sp = read_register (SP_REGNUM);
 
-      target_xfer_memory (sp + FRAME_SAVED_I0,
-			  &registers[REGISTER_BYTE (I0_REGNUM)],
-			  8 * REGISTER_RAW_SIZE (I0_REGNUM), 0);
+      target_read_memory (sp + FRAME_SAVED_I0,
+			  &deprecated_registers[REGISTER_BYTE (I0_REGNUM)],
+			  8 * REGISTER_RAW_SIZE (I0_REGNUM));
       for (i = I0_REGNUM; i <= I7_REGNUM; i++)
-	register_valid[i] = 1;
+	deprecated_register_valid[i] = 1;
 
-      target_xfer_memory (sp + FRAME_SAVED_L0,
-			  &registers[REGISTER_BYTE (L0_REGNUM)],
-			  8 * REGISTER_RAW_SIZE (L0_REGNUM), 0);
+      target_read_memory (sp + FRAME_SAVED_L0,
+			  &deprecated_registers[REGISTER_BYTE (L0_REGNUM)],
+			  8 * REGISTER_RAW_SIZE (L0_REGNUM));
       for (i = L0_REGNUM; i <= L0_REGNUM + 7; i++)
-	register_valid[i] = 1;
+	deprecated_register_valid[i] = 1;
     }
 
   if (whatregs & WHATREGS_FLOAT)
@@ -339,15 +340,15 @@ fetch_inferior_registers (regno)
       int i;
 
       errno = 0;
-      retval = ptrace (PTRACE_GETFPREGS, inferior_pid, (PTRACE_ARG3_TYPE) & fc,
-		       0);
+      retval = ptrace (PTRACE_GETFPREGS, PIDGET (inferior_ptid),
+                       (PTRACE_ARG3_TYPE) & fc, 0);
       if (errno)
 	perror_with_name ("ptrace(PTRACE_GETFPREGS)");
 
-      memcpy (&registers[REGISTER_BYTE (FP0_REGNUM)], fc.f.fregs,
+      memcpy (&deprecated_registers[REGISTER_BYTE (FP0_REGNUM)], fc.f.fregs,
 	      32 * REGISTER_RAW_SIZE (FP0_REGNUM));
       for (i = FP0_REGNUM; i <= FP0_REGNUM + 31; i++)
-	register_valid[i] = 1;
+	deprecated_register_valid[i] = 1;
 
       supply_register (FPS_REGNUM, (char *) &fc.fsr);
     }
@@ -361,8 +362,7 @@ fetch_inferior_registers (regno)
    this point.  */
 
 void
-store_inferior_registers (regno)
-     int regno;
+store_inferior_registers (int regno)
 {
   int whatregs = 0;
 
@@ -383,7 +383,7 @@ store_inferior_registers (regno)
       int retval;
 
       ec.tbr = read_register (TBR_REGNUM);
-      memcpy (&ec.g1, &registers[REGISTER_BYTE (G1_REGNUM)],
+      memcpy (&ec.g1, &deprecated_registers[REGISTER_BYTE (G1_REGNUM)],
 	      4 * REGISTER_RAW_SIZE (G1_REGNUM));
 
       ec.psr = read_register (PS_REGNUM);
@@ -392,12 +392,12 @@ store_inferior_registers (regno)
       ec.npc = read_register (NPC_REGNUM);
       ec.wim = read_register (WIM_REGNUM);
 
-      memcpy (ec.o, &registers[REGISTER_BYTE (O0_REGNUM)],
+      memcpy (ec.o, &deprecated_registers[REGISTER_BYTE (O0_REGNUM)],
 	      8 * REGISTER_RAW_SIZE (O0_REGNUM));
 
       errno = 0;
-      retval = ptrace (PTRACE_SETREGS, inferior_pid, (PTRACE_ARG3_TYPE) & ec,
-		       0);
+      retval = ptrace (PTRACE_SETREGS, PIDGET (inferior_ptid),
+                       (PTRACE_ARG3_TYPE) & ec, 0);
       if (errno)
 	perror_with_name ("ptrace(PTRACE_SETREGS)");
     }
@@ -411,28 +411,29 @@ store_inferior_registers (regno)
 
       if (regno == -1 || regno == SP_REGNUM)
 	{
-	  if (!register_valid[L0_REGNUM + 5])
-	    abort ();
-	  target_xfer_memory (sp + FRAME_SAVED_I0,
-			      &registers[REGISTER_BYTE (I0_REGNUM)],
-			      8 * REGISTER_RAW_SIZE (I0_REGNUM), 1);
+	  if (!deprecated_register_valid[L0_REGNUM + 5])
+	    internal_error (__FILE__, __LINE__, "failed internal consistency check");
+	  target_write_memory (sp + FRAME_SAVED_I0,
+			      &deprecated_registers[REGISTER_BYTE (I0_REGNUM)],
+			      8 * REGISTER_RAW_SIZE (I0_REGNUM));
 
-	  target_xfer_memory (sp + FRAME_SAVED_L0,
-			      &registers[REGISTER_BYTE (L0_REGNUM)],
-			      8 * REGISTER_RAW_SIZE (L0_REGNUM), 1);
+	  target_write_memory (sp + FRAME_SAVED_L0,
+			      &deprecated_registers[REGISTER_BYTE (L0_REGNUM)],
+			      8 * REGISTER_RAW_SIZE (L0_REGNUM));
 	}
       else if (regno >= L0_REGNUM && regno <= I7_REGNUM)
 	{
-	  if (!register_valid[regno])
-	    abort ();
+	  if (!deprecated_register_valid[regno])
+	    internal_error (__FILE__, __LINE__, "failed internal consistency check");
 	  if (regno >= L0_REGNUM && regno <= L0_REGNUM + 7)
 	    regoffset = REGISTER_BYTE (regno) - REGISTER_BYTE (L0_REGNUM)
 	      + FRAME_SAVED_L0;
 	  else
 	    regoffset = REGISTER_BYTE (regno) - REGISTER_BYTE (I0_REGNUM)
 	      + FRAME_SAVED_I0;
-	  target_xfer_memory (sp + regoffset, &registers[REGISTER_BYTE (regno)],
-			      REGISTER_RAW_SIZE (regno), 1);
+	  target_write_memory (sp + regoffset, 
+			      &deprecated_registers[REGISTER_BYTE (regno)],
+			      REGISTER_RAW_SIZE (regno));
 	}
     }
 
@@ -443,19 +444,19 @@ store_inferior_registers (regno)
 
 /* We read fcontext first so that we can get good values for fq_t... */
       errno = 0;
-      retval = ptrace (PTRACE_GETFPREGS, inferior_pid, (PTRACE_ARG3_TYPE) & fc,
-		       0);
+      retval = ptrace (PTRACE_GETFPREGS, PIDGET (inferior_ptid),
+                       (PTRACE_ARG3_TYPE) & fc, 0);
       if (errno)
 	perror_with_name ("ptrace(PTRACE_GETFPREGS)");
 
-      memcpy (fc.f.fregs, &registers[REGISTER_BYTE (FP0_REGNUM)],
+      memcpy (fc.f.fregs, &deprecated_registers[REGISTER_BYTE (FP0_REGNUM)],
 	      32 * REGISTER_RAW_SIZE (FP0_REGNUM));
 
       fc.fsr = read_register (FPS_REGNUM);
 
       errno = 0;
-      retval = ptrace (PTRACE_SETFPREGS, inferior_pid, (PTRACE_ARG3_TYPE) & fc,
-		       0);
+      retval = ptrace (PTRACE_SETFPREGS, PIDGET (inferior_ptid),
+                       (PTRACE_ARG3_TYPE) & fc, 0);
       if (errno)
 	perror_with_name ("ptrace(PTRACE_SETFPREGS)");
     }
@@ -468,8 +469,7 @@ store_inferior_registers (regno)
    saved context block.  */
 
 static unsigned long
-registers_addr (pid)
-     int pid;
+registers_addr (int pid)
 {
   CORE_ADDR stblock;
   int ecpoff = offsetof (st_t, ecp);
@@ -494,8 +494,7 @@ registers_addr (pid)
    marking them as valid so we won't fetch them again.  */
 
 void
-fetch_inferior_registers (regno)
-     int regno;
+fetch_inferior_registers (int regno)
 {
   int reglo, reghi;
   int i;
@@ -509,7 +508,7 @@ fetch_inferior_registers (regno)
   else
     reglo = reghi = regno;
 
-  ecp = registers_addr (inferior_pid);
+  ecp = registers_addr (PIDGET (inferior_ptid));
 
   for (regno = reglo; regno <= reghi; regno++)
     {
@@ -525,7 +524,7 @@ fetch_inferior_registers (regno)
 	  unsigned int reg;
 
 	  errno = 0;
-	  reg = ptrace (ptrace_fun, inferior_pid,
+	  reg = ptrace (ptrace_fun, PIDGET (inferior_ptid),
 			(PTRACE_ARG3_TYPE) (ecp + regmap[regno] + i), 0);
 	  if (errno)
 	    perror_with_name ("ptrace(PTRACE_PEEKUSP)");
@@ -540,14 +539,8 @@ fetch_inferior_registers (regno)
    If REGNO is -1, do this for all registers.
    Otherwise, REGNO specifies which register (so we can save time).  */
 
-/* Registers we shouldn't try to store.  */
-#if !defined (CANNOT_STORE_REGISTER)
-#define CANNOT_STORE_REGISTER(regno) 0
-#endif
-
 void
-store_inferior_registers (regno)
-     int regno;
+store_inferior_registers (int regno)
 {
   int reglo, reghi;
   int i;
@@ -561,7 +554,7 @@ store_inferior_registers (regno)
   else
     reglo = reghi = regno;
 
-  ecp = registers_addr (inferior_pid);
+  ecp = registers_addr (PIDGET (inferior_ptid));
 
   for (regno = reglo; regno <= reghi; regno++)
     {
@@ -578,10 +571,10 @@ store_inferior_registers (regno)
 	{
 	  unsigned int reg;
 
-	  reg = *(unsigned int *) &registers[REGISTER_BYTE (regno) + i];
+	  reg = *(unsigned int *) &deprecated_registers[REGISTER_BYTE (regno) + i];
 
 	  errno = 0;
-	  ptrace (ptrace_fun, inferior_pid,
+	  ptrace (ptrace_fun, PIDGET (inferior_ptid),
 		  (PTRACE_ARG3_TYPE) (ecp + regmap[regno] + i), reg);
 	  if (errno)
 	    perror_with_name ("ptrace(PTRACE_POKEUSP)");
@@ -593,14 +586,13 @@ store_inferior_registers (regno)
 /* Wait for child to do something.  Return pid of child, or -1 in case
    of error; store status through argument pointer OURSTATUS.  */
 
-int
-child_wait (pid, ourstatus)
-     int pid;
-     struct target_waitstatus *ourstatus;
+ptid_t
+child_wait (ptid_t ptid, struct target_waitstatus *ourstatus)
 {
   int save_errno;
   int thread;
   union wait status;
+  int pid;
 
   while (1)
     {
@@ -626,7 +618,7 @@ child_wait (pid, ourstatus)
 	  return -1;
 	}
 
-      if (pid != PIDGET (inferior_pid))		/* Some other process?!? */
+      if (pid != PIDGET (inferior_ptid))	/* Some other process?!? */
 	continue;
 
       thread = status.w_tid;	/* Get thread id from status */
@@ -634,26 +626,27 @@ child_wait (pid, ourstatus)
       /* Initial thread value can only be acquired via wait, so we have to
          resort to this hack.  */
 
-      if (TIDGET (inferior_pid) == 0 && thread != 0)
+      if (TIDGET (inferior_ptid) == 0 && thread != 0)
 	{
-	  inferior_pid = BUILDPID (inferior_pid, thread);
-	  add_thread (inferior_pid);
+	  inferior_ptid = MERGEPID (PIDGET (inferior_ptid), thread);
+	  add_thread (inferior_ptid);
 	}
 
-      pid = BUILDPID (pid, thread);
+      ptid = BUILDPID (pid, thread);
 
       /* We've become a single threaded process again.  */
       if (thread == 0)
-	inferior_pid = pid;
+	inferior_ptid = ptid;
 
       /* Check for thread creation.  */
       if (WIFSTOPPED (status)
 	  && WSTOPSIG (status) == SIGTRAP
-	  && !in_thread_list (pid))
+	  && !in_thread_list (ptid))
 	{
 	  int realsig;
 
-	  realsig = ptrace (PTRACE_GETTRACESIG, pid, (PTRACE_ARG3_TYPE) 0, 0);
+	  realsig = ptrace (PTRACE_GETTRACESIG, PIDGET (ptid),
+	                    (PTRACE_ARG3_TYPE) 0, 0);
 
 	  if (realsig == SIGNEWTHREAD)
 	    {
@@ -661,7 +654,7 @@ child_wait (pid, ourstatus)
 	         realsig -- the code in wait_for_inferior expects SIGTRAP. */
 	      ourstatus->kind = TARGET_WAITKIND_SPURIOUS;
 	      ourstatus->value.sig = TARGET_SIGNAL_0;
-	      return pid;
+	      return ptid;
 	    }
 	  else
 	    error ("Signal for unknown thread was not SIGNEWTHREAD");
@@ -670,15 +663,16 @@ child_wait (pid, ourstatus)
       /* Check for thread termination.  */
       else if (WIFSTOPPED (status)
 	       && WSTOPSIG (status) == SIGTRAP
-	       && in_thread_list (pid))
+	       && in_thread_list (ptid))
 	{
 	  int realsig;
 
-	  realsig = ptrace (PTRACE_GETTRACESIG, pid, (PTRACE_ARG3_TYPE) 0, 0);
+	  realsig = ptrace (PTRACE_GETTRACESIG, PIDGET (ptid),
+	                    (PTRACE_ARG3_TYPE) 0, 0);
 
 	  if (realsig == SIGTHREADEXIT)
 	    {
-	      ptrace (PTRACE_CONT, PIDGET (pid), (PTRACE_ARG3_TYPE) 0, 0);
+	      ptrace (PTRACE_CONT, PIDGET (ptid), (PTRACE_ARG3_TYPE) 0, 0);
 	      continue;
 	    }
 	}
@@ -709,15 +703,16 @@ child_wait (pid, ourstatus)
       store_waitstatus (ourstatus, status.w_status);
 #endif
 
-      return pid;
+      return ptid;
     }
 }
 
 /* Return nonzero if the given thread is still alive.  */
 int
-child_thread_alive (pid)
-     int pid;
+child_thread_alive (ptid_t ptid)
 {
+  int pid = PIDGET (ptid);
+
   /* Arggh.  Apparently pthread_kill only works for threads within
      the process that calls pthread_kill.
 
@@ -735,12 +730,10 @@ child_thread_alive (pid)
    If SIGNAL is nonzero, give it that signal.  */
 
 void
-child_resume (pid, step, signal)
-     int pid;
-     int step;
-     enum target_signal signal;
+child_resume (ptid_t ptid, int step, enum target_signal signal)
 {
   int func;
+  int pid = PIDGET (ptid);
 
   errno = 0;
 
@@ -748,7 +741,7 @@ child_resume (pid, step, signal)
      we only want to step/continue a single thread.  */
   if (pid == -1)
     {
-      pid = inferior_pid;
+      pid = PIDGET (inferior_ptid);
       func = step ? PTRACE_SINGLESTEP : PTRACE_CONT;
     }
   else
@@ -774,12 +767,11 @@ child_resume (pid, step, signal)
    buffer.  */
 
 char *
-child_pid_to_str (pid)
-     int pid;
+child_pid_to_str (ptid_t ptid)
 {
   static char buf[40];
 
-  sprintf (buf, "process %d thread %d", PIDGET (pid), TIDGET (pid));
+  sprintf (buf, "process %d thread %d", PIDGET (ptid), TIDGET (ptid));
 
   return buf;
 }
@@ -798,11 +790,8 @@ child_pid_to_str (pid)
  */
 
 static void
-fetch_core_registers (core_reg_sect, core_reg_size, which, reg_addr)
-     char *core_reg_sect;
-     unsigned core_reg_size;
-     int which;
-     CORE_ADDR reg_addr;
+fetch_core_registers (char *core_reg_sect, unsigned core_reg_size, int which,
+		      CORE_ADDR reg_addr)
 {
   struct st_entry s;
   unsigned int regno;
@@ -834,7 +823,7 @@ static struct core_fns lynx_core_fns =
 };
 
 void
-_initialize_core_lynx ()
+_initialize_core_lynx (void)
 {
   add_core_fns (&lynx_core_fns);
 }

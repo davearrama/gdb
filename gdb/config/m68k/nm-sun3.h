@@ -1,5 +1,5 @@
 /* Native-only definitions for Sun-3 for GDB, the GNU debugger.
-   Copyright (C) 1986, 1987, 1989, 1991, 1992, 1996
+   Copyright 1986, 1987, 1989, 1991, 1992, 1996
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -19,6 +19,8 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
+#include "regcache.h"
+
 /* Do implement the attach and detach commands.  */
 
 #define ATTACH_DETACH
@@ -29,4 +31,4 @@
 
 /* We have to grab the regs since we store all regs at once.  */
 
-#define CHILD_PREPARE_TO_STORE() read_register_bytes (0, NULL, REGISTER_BYTES)
+#define CHILD_PREPARE_TO_STORE() deprecated_read_register_bytes (0, NULL, REGISTER_BYTES)

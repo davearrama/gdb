@@ -1,5 +1,5 @@
 # Makefile fragment for common parts of all simulators.
-# Copyright (C) 1997, 1998, 1999 Free Software Foundation, Inc.
+# Copyright 1997, 1998, 1999, 2000, 2001 Free Software Foundation, Inc.
 # Contributed by Cygnus Support.
 
 # This program is free software; you can redistribute it and/or modify
@@ -134,6 +134,8 @@ SIM_EXTRA_ALL =
 SIM_EXTRA_INSTALL =
 # Dependency of `clean' to clean any extra files.
 SIM_EXTRA_CLEAN =
+# Likewise `distclean'
+SIM_EXTRA_DISTCLEAN =
 
 # Every time a new general purpose source file was added every target's
 # Makefile.in needed to be updated to include the file in SIM_OBJS.
@@ -248,6 +250,9 @@ LIB_OBJS = callback.o syscall.o targ-map.o $(SIM_OBJS)
 
 RUNTESTFLAGS =
 
+callback_h = $(srcroot)/include/gdb/callback.h
+remote_sim_h = $(srcroot)/include/gdb/remote-sim.h
+
 all: $(SIM_EXTRA_ALL) libsim.a run .gdbinit
 
 libsim.a: $(LIB_OBJS)
@@ -259,8 +264,7 @@ run: $(SIM_RUN_OBJS) libsim.a $(LIBDEPS)
 	$(CC) $(ALL_CFLAGS) -o run$(EXEEXT) \
 	  $(SIM_RUN_OBJS) libsim.a $(EXTRA_LIBS)
 
-run.o: $(srccom)/run.c config.h tconfig.h \
-	  $(srcroot)/include/remote-sim.h $(srcroot)/include/callback.h
+run.o: $(srccom)/run.c config.h tconfig.h $(remote_sim_h) $(callback_h)
 	$(CC) -c $(srccom)/run.c $(ALL_CFLAGS)
 
 # FIXME: Ideally, callback.o and friends live in a library outside of
@@ -268,12 +272,10 @@ run.o: $(srccom)/run.c config.h tconfig.h \
 # devo/libremote because this directory would contain more than just
 # a library).
 
-callback.o: $(srccom)/callback.c config.h tconfig.h \
-	  $(srcroot)/include/callback.h targ-vals.h
+callback.o: $(srccom)/callback.c config.h tconfig.h $(callback_h) targ-vals.h
 	$(CC) -c $(srccom)/callback.c $(ALL_CFLAGS)
 
-syscall.o: $(srccom)/syscall.c config.h tconfig.h \
-	  $(srcroot)/include/callback.h targ-vals.h
+syscall.o: $(srccom)/syscall.c config.h tconfig.h $(callback_h) targ-vals.h
 	$(CC) -c $(srccom)/syscall.c $(ALL_CFLAGS)
 
 targ-map.o: targ-map.c targ-vals.h
@@ -399,21 +401,18 @@ sim-fpu.o: $(srccom)/sim-fpu.c $(sim-fpu_h) \
 	  $(SIM_EXTRA_DEPS)
 	$(CC) -c $(srccom)/sim-fpu.c $(ALL_CFLAGS)
 
-sim-hload.o: $(srccom)/sim-hload.c $(sim-assert_h) \
-	  $(srcroot)/include/remote-sim.h \
+sim-hload.o: $(srccom)/sim-hload.c $(sim-assert_h) $(remote_sim_h) \
 	  $(SIM_EXTRA_DEPS)
 	$(CC) -c $(srccom)/sim-hload.c $(ALL_CFLAGS)
 
-sim-hrw.o: $(srccom)/sim-hrw.c $(sim-assert_h) $(sim_core_h) \
-	  $(srcroot)/include/remote-sim.h \
+sim-hrw.o: $(srccom)/sim-hrw.c $(sim-assert_h) $(sim_core_h) $(remote_sim_h) \
 	  $(SIM_EXTRA_DEPS)
 	$(CC) -c $(srccom)/sim-hrw.c $(ALL_CFLAGS)
 
 sim-hw.o: $(srccom)/sim-hw.c $(sim_main_headers)
 	$(CC) -c $(srccom)/sim-hw.c $(ALL_CFLAGS)
 
-sim-info.o: $(srccom)/sim-info.c $(sim-assert_h) \
-	  $(srcroot)/include/remote-sim.h \
+sim-info.o: $(srccom)/sim-info.c $(sim-assert_h) $(remote_sim_h) \
 	  $(SIM_EXTRA_DEPS)
 	$(CC) -c $(srccom)/sim-info.c $(ALL_CFLAGS)
 
@@ -423,8 +422,8 @@ sim-inline.c: $(srccom)/sim-inline.c
 	cat $(srccom)/$@ >> tmp-$@
 	$(SHELL) $(srcdir)/../../move-if-change tmp-$@ $@
 
-sim-io.o: $(srccom)/sim-io.c $(sim_main_headers) $(sim-io_h) \
-	  $(srcroot)/include/remote-sim.h
+sim-io.o: $(srccom)/sim-io.c $(sim_main_headers) $(sim-io_h) $(remote_sim_h) \
+	  targ-vals.h
 	$(CC) -c $(srccom)/sim-io.c $(ALL_CFLAGS)
 
 sim-memopt.o: $(srccom)/sim-memopt.c $(sim_main_headers) \
@@ -439,16 +438,13 @@ sim-options.o: $(srccom)/sim-options.c $(sim_main_headers) \
 	  $(sim-options_h) $(sim-io_h)
 	$(CC) -c $(srccom)/sim-options.c $(ALL_CFLAGS)
 
-sim-reason.o: $(srccom)/sim-reason.c $(sim_main_headers) \
-	  $(srcroot)/include/remote-sim.h
+sim-reason.o: $(srccom)/sim-reason.c $(sim_main_headers) $(remote_sim_h)
 	$(CC) -c $(srccom)/sim-reason.c $(ALL_CFLAGS)
 
-sim-reg.o: $(srccom)/sim-reg.c $(sim_main_headers) \
-	  $(srcroot)/include/remote-sim.h
+sim-reg.o: $(srccom)/sim-reg.c $(sim_main_headers) $(remote_sim_h)
 	$(CC) -c $(srccom)/sim-reg.c $(ALL_CFLAGS)
 
-sim-resume.o: $(srccom)/sim-resume.c $(sim_main_headers) \
-	  $(srcroot)/include/remote-sim.h
+sim-resume.o: $(srccom)/sim-resume.c $(sim_main_headers) $(remote_sim_h)
 	$(CC) -c $(srccom)/sim-resume.c $(ALL_CFLAGS)
 
 sim-run.o: $(srccom)/sim-run.c $(sim_main_headers)
@@ -478,7 +474,7 @@ sim-utils.o: $(srccom)/sim-utils.c $(sim_main_headers)
 sim-watch.o: $(srccom)/sim-watch.c $(sim_main_headers)
 	$(CC) -c $(srccom)/sim-watch.c $(ALL_CFLAGS)
 
-sim-load.o: $(srccom)/sim-load.c $(srcroot)/include/callback.h
+sim-load.o: $(srccom)/sim-load.c $(callback_h)
 	$(CC) -c $(srccom)/sim-load.c $(ALL_CFLAGS)
 
 sim-break.o: $(srccom)/sim-break.c $(sim_main_headers) \
@@ -547,8 +543,7 @@ dv-sockser.o: $(srccom)/dv-sockser.h $(sim_main_headers)
 	$(CC) -c $(srccom)/dv-sockser.c $(ALL_CFLAGS)
 
 
-nrun.o: $(srccom)/nrun.c config.h tconfig.h \
-	  $(srcroot)/include/remote-sim.h $(srcroot)/include/callback.h \
+nrun.o: $(srccom)/nrun.c config.h tconfig.h $(remote_sim_h) $(callback_h) \
 	  $(sim_main_headers)
 	$(CC) -c $(srccom)/nrun.c $(ALL_CFLAGS)
 
@@ -599,6 +594,7 @@ install-common: installdirs
 
 installdirs:
 	$(SHELL) $(srcdir)/../../mkinstalldirs $(bindir)
+	$(SHELL) $(srcdir)/../../mkinstalldirs $(libdir)
 
 check:
 	cd ../testsuite && $(MAKE) check RUNTESTFLAGS="$(RUNTESTFLAGS)"
@@ -628,7 +624,7 @@ clean: $(SIM_EXTRA_CLEAN)
 	fi
 	rm -f tmp-mloop.hin tmp-mloop.h tmp-mloop.cin tmp-mloop.c
 
-distclean mostlyclean maintainer-clean realclean: clean
+distclean mostlyclean maintainer-clean realclean: clean $(SIM_EXTRA_DISTCLEAN)
 	rm -f TAGS
 	rm -f Makefile config.cache config.log config.status .gdbinit
 	rm -f tconfig.h config.h stamp-h
@@ -653,5 +649,62 @@ stamp-h: config.in config.status
 .gdbinit: # config.status $(srccom)/gdbinit.in
 	CONFIG_FILES=$@:../common/gdbinit.in CONFIG_HEADERS= $(SHELL) ./config.status
 
+
+# CGEN support
+
+CGENDIR = @cgendir@
+CGEN = `if [ -f ../../guile/libguile/guile ]; then echo ../../guile/libguile/guile; else echo guile ; fi`
+CGENFLAGS = -v
+CGEN_CPU_DIR = $(CGENDIR)/cpu
+
+CGEN_READ_SCM = $(CGENDIR)/sim.scm
+CGEN_ARCH_SCM = $(CGENDIR)/sim-arch.scm
+CGEN_CPU_SCM = $(CGENDIR)/sim-cpu.scm $(CGENDIR)/sim-model.scm
+CGEN_DECODE_SCM = $(CGENDIR)/sim-decode.scm
+CGEN_DESC_SCM = $(CGENDIR)/desc.scm $(CGENDIR)/desc-cpu.scm
+
+# Various choices for which cpu specific files to generate.
+CGEN_CPU_EXTR = -E tmp-ext.c1
+CGEN_CPU_READ = -R tmp-read.c1
+CGEN_CPU_WRITE = -W tmp-write.c1
+CGEN_CPU_SEM = -S tmp-sem.c1
+CGEN_CPU_SEMSW = -X tmp-semsw.c1
+
+CGEN_FLAGS_TO_PASS = \
+	CGEN=$(CGEN) \
+	CGENFLAGS="$(CGENFLAGS)"
+
+# We store the generated files in the source directory until we decide to
+# ship a Scheme interpreter with gdb/binutils.  Maybe we never will.
+
+cgen-arch: force
+	$(SHELL) $(srccom)/cgen.sh arch $(srcdir) \
+		$(CGEN) $(CGENDIR) "$(CGENFLAGS)" \
+		$(arch) "$(FLAGS)" ignored "$(isa)" $(mach) ignored ignored
+
+cgen-cpu: force
+	$(SHELL) $(srccom)/cgen.sh cpu $(srcdir) \
+		$(CGEN) $(CGENDIR) "$(CGENFLAGS)" \
+		$(arch) "$(FLAGS)" $(cpu) "$(isa)" $(mach) "$(SUFFIX)" "$(EXTRAFILES)"
+
+cgen-defs: force
+	$(SHELL) $(srccom)/cgen.sh defs $(srcdir) \
+		$(CGEN) $(CGENDIR) "$(CGENFLAGS)" \
+		$(arch) "$(FLAGS)" $(cpu) "$(isa)" $(mach) "$(SUFFIX)" ignored
+
+cgen-decode: force
+	$(SHELL) $(srccom)/cgen.sh decode $(srcdir) \
+		$(CGEN) $(CGENDIR) "$(CGENFLAGS)" \
+		$(arch) "$(FLAGS)" $(cpu) "$(isa)" $(mach) "$(SUFFIX)" "$(EXTRAFILES)"
+
+cgen-cpu-decode: force
+	$(SHELL) $(srccom)/cgen.sh cpu-decode $(srcdir) \
+		$(CGEN) $(CGENDIR) "$(CGENFLAGS)" \
+		$(arch) "$(FLAGS)" $(cpu) "$(isa)" $(mach) "$(SUFFIX)" "$(EXTRAFILES)"
+
+cgen-desc: force
+	$(SHELL) $(srccom)/cgen.sh desc $(srcdir) \
+		$(CGEN) $(CGENDIR) "$(CGENFLAGS)" \
+		$(arch) "$(FLAGS)" $(cpu) "$(isa)" $(mach) "$(SUFFIX)" ignored
 
 ## End COMMON_POST_CONFIG_FRAG

@@ -1,5 +1,6 @@
 /* Low level Unix child interface to ptrace, for GDB when running under Unix.
-   Copyright 1988, 89, 90, 91, 92, 93, 94, 95, 96, 1998 
+   Copyright 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
+   1998, 1999, 2000, 2001, 2002
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -24,17 +25,9 @@
 #include "inferior.h"
 #include "target.h"
 #include "gdb_string.h"
+#include "regcache.h"
 
-#ifdef HAVE_WAIT_H
-#include <wait.h>
-#else
-#ifdef HAVE_SYS_WAIT_H
-#include <sys/wait.h>
-#endif
-#endif
-
-/* "wait.h" fills in the gaps left by <wait.h> */
-#include "wait.h"	/* NOTE: This is ../include/wait.h */
+#include "gdb_wait.h"
 
 #include "command.h"
 
@@ -43,7 +36,7 @@
 #endif
 
 #include <sys/param.h>
-#include <sys/dir.h>
+#include "gdb_dirent.h"
 #include <signal.h>
 #include <sys/ioctl.h>
 
@@ -109,42 +102,23 @@
 #endif /* !FETCH_INFERIOR_REGISTERS */
 
 #if !defined (CHILD_XFER_MEMORY)
-static void udot_info PARAMS ((char *, int));
+static void udot_info (char *, int);
 #endif
 
 #if !defined (FETCH_INFERIOR_REGISTERS)
-static void fetch_register PARAMS ((int));
-static void store_register PARAMS ((int));
+static void fetch_register (int);
+static void store_register (int);
 #endif
 
-/*
- * Some systems (Linux) may have threads implemented as pseudo-processes, 
- * in which case we may be tracing more than one process at a time.
- * In that case, inferior_pid will contain the main process ID and the 
- * individual thread (process) id mashed together.  These macros are 
- * used to separate them out.  The definitions may be overridden in tm.h
- *
- * NOTE: default definitions here are for systems with no threads.
- * Useful definitions MUST be provided in tm.h
- */
-
-#if !defined (PIDGET)	/* Default definition for PIDGET/TIDGET.  */
-#define PIDGET(PID)	PID
-#define TIDGET(PID)	0
-#endif
-
-void _initialize_kernel_u_addr PARAMS ((void));
-void _initialize_infptrace PARAMS ((void));
+void _initialize_kernel_u_addr (void);
+void _initialize_infptrace (void);
 
 
 /* This function simply calls ptrace with the given arguments.  
    It exists so that all calls to ptrace are isolated in this 
    machine-dependent file. */
 int
-call_ptrace (request, pid, addr, data)
-     int request, pid;
-     PTRACE_ARG3_TYPE addr;
-     int data;
+call_ptrace (int request, int pid, PTRACE_ARG3_TYPE addr, int data)
 {
   int pt_status = 0;
 
@@ -225,23 +199,22 @@ call_ptrace (request, pid, addr, data)
    hook before returning.  */
 
 int
-ptrace_wait (pid, status)
-     int pid;
-     int *status;
+ptrace_wait (ptid_t ptid, int *status)
 {
   int wstate;
 
   wstate = wait (status);
-  target_post_wait (wstate, *status);
+  target_post_wait (pid_to_ptid (wstate), *status);
   return wstate;
 }
 
 void
-kill_inferior ()
+kill_inferior (void)
 {
   int status;
+  int pid =  PIDGET (inferior_ptid);
 
-  if (inferior_pid == 0)
+  if (pid == 0)
     return;
 
   /* This once used to call "kill" to kill the inferior just in case
@@ -252,8 +225,8 @@ kill_inferior ()
 
      The kill call causes problems under hpux10, so it's been removed;
      if this causes problems we'll deal with them as they arise.  */
-  ptrace (PT_KILL, inferior_pid, (PTRACE_ARG3_TYPE) 0, 0);
-  ptrace_wait (0, &status);
+  ptrace (PT_KILL, pid, (PTRACE_ARG3_TYPE) 0, 0);
+  ptrace_wait (null_ptid, &status);
   target_mourn_inferior ();
 }
 
@@ -264,18 +237,17 @@ kill_inferior ()
    If SIGNAL is nonzero, give it that signal.  */
 
 void
-child_resume (pid, step, signal)
-     int pid;
-     int step;
-     enum target_signal signal;
+child_resume (ptid_t ptid, int step, enum target_signal signal)
 {
+  int pid = PIDGET (ptid);
+
   errno = 0;
 
   if (pid == -1)
     /* Resume all threads.  */
     /* I think this only gets used in the non-threaded case, where "resume
-       all threads" and "resume inferior_pid" are the same.  */
-    pid = inferior_pid;
+       all threads" and "resume inferior_ptid" are the same.  */
+    pid = PIDGET (inferior_ptid);
 
   /* An address of (PTRACE_ARG3_TYPE)1 tells ptrace to continue from where
      it was.  (If GDB wanted it to start some other way, we have already
@@ -288,8 +260,8 @@ child_resume (pid, step, signal)
 
   if (step)
     {
-      if (SOFTWARE_SINGLE_STEP_P)
-	abort ();		/* Make sure this doesn't happen. */
+      if (SOFTWARE_SINGLE_STEP_P ())
+	internal_error (__FILE__, __LINE__, "failed internal consistency check");		/* Make sure this doesn't happen. */
       else
 	ptrace (PT_STEP, pid, (PTRACE_ARG3_TYPE) 1,
 		target_signal_to_host (signal));
@@ -309,8 +281,7 @@ child_resume (pid, step, signal)
 #ifdef ATTACH_DETACH
 /* Start debugging the process whose number is PID.  */
 int
-attach (pid)
-     int pid;
+attach (int pid)
 {
   errno = 0;
   ptrace (PT_ATTACH, pid, (PTRACE_ARG3_TYPE) 0, 0);
@@ -325,11 +296,11 @@ attach (pid)
    SIGNAL = 0 means just continue it.  */
 
 void
-detach (signal)
-     int signal;
+detach (int signal)
 {
   errno = 0;
-  ptrace (PT_DETACH, inferior_pid, (PTRACE_ARG3_TYPE) 1, signal);
+  ptrace (PT_DETACH, PIDGET (inferior_ptid), (PTRACE_ARG3_TYPE) 1,
+          signal);
   if (errno)
     perror_with_name ("ptrace");
   attach_flag = 0;
@@ -349,7 +320,7 @@ CORE_ADDR kernel_u_addr;
 #endif /* KERNEL_U_ADDR_BSD.  */
 
 void
-_initialize_kernel_u_addr ()
+_initialize_kernel_u_addr (void)
 {
 #if defined (KERNEL_U_ADDR_BSD) && !defined (FETCH_INFERIOR_REGISTERS)
   struct nlist names[2];
@@ -359,7 +330,8 @@ _initialize_kernel_u_addr ()
   if (nlist ("/vmunix", names) == 0)
     kernel_u_addr = names[0].n_value;
   else
-    internal_error ("Unable to get kernel u area address.");
+    internal_error (__FILE__, __LINE__,
+		    "Unable to get kernel u area address.");
 #endif /* KERNEL_U_ADDR_BSD.  */
 }
 
@@ -372,28 +344,22 @@ _initialize_kernel_u_addr ()
 /* U_REGS_OFFSET is the offset of the registers within the u area.  */
 #if !defined (U_REGS_OFFSET)
 #define U_REGS_OFFSET \
-  ptrace (PT_READ_U, inferior_pid, \
+  ptrace (PT_READ_U, PIDGET (inferior_ptid), \
 	  (PTRACE_ARG3_TYPE) (offsetof (struct user, u_ar0)), 0) \
     - KERNEL_U_ADDR
-#endif
-
-/* Registers we shouldn't try to fetch.  */
-#if !defined (CANNOT_FETCH_REGISTER)
-#define CANNOT_FETCH_REGISTER(regno) 0
 #endif
 
 /* Fetch one register.  */
 
 static void
-fetch_register (regno)
-     int regno;
+fetch_register (int regno)
 {
   /* This isn't really an address.  But ptrace thinks of it as one.  */
   CORE_ADDR regaddr;
   char mess[128];		/* For messages */
   register int i;
   unsigned int offset;		/* Offset of registers within the u area.  */
-  char buf[MAX_REGISTER_RAW_SIZE];
+  char *buf = alloca (MAX_REGISTER_RAW_SIZE);
   int tid;
 
   if (CANNOT_FETCH_REGISTER (regno))
@@ -404,8 +370,8 @@ fetch_register (regno)
     }
 
   /* Overload thread id onto process id */
-  if ((tid = TIDGET (inferior_pid)) == 0)
-    tid = inferior_pid;		/* no thread id, just use process id */
+  if ((tid = TIDGET (inferior_ptid)) == 0)
+    tid = PIDGET (inferior_ptid);	/* no thread id, just use process id */
 
   offset = U_REGS_OFFSET;
 
@@ -432,8 +398,7 @@ fetch_register (regno)
    Otherwise, REGNO specifies which register (so we can save time). */
 
 void
-fetch_inferior_registers (regno)
-     int regno;
+fetch_inferior_registers (int regno)
 {
   if (regno >= 0)
     {
@@ -441,23 +406,17 @@ fetch_inferior_registers (regno)
     }
   else
     {
-      for (regno = 0; regno < ARCH_NUM_REGS; regno++)
+      for (regno = 0; regno < NUM_REGS; regno++)
 	{
 	  fetch_register (regno);
 	}
     }
 }
 
-/* Registers we shouldn't try to store.  */
-#if !defined (CANNOT_STORE_REGISTER)
-#define CANNOT_STORE_REGISTER(regno) 0
-#endif
-
 /* Store one register. */
 
 static void
-store_register (regno)
-     int regno;
+store_register (int regno)
 {
   /* This isn't really an address.  But ptrace thinks of it as one.  */
   CORE_ADDR regaddr;
@@ -465,6 +424,7 @@ store_register (regno)
   register int i;
   unsigned int offset;		/* Offset of registers within the u area.  */
   int tid;
+  char *buf = alloca (MAX_REGISTER_RAW_SIZE);
 
   if (CANNOT_STORE_REGISTER (regno))
     {
@@ -472,17 +432,22 @@ store_register (regno)
     }
 
   /* Overload thread id onto process id */
-  if ((tid = TIDGET (inferior_pid)) == 0)
-    tid = inferior_pid;		/* no thread id, just use process id */
+  if ((tid = TIDGET (inferior_ptid)) == 0)
+    tid = PIDGET (inferior_ptid);	/* no thread id, just use process id */
 
   offset = U_REGS_OFFSET;
 
   regaddr = register_addr (regno, offset);
+
+  /* Put the contents of regno into a local buffer */
+  regcache_collect (regno, buf);
+
+  /* Store the local buffer into the inferior a chunk at the time. */
   for (i = 0; i < REGISTER_RAW_SIZE (regno); i += sizeof (PTRACE_XFER_TYPE))
     {
       errno = 0;
       ptrace (PT_WRITE_U, tid, (PTRACE_ARG3_TYPE) regaddr,
-	      *(PTRACE_XFER_TYPE *) & registers[REGISTER_BYTE (regno) + i]);
+	      *(PTRACE_XFER_TYPE *) (buf + i));
       regaddr += sizeof (PTRACE_XFER_TYPE);
       if (errno != 0)
 	{
@@ -498,8 +463,7 @@ store_register (regno)
    Otherwise, REGNO specifies which register (so we can save time).  */
 
 void
-store_inferior_registers (regno)
-     int regno;
+store_inferior_registers (int regno)
 {
   if (regno >= 0)
     {
@@ -507,7 +471,7 @@ store_inferior_registers (regno)
     }
   else
     {
-      for (regno = 0; regno < ARCH_NUM_REGS; regno++)
+      for (regno = 0; regno < NUM_REGS; regno++)
 	{
 	  store_register (regno);
 	}
@@ -516,80 +480,117 @@ store_inferior_registers (regno)
 #endif /* !defined (FETCH_INFERIOR_REGISTERS).  */
 
 
+/* Set an upper limit on alloca.  */
+#ifndef GDB_MAX_ALLOCA
+#define GDB_MAX_ALLOCA 0x1000
+#endif
+
 #if !defined (CHILD_XFER_MEMORY)
 /* NOTE! I tried using PTRACE_READDATA, etc., to read and write memory
-   in the NEW_SUN_PTRACE case.
-   It ought to be straightforward.  But it appears that writing did
-   not write the data that I specified.  I cannot understand where
-   it got the data that it actually did write.  */
+   in the NEW_SUN_PTRACE case.  It ought to be straightforward.  But
+   it appears that writing did not write the data that I specified.  I
+   cannot understand where it got the data that it actually did write.  */
 
-/* Copy LEN bytes to or from inferior's memory starting at MEMADDR
-   to debugger memory starting at MYADDR.   Copy to inferior if
-   WRITE is nonzero.
+/* Copy LEN bytes to or from inferior's memory starting at MEMADDR to
+   debugger memory starting at MYADDR.  Copy to inferior if WRITE is
+   nonzero.  TARGET is ignored.
 
-   Returns the length copied, which is either the LEN argument or zero.
-   This xfer function does not do partial moves, since child_ops
-   doesn't allow memory operations to cross below us in the target stack
-   anyway.  */
+   Returns the length copied, which is either the LEN argument or
+   zero.  This xfer function does not do partial moves, since
+   child_ops doesn't allow memory operations to cross below us in the
+   target stack anyway.  */
 
 int
-child_xfer_memory (memaddr, myaddr, len, write, target)
-     CORE_ADDR memaddr;
-     char *myaddr;
-     int len;
-     int write;
-     struct target_ops *target;	/* ignored */
+child_xfer_memory (CORE_ADDR memaddr, char *myaddr, int len, int write,
+		   struct mem_attrib *attrib, struct target_ops *target)
 {
-  register int i;
+  int i;
   /* Round starting address down to longword boundary.  */
-  register CORE_ADDR addr = memaddr & -sizeof (PTRACE_XFER_TYPE);
+  CORE_ADDR addr = memaddr & -(CORE_ADDR) sizeof (PTRACE_XFER_TYPE);
   /* Round ending address up; get number of longwords that makes.  */
-  register int count
-  = (((memaddr + len) - addr) + sizeof (PTRACE_XFER_TYPE) - 1)
-  / sizeof (PTRACE_XFER_TYPE);
+  int count = ((((memaddr + len) - addr) + sizeof (PTRACE_XFER_TYPE) - 1)
+	       / sizeof (PTRACE_XFER_TYPE));
+  int alloc = count * sizeof (PTRACE_XFER_TYPE);
+  PTRACE_XFER_TYPE *buffer;
+  struct cleanup *old_chain = NULL;
+
+#ifdef PT_IO
+  /* OpenBSD 3.1, NetBSD 1.6 and FreeBSD 5.0 have a new PT_IO request
+     that promises to be much more efficient in reading and writing
+     data in the traced process's address space.  */
+
+  {
+    struct ptrace_io_desc piod;
+
+    /* NOTE: We assume that there are no distinct address spaces for
+       instruction and data.  */
+    piod.piod_op = write ? PIOD_WRITE_D : PIOD_READ_D;
+    piod.piod_offs = (void *) memaddr;
+    piod.piod_addr = myaddr;
+    piod.piod_len = len;
+
+    if (ptrace (PT_IO, PIDGET (inferior_ptid), (caddr_t) &piod, 0) == -1)
+      {
+	/* If the PT_IO request is somehow not supported, fallback on
+           using PT_WRITE_D/PT_READ_D.  Otherwise we will return zero
+           to indicate failure.  */
+	if (errno != EINVAL)
+	  return 0;
+      }
+    else
+      {
+	/* Return the actual number of bytes read or written.  */
+	return piod.piod_len;
+      }
+  }
+#endif
+
   /* Allocate buffer of that many longwords.  */
-  register PTRACE_XFER_TYPE *buffer
-  = (PTRACE_XFER_TYPE *) alloca (count * sizeof (PTRACE_XFER_TYPE));
+  if (len < GDB_MAX_ALLOCA)
+    {
+      buffer = (PTRACE_XFER_TYPE *) alloca (alloc);
+    }
+  else
+    {
+      buffer = (PTRACE_XFER_TYPE *) xmalloc (alloc);
+      old_chain = make_cleanup (xfree, buffer);
+    }
 
   if (write)
     {
-      /* Fill start and end extra bytes of buffer with existing memory data.  */
-
+      /* Fill start and end extra bytes of buffer with existing memory
+         data.  */
       if (addr != memaddr || len < (int) sizeof (PTRACE_XFER_TYPE))
 	{
 	  /* Need part of initial word -- fetch it.  */
-	  buffer[0] = ptrace (PT_READ_I, PIDGET (inferior_pid), 
+	  buffer[0] = ptrace (PT_READ_I, PIDGET (inferior_ptid), 
 			      (PTRACE_ARG3_TYPE) addr, 0);
 	}
 
-      if (count > 1)		/* FIXME, avoid if even boundary */
+      if (count > 1)		/* FIXME, avoid if even boundary.  */
 	{
-	  buffer[count - 1] 
-	    = ptrace (PT_READ_I, PIDGET (inferior_pid),
-		      ((PTRACE_ARG3_TYPE)
-		       (addr + (count - 1) * sizeof (PTRACE_XFER_TYPE))),
-		      0);
+	  buffer[count - 1] =
+	    ptrace (PT_READ_I, PIDGET (inferior_ptid),
+		    ((PTRACE_ARG3_TYPE)
+		     (addr + (count - 1) * sizeof (PTRACE_XFER_TYPE))), 0);
 	}
 
-      /* Copy data to be written over corresponding part of buffer */
-
+      /* Copy data to be written over corresponding part of buffer.  */
       memcpy ((char *) buffer + (memaddr & (sizeof (PTRACE_XFER_TYPE) - 1)),
-	      myaddr,
-	      len);
+	      myaddr, len);
 
       /* Write the entire buffer.  */
-
       for (i = 0; i < count; i++, addr += sizeof (PTRACE_XFER_TYPE))
 	{
 	  errno = 0;
-	  ptrace (PT_WRITE_D, PIDGET (inferior_pid), 
+	  ptrace (PT_WRITE_D, PIDGET (inferior_ptid), 
 		  (PTRACE_ARG3_TYPE) addr, buffer[i]);
 	  if (errno)
 	    {
 	      /* Using the appropriate one (I or D) is necessary for
 	         Gould NP1, at least.  */
 	      errno = 0;
-	      ptrace (PT_WRITE_I, PIDGET (inferior_pid), 
+	      ptrace (PT_WRITE_I, PIDGET (inferior_ptid), 
 		      (PTRACE_ARG3_TYPE) addr, buffer[i]);
 	    }
 	  if (errno)
@@ -601,11 +602,11 @@ child_xfer_memory (memaddr, myaddr, len, write, target)
     }
   else
     {
-      /* Read all the longwords */
+      /* Read all the longwords.  */
       for (i = 0; i < count; i++, addr += sizeof (PTRACE_XFER_TYPE))
 	{
 	  errno = 0;
-	  buffer[i] = ptrace (PT_READ_I, PIDGET (inferior_pid),
+	  buffer[i] = ptrace (PT_READ_I, PIDGET (inferior_ptid),
 			      (PTRACE_ARG3_TYPE) addr, 0);
 	  if (errno)
 	    return 0;
@@ -617,14 +618,15 @@ child_xfer_memory (memaddr, myaddr, len, write, target)
 	      (char *) buffer + (memaddr & (sizeof (PTRACE_XFER_TYPE) - 1)),
 	      len);
     }
+
+  if (old_chain != NULL)
+    do_cleanups (old_chain);
   return len;
 }
 
 
 static void
-udot_info (dummy1, dummy2)
-     char *dummy1;
-     int dummy2;
+udot_info (char *dummy1, int dummy2)
 {
 #if defined (KERNEL_U_SIZE)
   int udot_off;			/* Offset into user struct */
@@ -657,7 +659,7 @@ udot_info (dummy1, dummy2)
 	    }
 	  printf_filtered ("%04x:", udot_off);
 	}
-      udot_val = ptrace (PT_READ_U, inferior_pid, (PTRACE_ARG3_TYPE) udot_off, 0);
+      udot_val = ptrace (PT_READ_U, PIDGET (inferior_ptid), (PTRACE_ARG3_TYPE) udot_off, 0);
       if (errno != 0)
 	{
 	  sprintf (mess, "\nreading user struct at offset 0x%x", udot_off);
@@ -674,7 +676,7 @@ udot_info (dummy1, dummy2)
 
 
 void
-_initialize_infptrace ()
+_initialize_infptrace (void)
 {
 #if !defined (CHILD_XFER_MEMORY)
   add_info ("udot", udot_info,

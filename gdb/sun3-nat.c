@@ -1,5 +1,6 @@
 /* Host-dependent code for Sun-3 for GDB, the GNU debugger.
-   Copyright 1986, 1987, 1989, 1991, 1992 Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1989, 1991, 1992, 1993, 1996, 1999, 2000, 2001
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,43 +22,41 @@
 #include "defs.h"
 #include "inferior.h"
 #include "gdbcore.h"
+#include "regcache.h"
 
 #include <sys/ptrace.h>
 #define KERNEL			/* To get floating point reg definitions */
 #include <machine/reg.h>
 
-static void fetch_core_registers PARAMS ((char *, unsigned, int, CORE_ADDR));
+static void fetch_core_registers (char *, unsigned, int, CORE_ADDR);
 
 void
-fetch_inferior_registers (regno)
-     int regno;
+fetch_inferior_registers (int regno)
 {
   struct regs inferior_registers;
-#ifdef FP0_REGNUM
   struct fp_status inferior_fp_registers;
-#endif
 
-  registers_fetched ();
+  deprecated_registers_fetched ();
 
-  ptrace (PTRACE_GETREGS, inferior_pid,
+  ptrace (PTRACE_GETREGS, PIDGET (inferior_ptid),
 	  (PTRACE_ARG3_TYPE) & inferior_registers);
-#ifdef FP0_REGNUM
-  ptrace (PTRACE_GETFPREGS, inferior_pid,
-	  (PTRACE_ARG3_TYPE) & inferior_fp_registers);
-#endif
 
-  memcpy (registers, &inferior_registers, 16 * 4);
-#ifdef FP0_REGNUM
-  memcpy (&registers[REGISTER_BYTE (FP0_REGNUM)], &inferior_fp_registers,
-	  sizeof inferior_fp_registers.fps_regs);
-#endif
-  *(int *) &registers[REGISTER_BYTE (PS_REGNUM)] = inferior_registers.r_ps;
-  *(int *) &registers[REGISTER_BYTE (PC_REGNUM)] = inferior_registers.r_pc;
-#ifdef FP0_REGNUM
-  memcpy (&registers[REGISTER_BYTE (FPC_REGNUM)],
-	  &inferior_fp_registers.fps_control,
-      sizeof inferior_fp_registers - sizeof inferior_fp_registers.fps_regs);
-#endif
+  if (FP0_REGNUM >= 0)
+    ptrace (PTRACE_GETFPREGS, PIDGET (inferior_ptid),
+	    (PTRACE_ARG3_TYPE) & inferior_fp_registers);
+
+  memcpy (deprecated_registers, &inferior_registers, 16 * 4);
+  if (FP0_REGNUM >= 0)
+    memcpy (&deprecated_registers[REGISTER_BYTE (FP0_REGNUM)],
+	    &inferior_fp_registers, sizeof inferior_fp_registers.fps_regs);
+
+  *(int *) &deprecated_registers[REGISTER_BYTE (PS_REGNUM)] = inferior_registers.r_ps;
+  *(int *) &deprecated_registers[REGISTER_BYTE (PC_REGNUM)] = inferior_registers.r_pc;
+  if (FP0_REGNUM >= 0)
+    memcpy (&deprecated_registers[REGISTER_BYTE (FPC_REGNUM)],
+	    &inferior_fp_registers.fps_control,
+	    sizeof inferior_fp_registers - 
+	    sizeof inferior_fp_registers.fps_regs);
 }
 
 /* Store our register values back into the inferior.
@@ -65,46 +64,51 @@ fetch_inferior_registers (regno)
    Otherwise, REGNO specifies which register (so we can save time).  */
 
 void
-store_inferior_registers (regno)
-     int regno;
+store_inferior_registers (int regno)
 {
   struct regs inferior_registers;
-#ifdef FP0_REGNUM
   struct fp_status inferior_fp_registers;
-#endif
 
-  memcpy (&inferior_registers, registers, 16 * 4);
-#ifdef FP0_REGNUM
-  memcpy (&inferior_fp_registers, &registers[REGISTER_BYTE (FP0_REGNUM)],
-	  sizeof inferior_fp_registers.fps_regs);
-#endif
-  inferior_registers.r_ps = *(int *) &registers[REGISTER_BYTE (PS_REGNUM)];
-  inferior_registers.r_pc = *(int *) &registers[REGISTER_BYTE (PC_REGNUM)];
+  memcpy (&inferior_registers, deprecated_registers, 16 * 4);
+  if (FP0_REGNUM >= 0)
+    memcpy (&inferior_fp_registers,
+	    &deprecated_registers[REGISTER_BYTE (FP0_REGNUM)],
+	    sizeof inferior_fp_registers.fps_regs);
 
-#ifdef FP0_REGNUM
-  memcpy (&inferior_fp_registers.fps_control,
-	  &registers[REGISTER_BYTE (FPC_REGNUM)],
-      sizeof inferior_fp_registers - sizeof inferior_fp_registers.fps_regs);
-#endif
+  inferior_registers.r_ps = *(int *) &&deprecated_registers[REGISTER_BYTE (PS_REGNUM)];
+  inferior_registers.r_pc = *(int *) &&deprecated_registers[REGISTER_BYTE (PC_REGNUM)];
 
-  ptrace (PTRACE_SETREGS, inferior_pid,
+  if (FP0_REGNUM >= 0)
+    memcpy (&inferior_fp_registers.fps_control,
+	    &&deprecated_registers[REGISTER_BYTE (FPC_REGNUM)],
+	    sizeof inferior_fp_registers - 
+	    sizeof inferior_fp_registers.fps_regs);
+
+  ptrace (PTRACE_SETREGS, PIDGET (inferior_ptid),
 	  (PTRACE_ARG3_TYPE) & inferior_registers);
-#if FP0_REGNUM
-  ptrace (PTRACE_SETFPREGS, inferior_pid,
-	  (PTRACE_ARG3_TYPE) & inferior_fp_registers);
-#endif
+  if (FP0_REGNUM >= 0)
+    ptrace (PTRACE_SETFPREGS, PIDGET (inferior_ptid),
+	    (PTRACE_ARG3_TYPE) & inferior_fp_registers);
 }
 
 
 /* All of this stuff is only relevant if both host and target are sun3.  */
-/* Machine-dependent code for pulling registers out of a Sun-3 core file. */
+
+/* Provide registers to GDB from a core file.
+
+   CORE_REG_SECT points to an array of bytes, which were obtained from
+   a core file which BFD thinks might contain register contents. 
+   CORE_REG_SIZE is its size.
+
+   WHICH says which register set corelow suspects this is:
+     0 --- the general-purpose register set
+     2 --- the floating-point register set
+
+   REG_ADDR isn't used.  */
 
 static void
-fetch_core_registers (core_reg_sect, core_reg_size, which, reg_addr)
-     char *core_reg_sect;
-     unsigned core_reg_size;
-     int which;
-     CORE_ADDR reg_addr;	/* Unused in this version */
+fetch_core_registers (char *core_reg_sect, unsigned core_reg_size,
+		      int which, CORE_ADDR reg_addr)
 {
   struct regs *regs = (struct regs *) core_reg_sect;
 
@@ -113,7 +117,7 @@ fetch_core_registers (core_reg_sect, core_reg_size, which, reg_addr)
       if (core_reg_size < sizeof (struct regs))
 	  error ("Can't find registers in core file");
 
-      memcpy (registers, (char *) regs, 16 * 4);
+      memcpy (&deprecated_registers, (char *) regs, 16 * 4);
       supply_register (PS_REGNUM, (char *) &regs->r_ps);
       supply_register (PC_REGNUM, (char *) &regs->r_pc);
 
@@ -125,18 +129,20 @@ fetch_core_registers (core_reg_sect, core_reg_size, which, reg_addr)
 
       if (core_reg_size >= sizeof (struct fpu))
 	{
-#ifdef FP0_REGNUM
-	  memcpy (&registers[REGISTER_BYTE (FP0_REGNUM)],
-		  fpustruct->f_fpstatus.fps_regs,
-		  sizeof fpustruct->f_fpstatus.fps_regs);
-	  memcpy (&registers[REGISTER_BYTE (FPC_REGNUM)],
-		  &fpustruct->f_fpstatus.fps_control,
-		  sizeof fpustruct->f_fpstatus -
-		  sizeof fpustruct->f_fpstatus.fps_regs);
-#endif
+	  if (FP0_REGNUM >= 0)
+	    {
+	      memcpy (&&deprecated_registers[REGISTER_BYTE (FP0_REGNUM)],
+		      fpustruct->f_fpstatus.fps_regs,
+		      sizeof fpustruct->f_fpstatus.fps_regs);
+	      memcpy (&&deprecated_registers[REGISTER_BYTE (FPC_REGNUM)],
+		      &fpustruct->f_fpstatus.fps_control,
+		      sizeof fpustruct->f_fpstatus -
+		      sizeof fpustruct->f_fpstatus.fps_regs);
+	    }
 	}
       else
-	fprintf_unfiltered (gdb_stderr, "Couldn't read float regs from core file\n");
+	fprintf_unfiltered (gdb_stderr, 
+			    "Couldn't read float regs from core file\n");
     }
 }
 
@@ -154,7 +160,7 @@ static struct core_fns sun3_core_fns =
 };
 
 void
-_initialize_core_sun3 ()
+_initialize_core_sun3 (void)
 {
   add_core_fns (&sun3_core_fns);
 }

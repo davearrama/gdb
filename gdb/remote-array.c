@@ -1,5 +1,8 @@
 /* Remote debugging interface for Array Tech RAID controller..
-   Copyright 90, 91, 92, 93, 94, 1995, 1998  Free Software Foundation, Inc.
+
+   Copyright 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
+   1999, 2000, 2001, 2002 Free Software Foundation, Inc.
+
    Contributed by Cygnus Support. Written by Rob Savoye for Cygnus.
 
    This module talks to a debug monitor called 'MONITOR', which
@@ -22,15 +25,12 @@
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place - Suite 330,
-   Boston, MA 02111-1307, USA.
- */
+   Boston, MA 02111-1307, USA.  */
 
 #include "defs.h"
 #include "gdbcore.h"
 #include "target.h"
-#include "wait.h"
 #include <ctype.h>
-#include <signal.h>
 #include <sys/types.h>
 #include "gdb_string.h"
 #include "command.h"
@@ -39,35 +39,18 @@
 #include "remote-utils.h"
 #include "inferior.h"
 #include "version.h"
+#include "regcache.h"
 
 extern int baud_rate;
 
 #define ARRAY_PROMPT ">> "
 
-#define SWAP_TARGET_AND_HOST(buffer,len) 				\
-  do									\
-    {									\
-      if (TARGET_BYTE_ORDER != HOST_BYTE_ORDER)				\
-	{								\
-	  char tmp;							\
-	  char *p = (char *)(buffer);					\
-	  char *q = ((char *)(buffer)) + len - 1;		   	\
-	  for (; p < q; p++, q--)				 	\
-	    {								\
-	      tmp = *q;							\
-	      *q = *p;							\
-	      *p = tmp;							\
-	    }								\
-	}								\
-    }									\
-  while (0)
-
-static void debuglogs PARAMS ((int, char *,...));
+static void debuglogs (int, char *, ...);
 static void array_open ();
 static void array_close ();
 static void array_detach ();
 static void array_attach ();
-static void array_resume ();
+static void array_resume (ptid_t ptid, int step, enum target_signal sig);
 static void array_fetch_register ();
 static void array_store_register ();
 static void array_fetch_registers ();
@@ -79,7 +62,8 @@ static void array_create_inferior ();
 static void array_mourn_inferior ();
 static void make_gdb_packet ();
 static int array_xfer_memory ();
-static int array_wait ();
+static ptid_t array_wait (ptid_t ptid,
+                                 struct target_waitstatus *status);
 static int array_insert_breakpoint ();
 static int array_remove_breakpoint ();
 static int tohex ();
@@ -107,7 +91,7 @@ static int timeout = 30;
  * Descriptor for I/O to remote machine.  Initialize it to NULL so that
  * array_open knows that we don't have a file open when the program starts.
  */
-serial_t array_desc = NULL;
+struct serial *array_desc = NULL;
 
 /*
  * this array of registers need to match the indexes used by GDB. The
@@ -131,14 +115,9 @@ init_array_ops (void)
 Specify the serial device it is connected to (e.g. /dev/ttya).";
   array_ops.to_open = array_open;
   array_ops.to_close = array_close;
-  array_ops.to_attach = NULL;
-  array_ops.to_post_attach = NULL;
-  array_ops.to_require_attach = NULL;
   array_ops.to_detach = array_detach;
-  array_ops.to_require_detach = NULL;
   array_ops.to_resume = array_resume;
   array_ops.to_wait = array_wait;
-  array_ops.to_post_wait = NULL;
   array_ops.to_fetch_registers = array_fetch_registers;
   array_ops.to_store_registers = array_store_registers;
   array_ops.to_prepare_to_store = array_prepare_to_store;
@@ -146,48 +125,15 @@ Specify the serial device it is connected to (e.g. /dev/ttya).";
   array_ops.to_files_info = array_files_info;
   array_ops.to_insert_breakpoint = array_insert_breakpoint;
   array_ops.to_remove_breakpoint = array_remove_breakpoint;
-  array_ops.to_terminal_init = 0;
-  array_ops.to_terminal_inferior = 0;
-  array_ops.to_terminal_ours_for_output = 0;
-  array_ops.to_terminal_ours = 0;
-  array_ops.to_terminal_info = 0;
   array_ops.to_kill = array_kill;
-  array_ops.to_load = 0;
-  array_ops.to_lookup_symbol = 0;
   array_ops.to_create_inferior = array_create_inferior;
-  array_ops.to_post_startup_inferior = NULL;
-  array_ops.to_acknowledge_created_inferior = NULL;
-  array_ops.to_clone_and_follow_inferior = NULL;
-  array_ops.to_post_follow_inferior_by_clone = NULL;
-  array_ops.to_insert_fork_catchpoint = NULL;
-  array_ops.to_remove_fork_catchpoint = NULL;
-  array_ops.to_insert_vfork_catchpoint = NULL;
-  array_ops.to_remove_vfork_catchpoint = NULL;
-  array_ops.to_has_forked = NULL;
-  array_ops.to_has_vforked = NULL;
-  array_ops.to_can_follow_vfork_prior_to_exec = NULL;
-  array_ops.to_post_follow_vfork = NULL;
-  array_ops.to_insert_exec_catchpoint = NULL;
-  array_ops.to_remove_exec_catchpoint = NULL;
-  array_ops.to_has_execd = NULL;
-  array_ops.to_reported_exec_events_per_exec_call = NULL;
-  array_ops.to_has_exited = NULL;
   array_ops.to_mourn_inferior = array_mourn_inferior;
-  array_ops.to_can_run = 0;
-  array_ops.to_notice_signals = 0;
-  array_ops.to_thread_alive = 0;
-  array_ops.to_stop = 0;
-  array_ops.to_pid_to_exec_file = NULL;
-  array_ops.to_core_file_to_sym_file = NULL;
   array_ops.to_stratum = process_stratum;
-  array_ops.DONT_USE = 0;
   array_ops.to_has_all_memory = 1;
   array_ops.to_has_memory = 1;
   array_ops.to_has_stack = 1;
   array_ops.to_has_registers = 1;
   array_ops.to_has_execution = 1;
-  array_ops.to_sections = 0;
-  array_ops.to_sections_end = 0;
   array_ops.to_magic = OPS_MAGIC;
 };
 
@@ -209,19 +155,19 @@ printf_monitor (char *pattern,...)
 
   if (strlen (buf) > PBUFSIZ)
     error ("printf_monitor(): string too long");
-  if (SERIAL_WRITE (array_desc, buf, strlen (buf)))
-    fprintf (stderr, "SERIAL_WRITE failed: %s\n", safe_strerror (errno));
+  if (serial_write (array_desc, buf, strlen (buf)))
+    fprintf_unfiltered (gdb_stderr, "serial_write failed: %s\n", 
+			safe_strerror (errno));
 }
 /*
  * write_monitor -- send raw data to monitor.
  */
 static void
-write_monitor (data, len)
-     char data[];
-     int len;
+write_monitor (char data[], int len)
 {
-  if (SERIAL_WRITE (array_desc, data, len))
-    fprintf (stderr, "SERIAL_WRITE failed: %s\n", safe_strerror (errno));
+  if (serial_write (array_desc, data, len))
+    fprintf_unfiltered (gdb_stderr, "serial_write failed: %s\n",
+			safe_strerror (errno));
 
   *(data + len + 1) = '\0';
   debuglogs (1, "write_monitor(), Sending: \"%s\".", data);
@@ -317,12 +263,11 @@ debuglogs (int level, char *pattern,...)
  *    timeout stuff.
  */
 static int
-readchar (timeout)
-     int timeout;
+readchar (int timeout)
 {
   int c;
 
-  c = SERIAL_READCHAR (array_desc, abs (timeout));
+  c = serial_readchar (array_desc, abs (timeout));
 
   if (sr_get_debug () > 5)
     {
@@ -356,9 +301,7 @@ readchar (timeout)
  *      it out. Let the user break out immediately.
  */
 static void
-expect (string, discard)
-     char *string;
-     int discard;
+expect (char *string, int discard)
 {
   char *p = string;
   int c;
@@ -366,7 +309,7 @@ expect (string, discard)
 
   debuglogs (1, "Expecting \"%s\".", string);
 
-  immediate_quit = 1;
+  immediate_quit++;
   while (1)
     {
       c = readchar (timeout);
@@ -376,7 +319,7 @@ expect (string, discard)
 	{
 	  if (*p == '\0')
 	    {
-	      immediate_quit = 0;
+	      immediate_quit--;
 	      debuglogs (4, "Matched");
 	      return;
 	    }
@@ -407,8 +350,7 @@ expect (string, discard)
    necessary to prevent getting into states from which we can't
    recover.  */
 static void
-expect_prompt (discard)
-     int discard;
+expect_prompt (int discard)
 {
   expect (ARRAY_PROMPT, discard);
 }
@@ -417,8 +359,7 @@ expect_prompt (discard)
  * junk -- ignore junk characters. Returns a 1 if junk, 0 otherwise
  */
 static int
-junk (ch)
-     char ch;
+junk (char ch)
 {
   switch (ch)
     {
@@ -443,8 +384,7 @@ junk (ch)
  *              If ignore is nonzero, ignore spaces, newline & tabs.
  */
 static int
-get_hex_digit (ignore)
-     int ignore;
+get_hex_digit (int ignore)
 {
   static int ch;
   while (1)
@@ -490,8 +430,7 @@ get_hex_digit (ignore)
  *    Accept any number leading spaces.
  */
 static void
-get_hex_byte (byt)
-     char *byt;
+get_hex_byte (char *byt)
 {
   int val;
 
@@ -510,29 +449,17 @@ get_hex_byte (byt)
  *      and put them in registers starting at REGNO.
  */
 static int
-get_hex_word ()
+get_hex_word (void)
 {
   long val, newval;
   int i;
 
   val = 0;
 
-#if 0
-  if (HOST_BYTE_ORDER == BIG_ENDIAN)
-    {
-#endif
-      for (i = 0; i < 8; i++)
-	val = (val << 4) + get_hex_digit (i == 0);
-#if 0
-    }
-  else
-    {
-      for (i = 7; i >= 0; i--)
-	val = (val << 4) + get_hex_digit (i == 0);
-    }
-#endif
+  for (i = 0; i < 8; i++)
+    val = (val << 4) + get_hex_digit (i == 0);
 
-  debuglogs (4, "get_hex_word() got a 0x%x for a %s host.", val, (HOST_BYTE_ORDER == BIG_ENDIAN) ? "big endian" : "little endian");
+  debuglogs (4, "get_hex_word() got a 0x%x.", val);
 
   return val;
 }
@@ -540,10 +467,7 @@ get_hex_word ()
 /* This is called not only when we first attach, but also when the
    user types "run" after having attached.  */
 static void
-array_create_inferior (execfile, args, env)
-     char *execfile;
-     char *args;
-     char **env;
+array_create_inferior (char *execfile, char *args, char **env)
 {
   int entry_pt;
 
@@ -584,10 +508,7 @@ static int baudrate = 9600;
 static char dev_name[100];
 
 static void
-array_open (args, name, from_tty)
-     char *args;
-     char *name;
-     int from_tty;
+array_open (char *args, char *name, int from_tty)
 {
   char packet[PBUFSIZ];
 
@@ -605,21 +526,21 @@ array_open (args, name, from_tty)
   mips_set_processor_type_command ("lsi33k", 0);
 
   strcpy (dev_name, args);
-  array_desc = SERIAL_OPEN (dev_name);
+  array_desc = serial_open (dev_name);
 
   if (array_desc == NULL)
     perror_with_name (dev_name);
 
   if (baud_rate != -1)
     {
-      if (SERIAL_SETBAUDRATE (array_desc, baud_rate))
+      if (serial_setbaudrate (array_desc, baud_rate))
 	{
-	  SERIAL_CLOSE (array_desc);
+	  serial_close (array_desc);
 	  perror_with_name (name);
 	}
     }
 
-  SERIAL_RAW (array_desc);
+  serial_raw (array_desc);
 
 #if defined (LOG_FILE)
   log_file = fopen (LOG_FILE, "w");
@@ -659,10 +580,9 @@ array_open (args, name, from_tty)
  */
 
 static void
-array_close (quitting)
-     int quitting;
+array_close (int quitting)
 {
-  SERIAL_CLOSE (array_desc);
+  serial_close (array_desc);
   array_desc = NULL;
 
   debuglogs (1, "array_close (quitting=%d)", quitting);
@@ -684,8 +604,7 @@ array_close (quitting)
  *      else with your gdb.
  */
 static void
-array_detach (from_tty)
-     int from_tty;
+array_detach (int from_tty)
 {
 
   debuglogs (1, "array_detach ()");
@@ -699,9 +618,7 @@ array_detach (from_tty)
  * array_attach -- attach GDB to the target.
  */
 static void
-array_attach (args, from_tty)
-     char *args;
-     int from_tty;
+array_attach (char *args, int from_tty)
 {
   if (from_tty)
     printf ("Starting remote %s debugging\n", target_shortname);
@@ -717,9 +634,7 @@ array_attach (args, from_tty)
  * array_resume -- Tell the remote machine to resume.
  */
 static void
-array_resume (pid, step, sig)
-     int pid, step;
-     enum target_signal sig;
+array_resume (ptid_t ptid, int step, enum target_signal sig)
 {
   debuglogs (1, "array_resume (step=%d, sig=%d)", step, sig);
 
@@ -739,15 +654,13 @@ array_resume (pid, step, sig)
  * array_wait -- Wait until the remote machine stops, then return,
  *          storing status in status just as `wait' would.
  */
-static int
-array_wait (pid, status)
-     int pid;
-     struct target_waitstatus *status;
+static ptid_t
+array_wait (ptid_t ptid, struct target_waitstatus *status)
 {
   int old_timeout = timeout;
   int result, i;
   char c;
-  serial_t tty_desc;
+  struct serial *tty_desc;
   serial_ttystate ttystate;
 
   debuglogs (1, "array_wait (), printing extraneous text.");
@@ -758,9 +671,9 @@ array_wait (pid, status)
   timeout = 0;			/* Don't time out -- user program is running. */
 
 #if !defined(__GO32__) && !defined(__MSDOS__) && !defined(_WIN32)
-  tty_desc = SERIAL_FDOPEN (0);
-  ttystate = SERIAL_GET_TTY_STATE (tty_desc);
-  SERIAL_RAW (tty_desc);
+  tty_desc = serial_fdopen (0);
+  ttystate = serial_get_tty_state (tty_desc);
+  serial_raw (tty_desc);
 
   i = 0;
   /* poll on the serial port and the keyboard. */
@@ -784,10 +697,10 @@ array_wait (pid, status)
 	  fputc_unfiltered (c, gdb_stdout);
 	  gdb_flush (gdb_stdout);
 	}
-      c = SERIAL_READCHAR (tty_desc, timeout);
+      c = serial_readchar (tty_desc, timeout);
       if (c > 0)
 	{
-	  SERIAL_WRITE (array_desc, &c, 1);
+	  serial_write (array_desc, &c, 1);
 	  /* do this so it looks like there's keyboard echo */
 	  if (c == 3)		/* exit on Control-C */
 	    break;
@@ -797,7 +710,7 @@ array_wait (pid, status)
 #endif
 	}
     }
-  SERIAL_SET_TTY_STATE (tty_desc, ttystate);
+  serial_set_tty_state (tty_desc, ttystate);
 #else
   expect_prompt (1);
   debuglogs (4, "array_wait(), got the expect_prompt.");
@@ -808,7 +721,7 @@ array_wait (pid, status)
 
   timeout = old_timeout;
 
-  return 0;
+  return inferior_ptid;
 }
 
 /*
@@ -816,19 +729,16 @@ array_wait (pid, status)
  *      block regs.
  */
 static void
-array_fetch_registers (ignored)
-     int ignored;
+array_fetch_registers (int ignored)
 {
-  int regno, i;
+  char *reg = alloca (MAX_REGISTER_RAW_SIZE);
+  int regno;
   char *p;
-  unsigned char packet[PBUFSIZ];
-  char regs[REGISTER_BYTES];
+  char *packet = alloca (PBUFSIZ);
 
   debuglogs (1, "array_fetch_registers (ignored=%d)\n", ignored);
 
   memset (packet, 0, PBUFSIZ);
-  /* Unimplemented registers read as all bits zero.  */
-  memset (regs, 0, REGISTER_BYTES);
   make_gdb_packet (packet, "g");
   if (array_send_packet (packet) == 0)
     error ("Couldn't transmit packet\n");
@@ -840,10 +750,10 @@ array_fetch_registers (ignored)
     {
       /* supply register stores in target byte order, so swap here */
       /* FIXME: convert from ASCII hex to raw bytes */
-      i = ascii2hexword (packet + (regno * 8));
+      LONGEST i = ascii2hexword (packet + (regno * 8));
       debuglogs (5, "Adding register %d = %x\n", regno, i);
-      SWAP_TARGET_AND_HOST (&i, 4);
-      supply_register (regno, (char *) &i);
+      store_unsigned_integer (&reg, REGISTER_RAW_SIZE (regno), i);
+      supply_register (regno, (char *) &reg);
     }
 }
 
@@ -852,18 +762,16 @@ array_fetch_registers (ignored)
  * protocol based on GDB's remote protocol.
  */
 static void
-array_fetch_register (ignored)
-     int ignored;
+array_fetch_register (int ignored)
 {
-  array_fetch_registers ();
+  array_fetch_registers (0 /* ignored */);
 }
 
 /*
  * Get all the registers from the targets. They come back in a large array.
  */
 static void
-array_store_registers (ignored)
-     int ignored;
+array_store_registers (int ignored)
 {
   int regno;
   unsigned long i;
@@ -902,10 +810,9 @@ array_store_registers (ignored)
  * protocol based on GDB's remote protocol.
  */
 static void
-array_store_register (ignored)
-     int ignored;
+array_store_register (int ignored)
 {
-  array_store_registers ();
+  array_store_registers (0 /* ignored */);
 }
 
 /* Get ready to modify the registers array.  On machines which store
@@ -915,13 +822,13 @@ array_store_register (ignored)
    debugged.  */
 
 static void
-array_prepare_to_store ()
+array_prepare_to_store (void)
 {
   /* Do nothing, since we can store individual regs */
 }
 
 static void
-array_files_info ()
+array_files_info (void)
 {
   printf ("\tAttached to %s at %d baud.\n",
 	  dev_name, baudrate);
@@ -932,10 +839,7 @@ array_files_info ()
  *      memory at MYADDR to inferior's memory at MEMADDR.  Returns length moved.
  */
 static int
-array_write_inferior_memory (memaddr, myaddr, len)
-     CORE_ADDR memaddr;
-     unsigned char *myaddr;
-     int len;
+array_write_inferior_memory (CORE_ADDR memaddr, unsigned char *myaddr, int len)
 {
   unsigned long i;
   int j;
@@ -980,10 +884,7 @@ array_write_inferior_memory (memaddr, myaddr, len)
  *      length moved.
  */
 static int
-array_read_inferior_memory (memaddr, myaddr, len)
-     CORE_ADDR memaddr;
-     char *myaddr;
-     int len;
+array_read_inferior_memory (CORE_ADDR memaddr, char *myaddr, int len)
 {
   int j;
   char buf[20];
@@ -1051,14 +952,15 @@ array_read_inferior_memory (memaddr, myaddr, len)
   return (count);
 }
 
-/* FIXME-someday!  merge these two.  */
+/* Transfer LEN bytes between GDB address MYADDR and target address
+   MEMADDR.  If WRITE is non-zero, transfer them to the target,
+   otherwise transfer them from the target.  TARGET is unused.
+
+   Returns the number of bytes transferred. */
+
 static int
-array_xfer_memory (memaddr, myaddr, len, write, target)
-     CORE_ADDR memaddr;
-     char *myaddr;
-     int len;
-     int write;
-     struct target_ops *target;	/* ignored */
+array_xfer_memory (CORE_ADDR memaddr, char *myaddr, int len, int write,
+		   struct mem_attrib *attrib, struct target_ops *target)
 {
   if (write)
     return array_write_inferior_memory (memaddr, myaddr, len);
@@ -1067,9 +969,7 @@ array_xfer_memory (memaddr, myaddr, len, write, target)
 }
 
 static void
-array_kill (args, from_tty)
-     char *args;
-     int from_tty;
+array_kill (char *args, int from_tty)
 {
   return;			/* ignore attempts to kill target system */
 }
@@ -1080,7 +980,7 @@ array_kill (args, from_tty)
    instructions.  */
 
 static void
-array_mourn_inferior ()
+array_mourn_inferior (void)
 {
   remove_breakpoints ();
   generic_mourn_inferior ();	/* Do all the proper things now */
@@ -1095,9 +995,7 @@ static CORE_ADDR breakaddr[MAX_ARRAY_BREAKPOINTS] =
  * array_insert_breakpoint -- add a breakpoint
  */
 static int
-array_insert_breakpoint (addr, shadow)
-     CORE_ADDR addr;
-     char *shadow;
+array_insert_breakpoint (CORE_ADDR addr, char *shadow)
 {
   int i;
   int bp_size = 0;
@@ -1120,7 +1018,7 @@ array_insert_breakpoint (addr, shadow)
 	}
     }
 
-  fprintf (stderr, "Too many breakpoints (> 16) for monitor\n");
+  fprintf_unfiltered (gdb_stderr, "Too many breakpoints (> 16) for monitor\n");
   return 1;
 }
 
@@ -1128,9 +1026,7 @@ array_insert_breakpoint (addr, shadow)
  * _remove_breakpoint -- Tell the monitor to remove a breakpoint
  */
 static int
-array_remove_breakpoint (addr, shadow)
-     CORE_ADDR addr;
-     char *shadow;
+array_remove_breakpoint (CORE_ADDR addr, char *shadow)
 {
   int i;
 
@@ -1147,13 +1043,14 @@ array_remove_breakpoint (addr, shadow)
 	  return 0;
 	}
     }
-  fprintf (stderr, "Can't find breakpoint associated with 0x%s\n",
-	   paddr_nz (addr));
+  fprintf_unfiltered (gdb_stderr,
+		      "Can't find breakpoint associated with 0x%s\n",
+		      paddr_nz (addr));
   return 1;
 }
 
 static void
-array_stop ()
+array_stop (void)
 {
   debuglogs (1, "array_stop()");
   printf_monitor ("\003");
@@ -1166,9 +1063,7 @@ array_stop ()
  *      expect_prompt is seen. FIXME
  */
 static void
-monitor_command (args, fromtty)
-     char *args;
-     int fromtty;
+monitor_command (char *args, int fromtty)
 {
   debuglogs (1, "monitor_command (args=%s)", args);
 
@@ -1199,8 +1094,7 @@ monitor_command (args, fromtty)
  *
  */
 static void
-make_gdb_packet (buf, data)
-     char *buf, *data;
+make_gdb_packet (char *buf, char *data)
 {
   int i;
   unsigned char csum = 0;
@@ -1239,8 +1133,7 @@ make_gdb_packet (buf, data)
  *              successful transmition, or a 0 for a failure.
  */
 static int
-array_send_packet (packet)
-     char *packet;
+array_send_packet (char *packet)
 {
   int c, retries, i;
   char junk[PBUFSIZ];
@@ -1338,8 +1231,7 @@ array_send_packet (packet)
  *              packet, or a 0 it the packet wasn't transmitted correctly.
  */
 static int
-array_get_packet (packet)
-     char *packet;
+array_get_packet (char *packet)
 {
   int c;
   int retries;
@@ -1433,8 +1325,7 @@ array_get_packet (packet)
  * ascii2hexword -- convert an ascii number represented by 8 digits to a hex value.
  */
 static unsigned long
-ascii2hexword (mem)
-     unsigned char *mem;
+ascii2hexword (unsigned char *mem)
 {
   unsigned long val;
   int i;
@@ -1462,9 +1353,7 @@ ascii2hexword (mem)
  *      digits.
  */
 static void
-hexword2ascii (mem, num)
-     unsigned char *mem;
-     unsigned long num;
+hexword2ascii (unsigned char *mem, unsigned long num)
 {
   int i;
   unsigned char ch;
@@ -1482,8 +1371,7 @@ hexword2ascii (mem, num)
 
 /* Convert hex digit A to a number.  */
 static int
-from_hex (a)
-     int a;
+from_hex (int a)
 {
   if (a == 0)
     return 0;
@@ -1503,8 +1391,7 @@ from_hex (a)
 
 /* Convert number NIB to a hex digit.  */
 static int
-tohex (nib)
-     int nib;
+tohex (int nib)
 {
   if (nib < 10)
     return '0' + nib;
@@ -1517,7 +1404,7 @@ tohex (nib)
  *              are usually only used by monitors.
  */
 void
-_initialize_remote_monitors ()
+_initialize_remote_monitors (void)
 {
   /* generic monitor command */
   add_com ("monitor", class_obscure, monitor_command,
@@ -1529,7 +1416,7 @@ _initialize_remote_monitors ()
  * _initialize_array -- do any special init stuff for the target.
  */
 void
-_initialize_array ()
+_initialize_array (void)
 {
   init_array_ops ();
   add_target (&array_ops);

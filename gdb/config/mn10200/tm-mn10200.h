@@ -1,5 +1,7 @@
 /* Parameters for execution on a Matsushita mn10200 processor.
-   Copyright 1997 Free Software Foundation, Inc. 
+
+   Copyright 1997, 1998, 1999, 2000, 2001, 2002 Free Software
+   Foundation, Inc.
 
    Contributed by Geoffrey Noer <noer@cygnus.com>
 
@@ -20,8 +22,12 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-/* The mn10200 is little endian.  */
-#define TARGET_BYTE_ORDER LITTLE_ENDIAN
+/* FIXME: cagney/2001-03-01: The below macros refer to functions
+   declared in "regcache.h".  The ``correct fix'' is to convert those
+   macros into functions.  */
+#include "regcache.h"
+#include "symtab.h"		/* For namespace_enum.  */
+#include "symfile.h"		/* For entry_point_address().  */
 
 /* ints are only 16bits on the mn10200.  */
 #undef TARGET_INT_BIT
@@ -99,30 +105,30 @@ struct value;
 
 #define EXTRA_FRAME_INFO struct frame_saved_regs fsr; int status; int stack_size;
 
-extern void mn10200_init_extra_frame_info PARAMS ((struct frame_info *));
+extern void mn10200_init_extra_frame_info (struct frame_info *);
 #define INIT_EXTRA_FRAME_INFO(fromleaf, fi) mn10200_init_extra_frame_info (fi)
 #define INIT_FRAME_PC(x,y)
 
-extern void mn10200_frame_find_saved_regs PARAMS ((struct frame_info *,
-						struct frame_saved_regs *));
+extern void mn10200_frame_find_saved_regs (struct frame_info *,
+					   struct frame_saved_regs *);
 #define FRAME_FIND_SAVED_REGS(fi, regaddr) regaddr = fi->fsr
 
-extern CORE_ADDR mn10200_frame_chain PARAMS ((struct frame_info *));
+extern CORE_ADDR mn10200_frame_chain (struct frame_info *);
 #define FRAME_CHAIN(fi) mn10200_frame_chain (fi)
 #define FRAME_CHAIN_VALID(FP, FI)	generic_file_frame_chain_valid (FP, FI)
 
-extern CORE_ADDR mn10200_find_callers_reg PARAMS ((struct frame_info *, int));
-extern CORE_ADDR mn10200_frame_saved_pc PARAMS ((struct frame_info *));
+extern CORE_ADDR mn10200_find_callers_reg (struct frame_info *, int);
+extern CORE_ADDR mn10200_frame_saved_pc (struct frame_info *);
 #define FRAME_SAVED_PC(FI) (mn10200_frame_saved_pc (FI))
 
 /* Extract from an array REGBUF containing the (raw) register state
    a function return value of type TYPE, and copy that, in virtual format,
    into VALBUF.  */
 
-#define EXTRACT_RETURN_VALUE(TYPE, REGBUF, VALBUF) \
+#define DEPRECATED_EXTRACT_RETURN_VALUE(TYPE, REGBUF, VALBUF) \
   { \
     if (TYPE_LENGTH (TYPE) > 8) \
-      abort (); \
+      internal_error (__FILE__, __LINE__, "failed internal consistency check"); \
     else if (TYPE_LENGTH (TYPE) > 2 && TYPE_CODE (TYPE) != TYPE_CODE_PTR) \
       { \
 	memcpy (VALBUF, REGBUF + REGISTER_BYTE (0), 2); \
@@ -138,26 +144,26 @@ extern CORE_ADDR mn10200_frame_saved_pc PARAMS ((struct frame_info *));
       } \
   }
 
-#define EXTRACT_STRUCT_VALUE_ADDRESS(REGBUF) \
+#define DEPRECATED_EXTRACT_STRUCT_VALUE_ADDRESS(REGBUF) \
   extract_address (REGBUF + REGISTER_BYTE (4), \
 		   REGISTER_RAW_SIZE (4))
 
-#define STORE_RETURN_VALUE(TYPE, VALBUF) \
+#define DEPRECATED_STORE_RETURN_VALUE(TYPE, VALBUF) \
   { \
     if (TYPE_LENGTH (TYPE) > 8) \
-      abort (); \
+      internal_error (__FILE__, __LINE__, "failed internal consistency check"); \
     else if (TYPE_LENGTH (TYPE) > 2 && TYPE_CODE (TYPE) != TYPE_CODE_PTR) \
       { \
-	write_register_bytes (REGISTER_BYTE (0), VALBUF, 2); \
-	write_register_bytes (REGISTER_BYTE (1), VALBUF + 2, 2); \
+	deprecated_write_register_bytes (REGISTER_BYTE (0), VALBUF, 2); \
+	deprecated_write_register_bytes (REGISTER_BYTE (1), VALBUF + 2, 2); \
       } \
     else if (TYPE_CODE (TYPE) == TYPE_CODE_PTR)\
       { \
-        write_register_bytes (REGISTER_BYTE (4), VALBUF, TYPE_LENGTH (TYPE)); \
+        deprecated_write_register_bytes (REGISTER_BYTE (4), VALBUF, TYPE_LENGTH (TYPE)); \
       } \
     else \
       { \
-        write_register_bytes (REGISTER_BYTE (0), VALBUF, TYPE_LENGTH (TYPE)); \
+        deprecated_write_register_bytes (REGISTER_BYTE (0), VALBUF, TYPE_LENGTH (TYPE)); \
       } \
   }
 
@@ -166,7 +172,7 @@ extern CORE_ADDR mn10200_store_struct_return (CORE_ADDR addr, CORE_ADDR sp);
 #define STORE_STRUCT_RETURN(STRUCT_ADDR, SP) \
   (SP) = mn10200_store_struct_return (STRUCT_ADDR, SP)
 
-extern CORE_ADDR mn10200_skip_prologue PARAMS ((CORE_ADDR));
+extern CORE_ADDR mn10200_skip_prologue (CORE_ADDR);
 #define SKIP_PROLOGUE(pc) (mn10200_skip_prologue (pc))
 
 #define FRAME_ARGS_SKIP 0
@@ -175,7 +181,7 @@ extern CORE_ADDR mn10200_skip_prologue PARAMS ((CORE_ADDR));
 #define FRAME_LOCALS_ADDRESS(fi) ((fi)->frame)
 #define FRAME_NUM_ARGS(fi) (-1)
 
-extern void mn10200_pop_frame PARAMS ((struct frame_info *));
+extern void mn10200_pop_frame (struct frame_info *);
 #define POP_FRAME mn10200_pop_frame (get_current_frame ())
 
 #define USE_GENERIC_DUMMY_FRAMES 1
@@ -186,14 +192,13 @@ extern void mn10200_pop_frame PARAMS ((struct frame_info *));
 #define FIX_CALL_DUMMY(DUMMY, START, FUNADDR, NARGS, ARGS, TYPE, GCCP)
 #define CALL_DUMMY_ADDRESS()         entry_point_address ()
 
-extern CORE_ADDR mn10200_push_return_address PARAMS ((CORE_ADDR, CORE_ADDR));
+extern CORE_ADDR mn10200_push_return_address (CORE_ADDR, CORE_ADDR);
 #define PUSH_RETURN_ADDRESS(PC, SP)  mn10200_push_return_address (PC, SP)
 
 #define PUSH_DUMMY_FRAME	generic_push_dummy_frame ()
 
-extern CORE_ADDR
-  mn10200_push_arguments PARAMS ((int, struct value **, CORE_ADDR,
-				  unsigned char, CORE_ADDR));
+extern CORE_ADDR mn10200_push_arguments (int, struct value **, CORE_ADDR,
+					 unsigned char, CORE_ADDR);
 #define PUSH_ARGUMENTS(NARGS, ARGS, SP, STRUCT_RETURN, STRUCT_ADDR) \
   (mn10200_push_arguments (NARGS, ARGS, SP, STRUCT_RETURN, STRUCT_ADDR))
 
@@ -208,7 +213,7 @@ extern use_struct_convention_fn mn10200_use_struct_convention;
 /* Override the default get_saved_register function with
    one that takes account of generic CALL_DUMMY frames.  */
 #define GET_SAVED_REGISTER(raw_buffer, optimized, addrp, frame, regnum, lval) \
-      generic_get_saved_register (raw_buffer, optimized, addrp, frame, regnum, lval)
+      generic_unwind_get_saved_register (raw_buffer, optimized, addrp, frame, regnum, lval)
 
 /* Define this for Wingdb */
 #define TARGET_MN10200

@@ -1,5 +1,6 @@
 /* Native-dependent code for ptx 4.0
-   Copyright 1988, 1989, 1991, 1992 Free Software Foundation, Inc.
+   Copyright 1988, 1989, 1991, 1992, 1994, 1999, 2000, 2001
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,18 +22,21 @@
 #include "defs.h"
 #include "inferior.h"
 #include "gdbcore.h"
+#include "regcache.h"
 #include <sys/procfs.h>
 #include <sys/ptrace.h>
 #include <sys/param.h>
 #include <fcntl.h>
+
+/* Prototypes for supply_gregset etc. */
+#include "gregset.h"
 
 /*  Given a pointer to a general register set in /proc format (gregset_t *),
    unpack the register contents and supply them as gdb's idea of the current
    register values. */
 
 void
-supply_gregset (gregsetp)
-     gregset_t *gregsetp;
+supply_gregset (gregset_t *gregsetp)
 {
   supply_register (EAX_REGNUM, (char *) &(*gregsetp)[EAX]);
   supply_register (EDX_REGNUM, (char *) &(*gregsetp)[EDX]);
@@ -47,9 +51,7 @@ supply_gregset (gregsetp)
 }
 
 void
-fill_gregset (gregsetp, regno)
-     gregset_t *gregsetp;
-     int regno;
+fill_gregset (gregset_t *gregsetp, int regno)
 {
   int regi;
 
@@ -57,20 +59,17 @@ fill_gregset (gregsetp, regno)
     {
       if ((regno == -1) || (regno == regi))
 	{
-	  (*gregsetp)[regi] = *(greg_t *) & registers[REGISTER_BYTE (regi)];
+	  (*gregsetp)[regi] = *(greg_t *) & deprecated_registers[REGISTER_BYTE (regi)];
 	}
     }
 }
-
-#if defined (FP0_REGNUM)
 
 /*  Given a pointer to a floating point register set in /proc format
    (fpregset_t *), unpack the register contents and supply them as gdb's
    idea of the current floating point register values. */
 
 void
-supply_fpregset (fpregsetp)
-     fpregset_t *fpregsetp;
+supply_fpregset (fpregset_t *fpregsetp)
 {
   supply_fpu_registers ((struct fpusave *) &fpregsetp->fp_reg_set);
   supply_fpa_registers ((struct fpasave *) &fpregsetp->f_wregs);
@@ -82,9 +81,7 @@ supply_fpregset (fpregsetp)
    them all. */
 
 void
-fill_fpregset (fpregsetp, regno)
-     fpregset_t *fpregsetp;
-     int regno;
+fill_fpregset (fpregset_t *fpregsetp, int regno)
 {
   int regi;
   char *to;
@@ -93,16 +90,13 @@ fill_fpregset (fpregsetp, regno)
   /* FIXME: see m68k-tdep.c for an example, for the m68k. */
 }
 
-#endif /* defined (FP0_REGNUM) */
-
 /*
  * This doesn't quite do the same thing as the procfs.c version, but give
  * it the same name so we don't have to put an ifdef in solib.c.
  */
 /* this could use elf_interpreter() from elfread.c */
 int
-proc_iterate_over_mappings (func)
-     int (*func) PARAMS ((int, CORE_ADDR));
+proc_iterate_over_mappings (int (*func) (int, CORE_ADDR))
 {
   vaddr_t curseg, memptr;
   pt_vseg_t pv;
@@ -159,7 +153,7 @@ proc_iterate_over_mappings (func)
   curseg = 0;
   while (1)
     {
-      rv = ptrace (PT_NEXT_VSEG, inferior_pid, &pv, curseg);
+      rv = ptrace (PT_NEXT_VSEG, PIDGET (inferior_ptid), &pv, curseg);
 #ifdef VERBOSE_DEBUG
       printf ("PT_NEXT_VSEG: rv %d errno %d\n", rv, errno);
 #endif
@@ -193,7 +187,7 @@ proc_iterate_over_mappings (func)
 	      close (interp_fd);
 	      return 0;
 	    }
-	  rv = ptrace (PT_RDATA_PAGE, inferior_pid, buf2,
+	  rv = ptrace (PT_RDATA_PAGE, PIDGET (inferior_ptid), buf2,
 		       memptr);
 	  if (-1 == rv)
 	    {

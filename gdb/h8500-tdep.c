@@ -1,5 +1,7 @@
 /* Target-dependent code for Hitachi H8/500, for GDB.
-   Copyright 1993, 1994, 1995 Free Software Foundation, Inc.
+
+   Copyright 1993, 1994, 1995, 1998, 2000, 2001, 2002 Free Software
+   Foundation, Inc.
 
    This file is part of GDB.
 
@@ -25,13 +27,13 @@
 
 #include "defs.h"
 #include "frame.h"
-#include "obstack.h"
 #include "symtab.h"
 #include "gdbtypes.h"
 #include "gdbcmd.h"
 #include "value.h"
 #include "dis-asm.h"
 #include "gdbcore.h"
+#include "regcache.h"
 
 #define UNSIGNED_SHORT(X) ((X) & 0xffff)
 
@@ -78,8 +80,7 @@ static int data_size = 2;
 int minimum_mode = 1;
 
 CORE_ADDR
-h8500_skip_prologue (start_pc)
-     CORE_ADDR start_pc;
+h8500_skip_prologue (CORE_ADDR start_pc)
 {
   short int w;
 
@@ -100,8 +101,7 @@ h8500_skip_prologue (start_pc)
 }
 
 CORE_ADDR
-h8500_addr_bits_remove (addr)
-     CORE_ADDR addr;
+h8500_addr_bits_remove (CORE_ADDR addr)
 {
   return ((addr) & 0xffffff);
 }
@@ -114,8 +114,7 @@ h8500_addr_bits_remove (addr)
    the function prologue to determine the caller's sp value, and return it.  */
 
 CORE_ADDR
-h8500_frame_chain (thisframe)
-     struct frame_info *thisframe;
+h8500_frame_chain (struct frame_info *thisframe)
 {
   if (!inside_entry_file (thisframe->pc))
     return (read_memory_integer (FRAME_FP (thisframe), PTR_SIZE));
@@ -129,10 +128,7 @@ h8500_frame_chain (thisframe)
    of the instruction. */
 
 CORE_ADDR
-NEXT_PROLOGUE_INSN (addr, lim, pword1)
-     CORE_ADDR addr;
-     CORE_ADDR lim;
-     char *pword1;
+NEXT_PROLOGUE_INSN (CORE_ADDR addr, CORE_ADDR lim, char *pword1)
 {
   if (addr < lim + 8)
     {
@@ -156,14 +152,13 @@ NEXT_PROLOGUE_INSN (addr, lim, pword1)
 /* Return the saved PC from this frame. */
 
 CORE_ADDR
-frame_saved_pc (frame)
-     struct frame_info *frame;
+frame_saved_pc (struct frame_info *frame)
 {
   return read_memory_integer (FRAME_FP (frame) + 2, PTR_SIZE);
 }
 
 void
-h8500_pop_frame ()
+h8500_pop_frame (void)
 {
   unsigned regnum;
   struct frame_saved_regs fsr;
@@ -180,9 +175,8 @@ h8500_pop_frame ()
     }
 }
 
-void
-print_register_hook (regno)
-     int regno;
+static void
+h8500_print_register_hook (int regno)
 {
   if (regno == CCR_REGNUM)
     {
@@ -192,7 +186,7 @@ print_register_hook (regno)
       unsigned char b[2];
       unsigned char l;
 
-      read_relative_register_raw_bytes (regno, b);
+      frame_register_read (selected_frame, regno, b);
       l = b[1];
       printf_unfiltered ("\t");
       printf_unfiltered ("I-%d - ", (l & 0x80) != 0);
@@ -227,9 +221,119 @@ print_register_hook (regno)
     }
 }
 
+static void
+h8500_print_registers_info (struct gdbarch *gdbarch,
+			    struct ui_file *file,
+			    struct frame_info *frame,
+			    int regnum, int print_all)
+{
+  int i;
+  const int numregs = NUM_REGS + NUM_PSEUDO_REGS;
+  char *raw_buffer = alloca (MAX_REGISTER_RAW_SIZE);
+  char *virtual_buffer = alloca (MAX_REGISTER_VIRTUAL_SIZE);
+
+  for (i = 0; i < numregs; i++)
+    {
+      /* Decide between printing all regs, non-float / vector regs, or
+         specific reg.  */
+      if (regnum == -1)
+	{
+	  if (!print_all)
+	    {
+	      if (TYPE_CODE (REGISTER_VIRTUAL_TYPE (i)) == TYPE_CODE_FLT)
+		continue;
+	      if (TYPE_VECTOR (REGISTER_VIRTUAL_TYPE (i)))
+		continue;
+	    }
+	}
+      else
+	{
+	  if (i != regnum)
+	    continue;
+	}
+
+      /* If the register name is empty, it is undefined for this
+         processor, so don't display anything.  */
+      if (REGISTER_NAME (i) == NULL || *(REGISTER_NAME (i)) == '\0')
+	continue;
+
+      fputs_filtered (REGISTER_NAME (i), file);
+      print_spaces_filtered (15 - strlen (REGISTER_NAME (i)), file);
+
+      /* Get the data in raw format.  */
+      if (! frame_register_read (frame, i, raw_buffer))
+	{
+	  fprintf_filtered (file, "*value not available*\n");
+	  continue;
+	}
+
+      /* FIXME: cagney/2002-08-03: This code shouldn't be necessary.
+         The function frame_register_read() should have returned the
+         pre-cooked register so no conversion is necessary.  */
+      /* Convert raw data to virtual format if necessary.  */
+      if (REGISTER_CONVERTIBLE (i))
+	{
+	  REGISTER_CONVERT_TO_VIRTUAL (i, REGISTER_VIRTUAL_TYPE (i),
+				       raw_buffer, virtual_buffer);
+	}
+      else
+	{
+	  memcpy (virtual_buffer, raw_buffer,
+		  REGISTER_VIRTUAL_SIZE (i));
+	}
+
+      /* If virtual format is floating, print it that way, and in raw
+         hex.  */
+      if (TYPE_CODE (REGISTER_VIRTUAL_TYPE (i)) == TYPE_CODE_FLT)
+	{
+	  int j;
+
+	  val_print (REGISTER_VIRTUAL_TYPE (i), virtual_buffer, 0, 0,
+		     file, 0, 1, 0, Val_pretty_default);
+
+	  fprintf_filtered (file, "\t(raw 0x");
+	  for (j = 0; j < REGISTER_RAW_SIZE (i); j++)
+	    {
+	      int idx;
+	      if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
+		idx = j;
+	      else
+		idx = REGISTER_RAW_SIZE (i) - 1 - j;
+	      fprintf_filtered (file, "%02x", (unsigned char) raw_buffer[idx]);
+	    }
+	  fprintf_filtered (file, ")");
+	}
+      else
+	{
+	  /* Print the register in hex.  */
+	  val_print (REGISTER_VIRTUAL_TYPE (i), virtual_buffer, 0, 0,
+		     file, 'x', 1, 0, Val_pretty_default);
+          /* If not a vector register, print it also according to its
+             natural format.  */
+	  if (TYPE_VECTOR (REGISTER_VIRTUAL_TYPE (i)) == 0)
+	    {
+	      fprintf_filtered (file, "\t");
+	      val_print (REGISTER_VIRTUAL_TYPE (i), virtual_buffer, 0, 0,
+			 file, 0, 1, 0, Val_pretty_default);
+	    }
+	}
+
+      /* Some h8500 specific info.  */
+      h8500_print_register_hook (i);
+
+      fprintf_filtered (file, "\n");
+    }
+}
+
+void
+h8500_do_registers_info (int regnum, int all)
+{
+  h8500_print_registers_info (current_gdbarch, gdb_stdout, selected_frame,
+			      regnum, all);
+}
+
 int
-h8500_register_size (regno)
-     int regno;
+h8500_register_size (int regno)
 {
   switch (regno)
     {
@@ -260,13 +364,12 @@ h8500_register_size (regno)
     case PC_REGNUM:
       return 4;
     default:
-      abort ();
+      internal_error (__FILE__, __LINE__, "failed internal consistency check");
     }
 }
 
 struct type *
-h8500_register_virtual_type (regno)
-     int regno;
+h8500_register_virtual_type (int regno)
 {
   switch (regno)
     {
@@ -296,7 +399,7 @@ h8500_register_virtual_type (regno)
     case PC_REGNUM:
       return builtin_type_unsigned_long;
     default:
-      abort ();
+      internal_error (__FILE__, __LINE__, "failed internal consistency check");
     }
 }
 
@@ -307,9 +410,8 @@ h8500_register_virtual_type (regno)
    the address we return for it IS the sp for the next frame.  */
 
 void
-frame_find_saved_regs (frame_info, frame_saved_regs)
-     struct frame_info *frame_info;
-     struct frame_saved_regs *frame_saved_regs;
+frame_find_saved_regs (struct frame_info *frame_info,
+		       struct frame_saved_regs *frame_saved_regs)
 {
   register int regnum;
   register int regmask;
@@ -387,7 +489,7 @@ lose:;
 }
 
 CORE_ADDR
-saved_pc_after_call ()
+saved_pc_after_call (void)
 {
   int x;
   int a = read_register (SP_REGNUM);
@@ -404,8 +506,7 @@ saved_pc_after_call ()
 }
 
 void
-h8500_set_pointer_size (newsize)
-     int newsize;
+h8500_set_pointer_size (int newsize)
 {
   static int oldsize = 0;
 
@@ -426,7 +527,7 @@ h8500_set_pointer_size (newsize)
 }
 
 static void
-big_command ()
+big_command (char *arg, int from_tty)
 {
   h8500_set_pointer_size (32);
   code_size = 4;
@@ -434,7 +535,7 @@ big_command ()
 }
 
 static void
-medium_command ()
+medium_command (char *arg, int from_tty)
 {
   h8500_set_pointer_size (32);
   code_size = 4;
@@ -442,7 +543,7 @@ medium_command ()
 }
 
 static void
-compact_command ()
+compact_command (char *arg, int from_tty)
 {
   h8500_set_pointer_size (32);
   code_size = 2;
@@ -450,7 +551,7 @@ compact_command ()
 }
 
 static void
-small_command ()
+small_command (char *arg, int from_tty)
 {
   h8500_set_pointer_size (16);
   code_size = 2;
@@ -460,9 +561,7 @@ small_command ()
 static struct cmd_list_element *setmemorylist;
 
 static void
-set_memory (args, from_tty)
-     char *args;
-     int from_tty;
+set_memory (char *args, int from_tty)
 {
   printf_unfiltered ("\"set memory\" must be followed by the name of a memory subcommand.\n");
   help_list (setmemorylist, "set memory ", -1, gdb_stdout);
@@ -471,8 +570,7 @@ set_memory (args, from_tty)
 /* See if variable name is ppc or pr[0-7] */
 
 int
-h8500_is_trapped_internalvar (name)
-     char *name;
+h8500_is_trapped_internalvar (char *name)
 {
   if (name[0] != 'p')
     return 0;
@@ -489,9 +587,8 @@ h8500_is_trapped_internalvar (name)
     return 0;
 }
 
-value_ptr
-h8500_value_of_trapped_internalvar (var)
-     struct internalvar *var;
+struct value *
+h8500_value_of_trapped_internalvar (struct internalvar *var)
 {
   LONGEST regval;
   unsigned char regbuf[4];
@@ -526,7 +623,7 @@ h8500_value_of_trapped_internalvar (var)
   get_saved_register (regbuf, NULL, NULL, selected_frame, regnum, NULL);
   regval |= regbuf[0] << 8 | regbuf[1];		/* XXX host/target byte order */
 
-  free (var->value);		/* Free up old value */
+  xfree (var->value);		/* Free up old value */
 
   var->value = value_from_longest (builtin_type_unsigned_long, regval);
   release_value (var->value);	/* Unchain new value */
@@ -537,10 +634,8 @@ h8500_value_of_trapped_internalvar (var)
 }
 
 void
-h8500_set_trapped_internalvar (var, newval, bitpos, bitsize, offset)
-     struct internalvar *var;
-     int offset, bitpos, bitsize;
-     value_ptr newval;
+h8500_set_trapped_internalvar (struct internalvar *var, struct value *newval,
+			       int bitpos, int bitsize, int offset)
 {
   char *page_regnum, *regnum;
   char expression[100];
@@ -590,48 +685,37 @@ h8500_set_trapped_internalvar (var, newval, bitpos, bitsize, offset)
 }
 
 CORE_ADDR
-h8500_read_sp ()
+h8500_read_sp (void)
 {
   return read_register (PR7_REGNUM);
 }
 
 void
-h8500_write_sp (v)
-     CORE_ADDR v;
+h8500_write_sp (CORE_ADDR v)
 {
   write_register (PR7_REGNUM, v);
 }
 
 CORE_ADDR
-h8500_read_pc (pid)
-     int pid;
+h8500_read_pc (ptid_t ptid)
 {
   return read_register (PC_REGNUM);
 }
 
 void
-h8500_write_pc (v, pid)
-     CORE_ADDR v;
-     int pid;
+h8500_write_pc (CORE_ADDR v, ptid_t ptid)
 {
   write_register (PC_REGNUM, v);
 }
 
 CORE_ADDR
-h8500_read_fp ()
+h8500_read_fp (void)
 {
   return read_register (PR6_REGNUM);
 }
 
 void
-h8500_write_fp (v)
-     CORE_ADDR v;
-{
-  write_register (PR6_REGNUM, v);
-}
-
-void
-_initialize_h8500_tdep ()
+_initialize_h8500_tdep (void)
 {
   tm_print_insn = print_insn_h8500;
 
