@@ -1,5 +1,6 @@
 /* Support routines for building symbol tables in GDB's internal format.
-   Copyright 1986-2000 Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995,
+   1996, 1997, 1998, 1999, 2000, 2001, 2002 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -27,14 +28,21 @@
 
 #include "defs.h"
 #include "bfd.h"
-#include "obstack.h"
+#include "gdb_obstack.h"
 #include "symtab.h"
-#include "symfile.h"		/* Needed for "struct complaint" */
+#include "symfile.h"		/* Needed for "struct complaint", obsavestring */
 #include "objfiles.h"
 #include "gdbtypes.h"
 #include "complaints.h"
 #include "gdb_string.h"
-
+#include "expression.h"		/* For "enum exp_opcode" used by... */
+#include "language.h"		/* For "local_hex_string" */
+#include "bcache.h"
+#include "filenames.h"		/* For DOSish file names */
+#include "macrotab.h"
+#include "demangle.h"		/* Needed by SYMBOL_INIT_DEMANGLED_NAME.  */
+#include "gdb_assert.h"
+#include "cp-support.h"
 /* Ask buildsym.h to define the vars it normally declares `extern'.  */
 #define	EXTERN
 /**/
@@ -54,8 +62,21 @@ static struct pending *free_pendings;
    otherwise empty symtab from being tossed.  */
 
 static int have_line_numbers;
+
+/* List of using directives that are active in the current file.  */
+
+static struct using_direct_node *using_list;
+
 
 static int compare_line_numbers (const void *ln1p, const void *ln2p);
+
+static void scan_for_anonymous_namespaces (struct symbol *symbol);
+
+static struct using_direct_node *copy_usings_to_obstack (struct
+							 using_direct_node
+							 *usings,
+							 struct obstack
+							 *obstack);
 
 
 /* Initial sizes of data structures.  These are realloc'd larger if
@@ -81,11 +102,28 @@ struct complaint innerblock_anon_complaint =
 {"inner block (0x%lx-0x%lx) not inside outer block (0x%lx-0x%lx)", 0, 0};
 
 struct complaint blockvector_complaint =
-{"block at 0x%lx out of order", 0, 0};
+{"block at %s out of order", 0, 0};
 
 /* maintain the lists of symbols and blocks */
 
-/* Add a symbol to one of the lists of symbols.  */
+/* Add a pending list to free_pendings. */
+void
+add_free_pendings (struct pending *list)
+{
+  register struct pending *link = list;
+
+  if (list)
+    {
+      while (link->next) link = link->next;
+      link->next = free_pendings;
+      free_pendings = list;
+    }
+}
+      
+/* Add a symbol to one of the lists of symbols.  While we're at it, if
+   we're in the C++ case and don't have full namespace debugging info,
+   check to see if it references an anonymous namespace; if so, add an
+   appropriate using directive.  */
 
 void
 add_symbol_to_list (struct symbol *symbol, struct pending **listhead)
@@ -116,6 +154,49 @@ add_symbol_to_list (struct symbol *symbol, struct pending **listhead)
     }
 
   (*listhead)->symbol[(*listhead)->nsyms++] = symbol;
+
+  /* Check to see if we might need to look for a mention of anonymous
+     namespaces.  */
+  
+   if (SYMBOL_LANGUAGE (symbol) == language_cplus
+       && !processing_has_namespace_info
+       && SYMBOL_CPLUS_DEMANGLED_NAME (symbol) != NULL)
+     scan_for_anonymous_namespaces (symbol);
+}
+
+/* Check to see if a symbol is contained within an anonymous
+   namespace; if so, add an appropriate using directive.  */
+
+/* Optimize away strlen ("(anonymous namespace)").  */
+
+#define ANONYMOUS_NAMESPACE_LEN 21
+
+static void
+scan_for_anonymous_namespaces (struct symbol *symbol)
+{
+  const char *name = SYMBOL_CPLUS_DEMANGLED_NAME (symbol);
+  const char *beginning, *end;
+
+  /* FIXME: carlton/2002-10-14: Should we do some sort of fast search
+     first to see if the substring "(anonymous namespace)" occurs in
+     name at all?  */
+
+  for (beginning = name, end = cp_find_first_component (name);
+       *end == ':';
+       /* The "+ 2" is for the "::"-.  */
+       beginning = end + 2, end = cp_find_first_component (beginning))
+    {
+      if ((end - beginning) == ANONYMOUS_NAMESPACE_LEN
+	  && strncmp (beginning, "(anonymous namespace)",
+		      ANONYMOUS_NAMESPACE_LEN) == 0)
+	/* We've found a component of the name that's an anonymous
+	   namespace.  So add symbols in it to the namespace given by
+	   the previous component if there is one, or to the global
+	   namespace if there isn't.  */
+	add_using_directive (name,
+			     beginning == name ? 0 : beginning - name - 2,
+			     end - name);
+    }
 }
 
 /* Find a symbol named NAME on a LIST.  NAME need not be
@@ -143,6 +224,35 @@ find_symbol_in_list (struct pending *list, char *name, int length)
   return (NULL);
 }
 
+/* This adds a using directive to using_list.  NAME is the start of a
+   string that should contain the namespaces we want to add as initial
+   substrings, OUTER_LENGTH is the end of the outer namespace, and
+   INNER_LENGTH is the end of the inner namespace.  If the using
+   directive in question has already been added, don't add it
+   twice.  */
+
+void
+add_using_directive (const char *name, unsigned int outer_length,
+		     unsigned int inner_length)
+{
+  struct using_direct_node *current;
+  struct using_direct_node *new_node;
+  struct using_direct *new;
+
+  gdb_assert (outer_length < inner_length);
+
+  /* Has it already been added?  */
+
+  for (current = using_list; current; current = current->next)
+    if (current->current->outer_length == outer_length
+	&& current->current->inner_length == inner_length
+	&& (strncmp (current->current->name, name, inner_length) == 0))
+      return;
+
+  using_list = cp_add_using_xmalloc (name, outer_length, inner_length,
+				     using_list);
+}
+
 /* At end of reading syms, or in case of quit, really free as many
    `struct pending's as we can easily find. */
 
@@ -155,7 +265,7 @@ really_free_pendings (PTR dummy)
   for (next = free_pendings; next; next = next1)
     {
       next1 = next->next;
-      free ((void *) next);
+      xfree ((void *) next);
     }
   free_pendings = NULL;
 
@@ -164,16 +274,19 @@ really_free_pendings (PTR dummy)
   for (next = file_symbols; next != NULL; next = next1)
     {
       next1 = next->next;
-      free ((void *) next);
+      xfree ((void *) next);
     }
   file_symbols = NULL;
 
   for (next = global_symbols; next != NULL; next = next1)
     {
       next1 = next->next;
-      free ((void *) next);
+      xfree ((void *) next);
     }
   global_symbols = NULL;
+
+  if (pending_macros)
+    free_macro_table (pending_macros);
 }
 
 /* This function is called to discard any pending blocks. */
@@ -189,7 +302,7 @@ free_pending_blocks (void)
   for (bnext = pending_blocks; bnext; bnext = bnext1)
     {
       bnext1 = bnext->next;
-      free ((void *) bnext);
+      xfree ((void *) bnext);
     }
 #endif
   pending_blocks = NULL;
@@ -221,17 +334,49 @@ finish_block (struct symbol *symbol, struct pending **listhead,
       /* EMPTY */ ;
     }
 
-  block = (struct block *) obstack_alloc (&objfile->symbol_obstack,
-	    (sizeof (struct block) + ((i - 1) * sizeof (struct symbol *))));
-
   /* Copy the symbols into the block.  */
 
-  BLOCK_NSYMS (block) = i;
-  for (next = *listhead; next; next = next->next)
+  if (symbol)
     {
-      for (j = next->nsyms - 1; j >= 0; j--)
+      block = (struct block *) 
+	obstack_alloc (&objfile->symbol_obstack,
+		       (sizeof (struct block) + 
+			((i - 1) * sizeof (struct symbol *))));
+      BLOCK_NSYMS (block) = i;
+      for (next = *listhead; next; next = next->next)
+	for (j = next->nsyms - 1; j >= 0; j--)
+	  {
+	    BLOCK_SYM (block, --i) = next->symbol[j];
+	  }
+    }
+  else
+    {
+      int htab_size = BLOCK_HASHTABLE_SIZE (i);
+
+      block = (struct block *) 
+	obstack_alloc (&objfile->symbol_obstack,
+		       (sizeof (struct block) + 
+			((htab_size - 1) * sizeof (struct symbol *))));
+      for (j = 0; j < htab_size; j++)
 	{
-	  BLOCK_SYM (block, --i) = next->symbol[j];
+	  BLOCK_BUCKET (block, j) = 0;
+	}
+      BLOCK_BUCKETS (block) = htab_size;
+      for (next = *listhead; next; next = next->next)
+	{
+	  for (j = next->nsyms - 1; j >= 0; j--)
+	    {
+	      struct symbol *sym;
+	      unsigned int hash_index;
+	      const char *name = SYMBOL_DEMANGLED_NAME (next->symbol[j]);
+	      if (name == NULL)
+		name = SYMBOL_NAME (next->symbol[j]);
+	      hash_index = msymbol_hash_iw (name);
+	      hash_index = hash_index % BLOCK_BUCKETS (block);
+	      sym = BLOCK_BUCKET (block, hash_index);
+	      BLOCK_BUCKET (block, hash_index) = next->symbol[j];
+	      next->symbol[j]->hash_next = sym;
+	    }
 	}
     }
 
@@ -239,6 +384,7 @@ finish_block (struct symbol *symbol, struct pending **listhead,
   BLOCK_END (block) = end;
   /* Superblock filled in when containing block is made */
   BLOCK_SUPERBLOCK (block) = NULL;
+  BLOCK_USING (block) = NULL;
 
   BLOCK_GCC_COMPILED (block) = processing_gcc_compilation;
 
@@ -249,6 +395,7 @@ finish_block (struct symbol *symbol, struct pending **listhead,
       struct type *ftype = SYMBOL_TYPE (symbol);
       SYMBOL_BLOCK_VALUE (symbol) = block;
       BLOCK_FUNCTION (block) = symbol;
+      BLOCK_HASHTABLE (block) = 0;
 
       if (TYPE_NFIELDS (ftype) <= 0)
 	{
@@ -257,9 +404,8 @@ finish_block (struct symbol *symbol, struct pending **listhead,
 	     parameter symbols. */
 	  int nparams = 0, iparams;
 	  struct symbol *sym;
-	  for (i = 0; i < BLOCK_NSYMS (block); i++)
+	  ALL_BLOCK_SYMBOLS (block, i, sym)
 	    {
-	      sym = BLOCK_SYM (block, i);
 	      switch (SYMBOL_CLASS (sym))
 		{
 		case LOC_ARG:
@@ -305,6 +451,7 @@ finish_block (struct symbol *symbol, struct pending **listhead,
 		    case LOC_BASEREG_ARG:
 		    case LOC_LOCAL_ARG:
 		      TYPE_FIELD_TYPE (ftype, iparams) = SYMBOL_TYPE (sym);
+		      TYPE_FIELD_ARTIFICIAL (ftype, iparams) = 0;
 		      iparams++;
 		      break;
 		    case LOC_UNDEF:
@@ -326,10 +473,39 @@ finish_block (struct symbol *symbol, struct pending **listhead,
 		}
 	    }
 	}
+
+      /* If we're in the C++ case, make sure that we add 'using'
+	 directives for all of the namespaces in which this function
+	 lives.  Also, make sure that the name was originally mangled:
+	 if not, there certainly isn't any namespace information to
+	 worry about!  (Also, if not, the gdb_assert will fail.)  */
+      if (SYMBOL_LANGUAGE (symbol) == language_cplus
+	  && SYMBOL_CPLUS_DEMANGLED_NAME (symbol) != NULL)
+	{
+	  const char *name = SYMBOL_CPLUS_DEMANGLED_NAME (symbol);
+	  const char *next;
+
+	  for (next = cp_find_first_component (name);
+	       *next == ':';
+	       /* The '+ 2' is to skip the '::'.  */
+	       next = cp_find_first_component (next + 2))
+	    {
+	      BLOCK_USING (block)
+		= cp_add_using_obstack (name, 0, next - name,
+					BLOCK_USING (block),
+					&objfile->symbol_obstack);
+	    }
+
+	  /* FIMXE: carlton/2002-10-09: Until I understand the
+	     possible pitfalls of demangled names a lot better, I want
+	     to make sure I'm not running into surprises.  */
+	  gdb_assert (*next == '\0');
+	}
     }
   else
     {
       BLOCK_FUNCTION (block) = NULL;
+      BLOCK_HASHTABLE (block) = 1;
     }
 
   /* Now "free" the links of the list, and empty the list.  */
@@ -365,7 +541,9 @@ finish_block (struct symbol *symbol, struct pending **listhead,
      start of this scope that don't have superblocks yet.  */
 
   opblock = NULL;
-  for (pblock = pending_blocks; pblock != old_blocks; pblock = pblock->next)
+  for (pblock = pending_blocks; 
+       pblock && pblock != old_blocks; 
+       pblock = pblock->next)
     {
       if (BLOCK_SUPERBLOCK (pblock->block) == NULL)
 	{
@@ -429,11 +607,11 @@ record_pending_block (struct objfile *objfile, struct block *block,
     }
 }
 
-/* Note that this is only used in this file and in dstread.c, which
-   should be fixed to not need direct access to this function.  When
-   that is done, it can be made static again. */
+/* OBSOLETE Note that this is only used in this file and in dstread.c, which */
+/* OBSOLETE should be fixed to not need direct access to this function.  When */
+/* OBSOLETE that is done, it can be made static again. */
 
-struct blockvector *
+static struct blockvector *
 make_blockvector (struct objfile *objfile)
 {
   register struct pending_block *next;
@@ -470,7 +648,7 @@ make_blockvector (struct objfile *objfile)
   for (next = pending_blocks; next; next = next1)
     {
       next1 = next->next;
-      free (next);
+      xfree (next);
     }
 #endif
   pending_blocks = NULL;
@@ -487,17 +665,11 @@ make_blockvector (struct objfile *objfile)
 	  if (BLOCK_START (BLOCKVECTOR_BLOCK (blockvector, i - 1))
 	      > BLOCK_START (BLOCKVECTOR_BLOCK (blockvector, i)))
 	    {
-
-	      /* FIXME-32x64: loses if CORE_ADDR doesn't fit in a
-	         long.  Possible solutions include a version of
-	         complain which takes a callback, a
-	         sprintf_address_numeric to match
-	         print_address_numeric, or a way to set up a UI_FILE
-	         which causes sprintf rather than fprintf to be
-	         called.  */
+	      CORE_ADDR start
+		= BLOCK_START (BLOCKVECTOR_BLOCK (blockvector, i));
 
 	      complain (&blockvector_complaint,
-			(unsigned long) BLOCK_START (BLOCKVECTOR_BLOCK (blockvector, i)));
+			local_hex_string ((LONGEST) start));
 	    }
 	}
     }
@@ -521,7 +693,7 @@ start_subfile (char *name, char *dirname)
 
   for (subfile = subfiles; subfile; subfile = subfile->next)
     {
-      if (STREQ (subfile->name, name))
+      if (FILENAME_CMP (subfile->name, name) == 0)
 	{
 	  current_subfile = subfile;
 	  return;
@@ -533,6 +705,7 @@ start_subfile (char *name, char *dirname)
      source file.  */
 
   subfile = (struct subfile *) xmalloc (sizeof (struct subfile));
+  memset ((char *) subfile, 0, sizeof (struct subfile));
   subfile->next = subfiles;
   subfiles = subfile;
   current_subfile = subfile;
@@ -656,7 +829,7 @@ push_subfile (void)
   subfile_stack = tem;
   if (current_subfile == NULL || current_subfile->name == NULL)
     {
-      abort ();
+      internal_error (__FILE__, __LINE__, "failed internal consistency check");
     }
   tem->name = current_subfile->name;
 }
@@ -669,11 +842,11 @@ pop_subfile (void)
 
   if (link == NULL)
     {
-      abort ();
+      internal_error (__FILE__, __LINE__, "failed internal consistency check");
     }
   name = link->name;
   subfile_stack = link->next;
-  free ((void *) link);
+  xfree ((void *) link);
   return (name);
 }
 
@@ -714,7 +887,7 @@ record_line (register struct subfile *subfile, int line, CORE_ADDR pc)
 
   e = subfile->line_vector->item + subfile->line_vector->nitems++;
   e->line = line;
-  e->pc = pc;
+  e->pc = ADDR_BITS_REMOVE(pc);
 }
 
 /* Needed in order to sort line tables from IBM xcoff files.  Sigh!  */
@@ -753,6 +926,8 @@ start_symtab (char *name, char *dirname, CORE_ADDR start_addr)
   global_symbols = NULL;
   within_function = 0;
   have_line_numbers = 0;
+  processing_has_namespace_info = 0;
+  using_list = NULL;
 
   /* Context stack is initially empty.  Allocate first one with room
      for 10 levels; reuse it forever afterward.  */
@@ -870,7 +1045,8 @@ end_symtab (CORE_ADDR end_addr, struct objfile *objfile, int section)
   if (pending_blocks == NULL
       && file_symbols == NULL
       && global_symbols == NULL
-      && have_line_numbers == 0)
+      && have_line_numbers == 0
+      && pending_macros == NULL)
     {
       /* Ignore symtabs that have no functions with real debugging
          info.  */
@@ -885,6 +1061,13 @@ end_symtab (CORE_ADDR end_addr, struct objfile *objfile, int section)
       finish_block (0, &global_symbols, 0, last_source_start_addr, end_addr,
 		    objfile);
       blockvector = make_blockvector (objfile);
+      if (using_list != NULL)
+	{
+	  BLOCK_USING (BLOCKVECTOR_BLOCK (blockvector, STATIC_BLOCK))
+	    = copy_usings_to_obstack (using_list,
+				      &objfile->symbol_obstack);
+	  using_list = NULL;
+	}
     }
 
 #ifndef PROCESS_LINENUMBER_HOOK
@@ -931,6 +1114,7 @@ end_symtab (CORE_ADDR end_addr, struct objfile *objfile, int section)
 
 	  /* Fill in its components.  */
 	  symtab->blockvector = blockvector;
+          symtab->macro_table = pending_macros;
 	  if (subfile->line_vector)
 	    {
 	      /* Reallocate the line table on the symbol obstack */
@@ -982,23 +1166,23 @@ end_symtab (CORE_ADDR end_addr, struct objfile *objfile, int section)
 	}
       if (subfile->name != NULL)
 	{
-	  free ((void *) subfile->name);
+	  xfree ((void *) subfile->name);
 	}
       if (subfile->dirname != NULL)
 	{
-	  free ((void *) subfile->dirname);
+	  xfree ((void *) subfile->dirname);
 	}
       if (subfile->line_vector != NULL)
 	{
-	  free ((void *) subfile->line_vector);
+	  xfree ((void *) subfile->line_vector);
 	}
       if (subfile->debugformat != NULL)
 	{
-	  free ((void *) subfile->debugformat);
+	  xfree ((void *) subfile->debugformat);
 	}
 
       nextsub = subfile->next;
-      free ((void *) subfile);
+      xfree ((void *) subfile);
     }
 
   /* Set this for the main source file.  */
@@ -1009,8 +1193,35 @@ end_symtab (CORE_ADDR end_addr, struct objfile *objfile, int section)
 
   last_source_file = NULL;
   current_subfile = NULL;
+  pending_macros = NULL;
 
   return symtab;
+}
+
+/* This reallocates USINGS using OBSTACK and xfree's USINGS.  It
+   returns the reallocated version of USINGS.  */
+
+static struct using_direct_node *
+copy_usings_to_obstack (struct using_direct_node *usings,
+			struct obstack *obstack)
+{
+  if (usings == NULL)
+    return NULL;
+  else
+    {
+      struct using_direct_node *new_node
+	= cp_add_using_obstack (usings->current->name,
+				usings->current->outer_length,
+				usings->current->inner_length,
+				copy_usings_to_obstack (usings->next,
+							obstack),
+				obstack);
+
+      xfree (usings->current);
+      xfree (usings);
+
+      return new_node;
+    }
 }
 
 /* Push a context block.  Args are an identifying nesting level
@@ -1044,33 +1255,13 @@ push_context (int desc, CORE_ADDR valu)
   return new;
 }
 
+
 /* Compute a small integer hash code for the given name. */
 
 int
 hashname (char *name)
 {
-  register char *p = name;
-  register int total = p[0];
-  register int c;
-
-  c = p[1];
-  total += c << 2;
-  if (c)
-    {
-      c = p[2];
-      total += c << 4;
-      if (c)
-	{
-	  total += p[3] << 6;
-	}
-    }
-
-  /* Ensure result is positive.  */
-  if (total < 0)
-    {
-      total += (1000 << 6);
-    }
-  return (total % HASHSIZE);
+    return (hash(name,strlen(name)) % HASHSIZE);
 }
 
 
@@ -1113,12 +1304,13 @@ merge_symbol_lists (struct pending **srclist, struct pending **targetlist)
    corresponding to a psymtab.  */
 
 void
-buildsym_init ()
+buildsym_init (void)
 {
   free_pendings = NULL;
   file_symbols = NULL;
   global_symbols = NULL;
   pending_blocks = NULL;
+  pending_macros = NULL;
 }
 
 /* Initialize anything that needs initializing when a completely new
@@ -1126,7 +1318,7 @@ buildsym_init ()
    file, e.g. a shared library).  */
 
 void
-buildsym_new_init ()
+buildsym_new_init (void)
 {
   buildsym_init ();
 }
