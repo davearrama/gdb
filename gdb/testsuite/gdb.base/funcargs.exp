@@ -1,4 +1,5 @@
-# Copyright (C) 1992, 1994, 1995, 1997 Free Software Foundation, Inc.
+# Copyright 1992, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2002, 2003,
+# 2004 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -57,9 +58,6 @@ proc integral_args {} {
     gdb_breakpoint call0e
 
     # Run; should stop at call0a and print actual arguments.
-    # The a29k fails all of these tests, perhaps because the prologue
-    # code is broken.
-    setup_xfail "a29k-*-udi"
     if {!$gcc_compiled} then { setup_xfail "rs6000-*-*" }
     gdb_run_cmd
     gdb_expect {
@@ -117,9 +115,6 @@ proc unsigned_integral_args {} {
     gdb_breakpoint call1e;
 
     # Run; should stop at call1a and print actual arguments.
-    # The a29k fails all of these tests, perhaps because the prologue
-    # code is broken.
-    setup_xfail "a29k-*-udi"
     if {!$gcc_compiled} then { setup_xfail "rs6000-*-*" }
     gdb_run_cmd
     gdb_expect {
@@ -167,7 +162,6 @@ proc float_and_integral_args {} {
     global gdb_prompt
     global det_file
     global gcc_compiled
-    global hp_cc_compiler
 
     delete_breakpoints
 
@@ -182,13 +176,7 @@ proc float_and_integral_args {} {
 
     # Run; should stop at call2a and print actual arguments.
 
-    setup_xfail "i960-*-*" 1813
-    # The a29k fails all of these tests, perhaps because the prologue
-    # code is broken.
-    setup_xfail "a29k-*-udi"
     if {!$gcc_compiled} then { setup_xfail "rs6000-*-*" "mips-sgi-irix5*" }
-    # The debug info. for "f" is not correct. It's a known bug.
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     gdb_run_cmd
     gdb_expect {
 	 -re ".* call2a \\(c=97 'a', f1=4, s=1, d1=5, i=2, f2=4, l=3, d2=5\\) .*$gdb_prompt $" { pass "run to call2a" }
@@ -199,55 +187,46 @@ proc float_and_integral_args {} {
 
     # Print each arg as a double check to see if we can print
     gdb_test "print c" ".* = 97 'a'" "print c after run to call2a"
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     gdb_test "print f1" ".* = 4" "print f1 after run to call2a"
     gdb_test "print s" ".* = 1" "print s after run to call2a"
     gdb_test "print d1" ".* = 5" "print d1 after run to call2a"
     gdb_test "print i" ".* = 2" "print i after run to call2a"
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     gdb_test "print f2" ".* = 4" "print f2 after run to call2a"
     gdb_test "print l" ".* = 3" "print l after run to call2a"
     gdb_test "print d2" ".* = 5" "print d2 after run to call2a"
 
     setup_xfail "rs6000-*-*"
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     if {!$gcc_compiled} then { setup_xfail "mips-sgi-irix*" }
     # Continue; should stop at call2b and print actual arguments.
     if [gdb_test "cont" ".* call2b \\(f1=4, s=1, d1=5, i=2, f2=4, l=3, d2=5, c=97 'a'\\) .*" "continue to call2b"] {
 	gdb_suppress_tests;
     }
 
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     # Continue; should stop at call2c and print actual arguments.
     if [gdb_test "cont" ".* call2c \\(s=1, d1=5, i=2, f2=4, l=3, d2=5, c=97 'a', f1=4\\) .*" "continue to call2c"] {
 	gdb_suppress_tests;
     }
 
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     # Continue; should stop at call2d and print actual arguments.
     if [gdb_test "cont" ".* call2d \\(d1=5, i=2, f2=4, l=3, d2=5, c=97 'a', f1=4, s=1\\) .*" "continue to call2d"] {
 	gdb_suppress_tests;
     }
 
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     # Continue; should stop at call2e and print actual arguments.
     if [gdb_test "cont" ".* call2e \\(i=2, f2=4, l=3, d2=5, c=97 'a', f1=4, s=1, d1=5\\) .*" "continue to call2e"] {
 	gdb_suppress_tests;
     }
 
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     # Continue; should stop at call2f and print actual arguments.
     if [gdb_test "cont" ".* call2f \\(f2=4, l=3, d2=5, c=97 'a', f1=4, s=1, d1=5, i=2\\) .*" "continue to call2f"] {
 	gdb_suppress_tests;
     }
 
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     # Continue; should stop at call2g and print actual arguments.
     if [gdb_test "cont" ".* call2g \\(l=3, d2=5, c=97 'a', f1=4, s=1, d1=5, i=2, f2=4\\) .*" "continue to call2g"] {
 	gdb_suppress_tests;
     }
 
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     # Continue; should stop at call2h and print actual arguments.
     if [gdb_test "cont" ".* call2h \\(d2=5, c=97 'a', f1=4, s=1, d1=5, i=2, f2=4, l=3\\) .*" "continue to call2h"] {
 	gdb_suppress_tests;
@@ -258,7 +237,6 @@ proc float_and_integral_args {} {
     delete_breakpoints
     gdb_breakpoint call2i
 
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     # Continue; should stop at call2i and print actual arguments.
     if [gdb_test "cont" ".* call2i \\(c1=97 'a', f1=4, c2=97 'a', c3=97 'a', d1=5, c4=97 'a', c5=97 'a', c6=97 'a', f2=4, s=1, c7=97 'a', d2=5\\) .*" "continue to call2i"] {
 	gdb_suppress_tests;
@@ -284,12 +262,9 @@ proc pointer_args {} {
     # Run; should stop at call3a and print actual arguments.
     # Try dereferencing the arguments.
 
-    # The a29k fails all of these tests, perhaps because the prologue
-    # code is broken.
-    setup_xfail "a29k-*-udi"
     gdb_run_cmd
     gdb_expect {
-	 -re ".* call3a \\(cp=$hex \"a\", sp=$hex, ip=$hex, lp=$hex\\) .*$gdb_prompt $" { pass "run to call3a" }
+	 -re ".* call3a \\(cp=$hex \"a.*\", sp=$hex, ip=$hex, lp=$hex\\) .*$gdb_prompt $" { pass "run to call3a" }
 	 -re "$gdb_prompt $" { fail "run to call3a" ; gdb_suppress_tests; }
 	 timeout { fail "(timeout) run to call3a" ; gdb_suppress_tests; }
     }
@@ -301,7 +276,7 @@ proc pointer_args {} {
 
     # Continue; should stop at call3b and print actual arguments.
     # Try dereferencing the arguments.
-    if [gdb_test "cont" ".* call3b \\(ucp=$hex \"b\", usp=$hex, uip=$hex, ulp=$hex\\) .*" "continue to call3b"] {
+    if [gdb_test "cont" ".* call3b \\(ucp=$hex \"b.*\", usp=$hex, uip=$hex, ulp=$hex\\) .*" "continue to call3b"] {
 	gdb_suppress_tests;
     }
 
@@ -343,9 +318,6 @@ proc structs_by_reference {} {
     # Run; should stop at call4a and print actual arguments.
     # Try dereferencing the arguments.
 
-    # The a29k fails all of these tests, perhaps because the prologue
-    # code is broken.
-    setup_xfail "a29k-*-udi"
     gdb_run_cmd
     gdb_expect {
 	 -re ".* call4a \\(stp=$hex\\) .*$gdb_prompt $" {
@@ -402,9 +374,6 @@ proc structs_by_value {} {
     # Run; should stop at call5a and print actual arguments.
     # Try dereferencing the arguments.
 
-    # The a29k fails all of these tests, perhaps because the prologue
-    # code is broken.
-    setup_xfail "a29k-*-udi"
     gdb_run_cmd
     gdb_expect {
 	 -re ".* call5a \\(st=\{s1 = 101, s2 = 102\}\\) .*$gdb_prompt $" {
@@ -463,7 +432,6 @@ proc discard_and_shuffle {} {
     global decimal
     global det_file
     global gcc_compiled
-    global hp_cc_compiler
 
     delete_breakpoints
 
@@ -479,9 +447,6 @@ proc discard_and_shuffle {} {
     # Run; should stop at call6a and print actual arguments.
     # Print backtrace.
 
-    # The a29k fails all of these tests, perhaps because the prologue
-    # code is broken.
-    setup_xfail "a29k-*-udi"
     gdb_run_cmd
     gdb_expect {
 	 -re ".*Breakpoint $decimal, call6a .*$gdb_prompt $" { pass "run to call6a" }
@@ -495,8 +460,6 @@ proc discard_and_shuffle {} {
 	setup_xfail "mips-sgi-irix5*"
     }
 
-    # The debug info. for "f" is not correct. It's a known bug.
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     send_gdb "backtrace 100\n"
     gdb_expect {
 	-re "backtrace 100\[\r\n\]+
@@ -526,7 +489,6 @@ $gdb_prompt $" {
 
     gdb_continue call6b
 
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     send_gdb "backtrace 100\n"
     if [gdb_expect_list "backtrace from call6b" ".*$gdb_prompt $" {
 	".*\[\r\n\]#0 .* call6b \\(s=1, i=2, l=3, f=4, d=5, uc=98 'b', us=6, ui=7, ul=8\\) "
@@ -541,7 +503,6 @@ $gdb_prompt $" {
 
     gdb_continue call6c
 
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     send_gdb "backtrace 100\n"
     if [gdb_expect_list "backtrace from call6c" ".*$gdb_prompt $" {
 	".*\[\r\n\]#0 .* call6c \\(i=2, l=3, f=4, d=5, uc=98 'b', us=6, ui=7, ul=8\\) "
@@ -556,7 +517,6 @@ $gdb_prompt $" {
 
     gdb_continue call6d
 
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     send_gdb "backtrace 100\n"
     if [gdb_expect_list "backtrace from call6d" ".*$gdb_prompt $" {
 	".*\[\r\n\]#0 .* call6d \\(l=3, f=4, d=5, uc=98 'b', us=6, ui=7, ul=8\\) "
@@ -573,7 +533,6 @@ $gdb_prompt $" {
 
     gdb_continue call6e
 
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     send_gdb "backtrace 100\n"
     if [gdb_expect_list "backtrace from call6e" ".*$gdb_prompt $" {
 	".*\[\r\n\]#0 .* call6e \\(f=4, d=5, uc=98 'b', us=6, ui=7, ul=8\\) "
@@ -591,7 +550,6 @@ $gdb_prompt $" {
 
     gdb_continue call6f
 
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     send_gdb "backtrace 100\n"
     if [gdb_expect_list "backtrace from call6f" ".*$gdb_prompt $" {
 	".*\[\r\n\]#0 .* call6f \\(d=5, uc=98 'b', us=6, ui=7, ul=8\\) "
@@ -610,7 +568,6 @@ $gdb_prompt $" {
 
     gdb_continue call6g
 
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     send_gdb "backtrace 100\n"
     if [gdb_expect_list "backtrace from call6g" ".*$gdb_prompt $" {
 	".*\[\r\n\]#0 .* call6g \\(uc=98 'b', us=6, ui=7, ul=8\\) "
@@ -630,7 +587,6 @@ $gdb_prompt $" {
 
     gdb_continue call6h
 
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     send_gdb "backtrace 100\n"
     if [gdb_expect_list "backtrace from call6h" ".*$gdb_prompt $" {
 	".*\[\r\n\]#0 .* call6h \\(us=6, ui=7, ul=8\\) "
@@ -658,7 +614,6 @@ $gdb_prompt $" {
 
     gdb_continue call6i
 
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     send_gdb "backtrace 100\n"
     if [gdb_expect_list "backtrace from call6i" ".*$gdb_prompt $" {
 	".*\[\r\n\]#0 .* call6i \\(ui=7, ul=8\\) "
@@ -680,7 +635,6 @@ $gdb_prompt $" {
 
     gdb_continue call6j
 
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     send_gdb "backtrace 100\n"
     if [gdb_expect_list "backtrace from call6j" ".*$gdb_prompt $" {
 	".*\[\r\n\]#0 .* call6j \\(ul=8\\) "
@@ -700,12 +654,8 @@ $gdb_prompt $" {
 
     # Continue; should stop at call6k and print actual arguments.
     # Print backtrace.
-    # This fails on i960-*-vxworks because gdb gets confused by
-    # breakpoints on adjacent instructions.
-    setup_xfail "i960-*-vxworks" 1786
     gdb_continue call6k
 
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     send_gdb "backtrace 100\n"
     if [gdb_expect_list "backtrace from call6k" ".*$gdb_prompt $" {
 	".*\[\r\n\]#0 .* call6k \\(\\) "
@@ -737,7 +687,6 @@ proc shuffle_round_robin {} {
     global decimal
     global det_file
     global gcc_compiled
-    global hp_cc_compiler
 
     delete_breakpoints
 
@@ -753,9 +702,6 @@ proc shuffle_round_robin {} {
     # Run; should stop at call7a and print actual arguments.
     # Print backtrace.
 
-    # The a29k fails all of these tests, perhaps because the prologue
-    # code is broken.
-    setup_xfail "a29k-*-udi"
     gdb_run_cmd
     gdb_expect {
 	 -re ".*Breakpoint $decimal, call7a .*$gdb_prompt $" {
@@ -765,10 +711,7 @@ proc shuffle_round_robin {} {
 	 timeout { fail "(timeout) run to call7a" ; gdb_suppress_tests; }
     }
 
-    setup_xfail "i960-*-*" 1813
     if {!$gcc_compiled} then { setup_xfail "rs6000-*-*" "mips-sgi-irix5*" }
-    # The debug info. for "f" is not correct. It's a known bug.
-    if {$hp_cc_compiler} {setup_xfail hppa2.0w-*-*}
     send_gdb "backtrace 100\n"
     gdb_expect {
 	-re "backtrace 100\[\r\n\]+
@@ -982,9 +925,6 @@ proc recursive_structs_by_value {} {
     }
 
     if ![istarget sparclet-*-*] {
-    # The a29k fails all of these tests, perhaps because the prologue
-    # code is broken.
-	setup_xfail "a29k-*-udi"
 	send_gdb "backtrace 100\n"
 	gdb_expect_list "recursive passing of structs by value" ".*$gdb_prompt $" {
 	    ".*\[\r\n\]#0 .* hitbottom \\(\\) "
@@ -1214,8 +1154,6 @@ gdb_load ${binfile}
 
 if [istarget "mips*tx39-*"] {
     set timeout 300
-} elseif [istarget "hppa*-hp-hpux*"] then {
-    set timeout 240
 } else {
     set timeout 60
 }

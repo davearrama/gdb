@@ -1,4 +1,5 @@
-# Copyright (C) 1992, 1994, 1997, 1998 Free Software Foundation, Inc.
+# Copyright 1992, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2002, 2003,
+# 2004 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -58,7 +59,6 @@ proc test_at_main {} {
     global det_file
     global srcdir
     global subdir
-    global gcc_compiled
     global hp_cc_compiler
 
     # skip past init.  There may be a call to __main at the start of
@@ -96,13 +96,13 @@ proc test_at_main {} {
 
     # No clue why the powerpc fails this test.
     setup_xfail "powerpc-*-*"
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     if [gdb_test "print filelocal_ro" "\\\$$decimal = 201" "print filelocal_ro in test_at_main" ] { 
       gdb_suppress_tests ; 
     }
 
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     setup_xfail "powerpc-*-*"
     if [gdb_test "print 'scope0.c'::filelocal_ro" "\\\$$decimal = 201" "print 'scope0.c'::filelocal_ro"  "No symbol \"scope0.c\" in current context.*" "print '$srcdir/$subdir/scope0.c'::filelocal_ro"] { 
       gdb_suppress_tests ; 
@@ -111,8 +111,7 @@ proc test_at_main {} {
 
     # Print scope1.c::filelocal, which is 2
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
-    if {$hp_cc_compiler} then { setup_xfail "hppa2.0w-*-*" 11747CLLbs}
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     if [gdb_test "print 'scope1.c'::filelocal" "\\\$$decimal = 2" "print 'scope1.c'::filelocal"  "No symbol \"scope1.c\" in current context.*" "print '$srcdir/$subdir/scope1.c'::filelocal"] { 
       gdb_suppress_tests ; 
     }
@@ -120,8 +119,7 @@ proc test_at_main {} {
 
     # Print scope1.c::filelocal_bss, which is 102
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
-    if {$hp_cc_compiler} then { setup_xfail "hppa2.0w-*-*" 11747CLLbs}
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     if [gdb_test "print 'scope1.c'::filelocal_bss" "\\\$$decimal = 102" "print 'scope1.c'::filelocal_bss"  "No symbol \"scope1.c\" in current context.*" "print '$srcdir/$subdir/scope1.c'::filelocal_bss"] { 
       gdb_suppress_tests ; 
     }
@@ -129,7 +127,7 @@ proc test_at_main {} {
 
     # Print scope1.c::filelocal_ro, which is 202
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     if {$hp_cc_compiler} then { setup_xfail "hppa2.0w-*-*" 11747CLLbs}
     if [gdb_test "print 'scope1.c'::filelocal_ro" "\\\$$decimal = 202" "print 'scope1.c'::filelocal_ro"  "No symbol \"scope1.c\" in current context.*" "print '$srcdir/$subdir/scope1.c'::filelocal_ro"] { 
       gdb_suppress_tests ; 
@@ -143,7 +141,7 @@ proc test_at_main {} {
     }
 
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     if [gdb_test "print 'scope1.c'::foo::funclocal" "\\\$$decimal = 3" "print 'scope1.c'::foo::funclocal"  "No symbol \"scope1.c\" in current context.*" "print '$srcdir/$subdir/scope1.c'::foo::funclocal"] { 
       gdb_suppress_tests ; 
     }
@@ -156,7 +154,7 @@ proc test_at_main {} {
     }
 
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     if [gdb_test "print 'scope1.c'::foo::funclocal_ro" "\\\$$decimal = 203" "print 'scope1.c'::foo::funclocal_ro"  "No symbol \"scope1.c\" in current context.*" "print '$srcdir/$subdir/scope1.c'::foo::funclocal_ro"] { 
       gdb_suppress_tests ; 
     }
@@ -169,7 +167,7 @@ proc test_at_main {} {
     }
 
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     if [gdb_test "print 'scope1.c'::bar::funclocal" "\\\$$decimal = 4" "print 'scope1.c'::bar::funclocal"  "No symbol \"scope1.c\" in current context.*" "print '$srcdir/$subdir/scope1.c'::bar::funclocal"] { 
       gdb_suppress_tests ; 
     }
@@ -183,7 +181,6 @@ proc test_at_foo {} {
     global det_file
     global srcdir
     global subdir
-    global gcc_compiled
 
     if [gdb_test "next" ".*bar \\(\\);" "" ] { 
       gdb_suppress_tests ; 
@@ -206,7 +203,7 @@ proc test_at_foo {} {
 
     # Print scope0.c::filelocal_ro, which is 201
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     setup_xfail "powerpc-*-*"
     if [gdb_test "print 'scope0.c'::filelocal_ro" "\\\$$decimal = 201" "print 'scope0.c'::filelocal_ro"  "No symbol \"scope0.c\" in current context.*" "print '$srcdir/$subdir/scope0.c'::filelocal_ro"] { 
       gdb_suppress_tests ; 
@@ -217,7 +214,7 @@ proc test_at_foo {} {
 
     # Print scope1.c::filelocal, which is 2
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     if [gdb_test "print 'scope1.c'::filelocal" "\\\$$decimal = 2" "print 'scope1.c'::filelocal at foo"  "No symbol \"scope1.c\" in current context.*" "print '$srcdir/$subdir/scope1.c'::filelocal"] { 
       gdb_suppress_tests ; 
     }
@@ -226,14 +223,14 @@ proc test_at_foo {} {
     gdb_test "print filelocal_bss" "\\\$$decimal = 102" \
 	"print filelocal_bss at foo"
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     gdb_test "print 'scope1.c'::filelocal_bss" "\\\$$decimal = 102" "print 'scope1.c'::filelocal_bss at foo"  "No symbol \"scope1.c\" in current context.*" "print '$srcdir/$subdir/scope1.c'::filelocal_bss"
 
 
     gdb_test "print filelocal_ro" "\\\$$decimal = 202" \
 	"print filelocal_ro at foo"
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     gdb_test "print 'scope1.c'::filelocal_ro" "\\\$$decimal = 202" "print 'scope1.c'::filelocal_ro at foo"  "No symbol \"scope1.c\" in current context.*" "print '$srcdir/$subdir/scope1.c'::filelocal_ro"
 
 
@@ -244,7 +241,7 @@ proc test_at_foo {} {
     gdb_test "print foo::funclocal" "\\\$$decimal = 3" \
 	"print foo::funclocal at foo"
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     gdb_test "print 'scope1.c'::foo::funclocal" "\\\$$decimal = 3" "print 'scope1.c'::foo::funclocal at foo"  "No symbol \"scope1.c\" in current context.*" "print '$srcdir/$subdir/scope1.c'::foo::funclocal"
 
 
@@ -256,7 +253,7 @@ proc test_at_foo {} {
     gdb_test "print foo::funclocal_bss" "\\\$$decimal = 103" \
 	"print foo::funclocal_bss at foo"
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     gdb_test "print 'scope1.c'::foo::funclocal_bss" "\\\$$decimal = 103" "print 'scope1.c'::foo::funclocal_bss at foo"  "No symbol \"scope1.c\" in current context.*" "print '$srcdir/$subdir/scope1.c'::foo::funclocal_bss"
 
 
@@ -268,7 +265,7 @@ proc test_at_foo {} {
     gdb_test "print foo::funclocal_ro" "\\\$$decimal = 203" \
 	"print foo::funclocal_ro at foo"
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     gdb_test "print 'scope1.c'::foo::funclocal_ro" "\\\$$decimal = 203" "print 'scope1.c'::foo::funclocal_ro at foo"  "No symbol \"scope1.c\" in current context.*" "print '$srcdir/$subdir/scope1.c'::foo::funclocal_ro"
 
 
@@ -277,7 +274,7 @@ proc test_at_foo {} {
     gdb_test "print bar::funclocal" "\\\$$decimal = 4" \
 	"print bar::funclocal at foo"
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     gdb_test "print 'scope1.c'::bar::funclocal" "\\\$$decimal = 4" "print 'scope1.c'::bar::funclocal at foo"  "No symbol \"scope1.c\" in current context.*" "print '$srcdir/$subdir/scope1.c'::bar::funclocal"
     gdb_stop_suppressing_tests;
 
@@ -289,7 +286,6 @@ proc test_at_bar {} {
     global det_file
     global srcdir
     global subdir
-    global gcc_compiled
 
     if [gdb_test "next" ".*" "" ] { 
       gdb_suppress_tests ; 
@@ -312,7 +308,7 @@ proc test_at_bar {} {
 
    # Print scope0.c::filelocal_ro, which is 201
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     setup_xfail "powerpc-*-*"
     if [gdb_test "print 'scope0.c'::filelocal_ro" "\\\$$decimal = 201" "print 'scope0.c'::filelocal_ro at bar"  "No symbol \"scope0.c\" in current context.*" "print '$srcdir/$subdir/scope0.c'::filelocal_ro"] { 
       gdb_suppress_tests ; 
@@ -326,7 +322,7 @@ proc test_at_bar {} {
     }
 
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     if [gdb_test "print 'scope1.c'::filelocal" "\\\$$decimal = 2" "print 'scope1.c'::filelocal at bar"  "No symbol \"scope1.c\" in current context.*" "print '$srcdir/$subdir/scope1.c'::filelocal"] { 
       gdb_suppress_tests ; 
     }
@@ -339,7 +335,7 @@ proc test_at_bar {} {
     }
 
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     if [gdb_test "print 'scope1.c'::filelocal_bss" "\\\$$decimal = 102" "print 'scope1.c'::filelocal_bss at bar"  "No symbol \"scope1.c\" in current context.*" "print '$srcdir/$subdir/scope1.c'::filelocal_bss"] { 
       gdb_suppress_tests ; 
     }
@@ -352,7 +348,7 @@ proc test_at_bar {} {
     }
 
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     if [gdb_test "print 'scope1.c'::filelocal_ro" "\\\$$decimal = 202" "print 'scope1.c'::filelocal_ro at bar"  "No symbol \"scope1.c\" in current context.*" "print '$srcdir/$subdir/scope1.c'::filelocal_ro"] { 
       gdb_suppress_tests ; 
     }
@@ -365,7 +361,7 @@ proc test_at_bar {} {
     }
 
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     if [gdb_test "print 'scope1.c'::foo::funclocal" "\\\$$decimal = 3" "print 'scope1.c'::foo::funclocal at bar"  "No symbol \"scope1.c\" in current context.*" "print '$srcdir/$subdir/scope1.c'::foo::funclocal"] { 
       gdb_suppress_tests ; 
     }
@@ -378,7 +374,7 @@ proc test_at_bar {} {
     }
 
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     if [gdb_test "print 'scope1.c'::foo::funclocal_bss" "\\\$$decimal = 103" "print 'scope1.c'::foo::funclocal_bss at bar"  "No symbol \"scope1.c\" in current context.*" "print '$srcdir/$subdir/scope1.c'::foo::funclocal_bss"] { 
       gdb_suppress_tests ; 
     }
@@ -391,7 +387,7 @@ proc test_at_bar {} {
     }
 
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     if [gdb_test "print 'scope1.c'::foo::funclocal_ro" "\\\$$decimal = 203" "print 'scope1.c'::foo::funclocal_ro at bar"  "No symbol \"scope1.c\" in current context.*" "print '$srcdir/$subdir/scope1.c'::foo::funclocal_ro"] { 
       gdb_suppress_tests ; 
     }
@@ -409,7 +405,7 @@ proc test_at_bar {} {
     }
 
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     if [gdb_test "print 'scope1.c'::bar::funclocal" "\\\$$decimal = 4" "print 'scope1.c'::bar::funclocal at bar"  "No symbol \"scope1.c\" in current context.*" "print '$srcdir/$subdir/scope1.c'::bar::funclocal"] { 
       gdb_suppress_tests ; 
     }
@@ -427,7 +423,7 @@ proc test_at_bar {} {
     }
 
 
-    if {$gcc_compiled} then { setup_xfail "rs6000-*-*" }
+    if { [test_compiler_info gcc-*-*] } then { setup_xfail "rs6000-*-*" }
     if [gdb_test "print 'scope1.c'::bar::funclocal_bss" "\\\$$decimal = 104" "print 'scope1.c'::bar::funclocal_bss at bar"  "No symbol \"scope1.c\" in current context.*" "print '$srcdir/$subdir/scope1.c'::bar::funclocal_bss"] { 
       gdb_suppress_tests ; 
     }
@@ -452,7 +448,7 @@ proc test_at_autovars {} {
 	gdb_suppress_tests;
     }
 
-    if [gdb_test "up" ".*" "" ] { 
+    if [gdb_test "up" ".*autovars.*" "up from marker1 in scope.exp" ] { 
 	gdb_suppress_tests ; 
     }
 
@@ -484,7 +480,7 @@ proc test_at_localscopes {} {
     if [gdb_test "cont" "Break.* marker2 \\(\\) at .*:$decimal.*" "continue to marker2"] {
 	gdb_suppress_tests;
     }
-    if [gdb_test "up" ".*" "" ] { 
+    if [gdb_test "up" ".*localscopes.*" "up from marker2 in scopes.exp" ] { 
 	gdb_suppress_tests ; 
     }
 
@@ -499,7 +495,9 @@ proc test_at_localscopes {} {
 
     if [gdb_test "cont" "Break.* marker3 \\(\\) at .*:$decimal.*" \
 	"continue to marker3 in scope.exp"] then { gdb_suppress_tests }
-    if [gdb_test "up" "" "up from marker3 in scope.exp"] then { gdb_suppress_tests }
+    if [gdb_test "up" ".*localscopes.*" "up from marker3 in scope.exp"] { 
+	gdb_suppress_tests 
+    }
 
     # Should be at next (first nested) scope.  Check values.
 
@@ -512,10 +510,11 @@ proc test_at_localscopes {} {
 
     # This test will only fail if the file was compiled by gcc, but
     # there's no way to check that.
-    setup_xfail "a29k-*-udi" 2423
     if [gdb_test "cont" "Break.* marker4.*at .*:$decimal.*" \
 	"continue to marker4 in scope.exp"] then { gdb_suppress_tests }
-    if [gdb_test "up" "" "up from marker4 in scope.exp"] then { gdb_suppress_tests }
+    if [gdb_test "up" ".*localscopes.*" "up from marker4 in scope.exp"] {
+	gdb_suppress_tests 
+    }
 
     gdb_test "print localval" " = 30" "print localval, innermost scope"
     gdb_test "print localval1" " = 11" "print localval1, innermost scope"
@@ -554,7 +553,7 @@ gdb_test "print 'scope0.c'::filelocal_ro" "= 201"
 # is responsible for clearing bss and that hasnt' happened yet.
 #
 # This is a problem for all non-native targets. -- manson
-if ![isnative] {
+if [is_remote target] {
     unsupported "print 'scope0.c'::filelocal_bss before run"
 } else {
     gdb_test "print 'scope0.c'::filelocal_bss" "= 0" \
