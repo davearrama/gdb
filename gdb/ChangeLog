@@ -1,96 +1,12 @@
-2002-05-08  Jason Thorpe  <thorpej@wasabisystems.com>
+2002-05-08  Jim Blandy  <jimb@redhat.com>
 
-	* config/djgpp/fnchange.lst: Add alphanbsd-nat.c and
-	alphanbsd-tdep.c.
-
-2002-05-08  Jason Thorpe  <thorpej@wasabisystems.com>
-
-	* sh-nbsd-nat.c: Rename to...
-	* shnbsd-nat.c: ...this.
-	* sh-nbsd-tdep.c: Rename to...
-	* shnbsd-tdep.c: ...this.
-	* sh-nbsd-tdep.h: Rename to...
-	* shnbsd-tdep.h: ...this.
-	* config/sh/nbsd.mh: Use shnbsd-nat.o.
-	* config/sh/nbsd.mt: Use shnbsd-tdep.o.
-
-2002-05-08  Richard Earnshaw  <rearnsha@arm.com>
-
-	* remote-rdi.c (_initializie_remote_rdi): Use ANSI-style string
-	concatenation for command help messages.
-
-2002-05-08  Jason Thorpe  <thorpej@wasabisystems.com>
-
-	* NEWS: Note new sh*-*-netbsdelf* configuration.
-	* configure.host: Set gdb_host_cpu to sh for all sh*.
-	(sh*-*-netbsdelf*): New host.
-	* configure.tgt: Set gdb_target_cpu to sh for all sh*.
-	(sh*-*-netbsdelf*): New target.
-	* sh-nbsd-nat.c: New file.
-	* sh-nbsd-tdep.c: New file.
-	* sh-nbsd-tdep.h: New file.
-	* config/sh/nbsd.mh: New file.
-	* config/sh/nbsd.mt: New file.
-	* config/sh/nm-nbsd.h: New file.
-	* config/sh/tm-nbsd.h: New file.
-
-2002-05-08  Jason Thorpe  <thorpej@wasabisystems.com>
-
-	* sh-tdep.c (sh_osabi_names): Declare.
-	(process_note_abi_tag_sections): New function.
-	(get_elfosabi): Ditto.
-	(sh_gdbarch_register_os_abi): Ditto.
-	(sh_dump_tdep): Ditto.
-	_initialize_sh_tdep): Use gdbarch_register to register
-	sh_gdbarch_init and sh_dump_tdep.
-	* config/sh/tm-sh.h (sh_osabi): Declare.
-	(gdbarch_tdep): Add sh_osabi and osabi_name members.
-
-2002-05-07  Andrew Cagney  <ac131313@redhat.com>
-
-	* arm-tdep.c (arm_skip_prologue): Handle generic dummy frames.
-	(thumb_scan_prologue): Ditto.
-	(arm_find_callers_reg): Ditto.
-	(arm_frame_chain): Ditto.
-	(arm_init_extra_frame_info): Ditto.
-	(arm_frame_saved_pc): Ditto.
-	(arm_pop_frame): Ditto.
-	(arm_push_return_address): New function.
-	(arm_gdbarch_init): Initialize use_generic_dummy_frames,
-	call_dummy_location, call_dummy_breakpoint_offset_p,
-	call_dummy_breakpoint_offset, call_dummy_p,
-	call_dummy_stack_adjust_p, call_dummy_words,
-	sizeof_call_dummy_words, call_dummy_start_offset,
-	call_dummy_length, fix_call_dummy, pc_in_call_dummy,
-	call_dummy_address, push_return_address and push_dummy_frame for
-	generic dummy frames.
-
-2002-05-07  Jason Thorpe  <thorpej@wasabisystems.com>
-
-	* sh-tdep.c (sh_nofp_frame_init_saved_regs): Fix error in
-	size computation for alloca.
-	(sh_fp_frame_init_saved_regs): Likewise.
-
-2002-05-07  Richard Earnshaw  <rearnsha@arm.com>
-
-	* arm-tdep.h (ARM_MAX_REGISTER_RAW_SIZE): Define.
-	(ARM_MAX_REGISTER_VIRTUAL_SIZE): Define.
-	* arm-tdep.c (arm_store_return_value): Use them.  
-	Use FP_REGISTER_RAW_SIZE when setting the FPA return value.
-	* remote-rdp.c (remote_rdp_fetch_register): Use
-	ARM_MAX_REGISTER_RAW_SIZE.
-	(remote_rdp_store_register): Likewise.
-
-2002-05-07  Michal Ludvig  <mludvig@suse.cz>
-
-	* dwarf2cfi.c: Code cleanup, removed unused variables, 
-	added default labels to switch {} statements.
-	* x86-64-tdep.c: Ditto.
-	* x86-64-linux-nat.c: Ditto.
-
-2002-05-07  Jason Thorpe  <thorpej@wasabisystems.com>
-
-	* solib.h: Protect against multiple inclusion.
+	Add first preprocessor macro-expansion files.
+	* macroexp.c, macroexp.h, macrotab.c, macrotab.h: New files.
+	* Makefile.in (SFILES): Add macrotab.c, macroexp.c.
+	(splay_tree_h, macroexp_h, macrotab_h): New variable.
+	(HFILES_NO_SRCDIR): Add macrotab.h, macroexp.h.
+	(COMMON_OBS): Add macrotab.o, macroexp.o.
+	(macroexp.o, macrotab.o): New rules.
 
 2002-05-06  Jim Blandy  <jimb@redhat.com>
 
