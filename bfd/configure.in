@@ -7,7 +7,7 @@ AC_INIT(libbfd.c)
 AC_CANONICAL_SYSTEM
 AC_ISC_POSIX
 
-AM_INIT_AUTOMAKE(bfd, 2.15.90)
+AM_INIT_AUTOMAKE(bfd, 2.14.90)
 # Uncomment the next line to remove the date from the reported bfd version
 #is_release=y
 
@@ -405,7 +405,9 @@ changequote([,])dnl
 	COREFILE=trad-core.lo
 	TRAD_HEADER='"hosts/vaxbsd.h"'
 	;;
-  x86_64-*-netbsd*)	COREFILE=netbsd-core.lo ;;
+  x86_64-*-netbsd* | x86_64-*-openbsd*)
+	COREFILE=netbsd-core.lo
+	;;
   esac
 
   case "$COREFILE" in
