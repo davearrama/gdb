@@ -1,5 +1,8 @@
-/* Remote debugging interface for Hitachi E7000 ICE, for GDB
-   Copyright 1993, 1994, 1996, 1997, 1998 Free Software Foundation, Inc.
+/* Remote debugging interface for Renesas E7000 ICE, for GDB
+
+   Copyright 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+   2002, 2003, 2004 Free Software Foundation, Inc.
+
    Contributed by Cygnus Support. 
 
    Written by Steve Chamberlain for Cygnus Support.
@@ -21,8 +24,8 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-/* The E7000 is an in-circuit emulator for the Hitachi H8/300-H and
-   Hitachi-SH processor.  It has serial port and a lan port.  
+/* The E7000 is an in-circuit emulator for the Renesas H8/300-H and
+   Renesas-SH processor.  It has serial port and a lan port.  
 
    The monitor command set makes it difficult to load large ammounts of
    data over the lan without using ftp - so try not to issue load
@@ -37,16 +40,15 @@
 #include "gdbarch.h"
 #include "inferior.h"
 #include "target.h"
-#include "wait.h"
 #include "value.h"
 #include "command.h"
-#include <signal.h>
 #include "gdb_string.h"
 #include "gdbcmd.h"
 #include <sys/types.h>
 #include "serial.h"
 #include "remote-utils.h"
 #include "symfile.h"
+#include "regcache.h"
 #include <time.h>
 #include <ctype.h>
 
@@ -61,40 +63,61 @@
 #define ACK  0x06
 #define CTRLZ 0x1a
 
-extern void notice_quit PARAMS ((void));
+/* This file is used by 2 different targets, sh-elf and h8300. The
+   h8300 is not multiarched and doesn't use the registers defined in
+   tm-sh.h. To avoid using a macro GDB_TARGET_IS_SH, we do runtime check
+   of the target, which requires that these namse below are always
+   defined also in the h8300 case. */
 
-extern void report_transfer_performance PARAMS ((unsigned long,
-						 time_t, time_t));
+#if !defined (PR_REGNUM)
+#define PR_REGNUM 	-1
+#endif
+#if !defined (GBR_REGNUM)
+#define GBR_REGNUM 	-1
+#endif
+#if !defined (VBR_REGNUM)
+#define VBR_REGNUM 	-1
+#endif
+#if !defined (MACH_REGNUM)
+#define MACH_REGNUM 	-1
+#endif
+#if !defined (MACL_REGNUM)
+#define MACL_REGNUM 	-1
+#endif
+#if !defined (SR_REGNUM)
+#define SR_REGNUM 	-1
+#endif
+
+extern void report_transfer_performance (unsigned long, time_t, time_t);
 
 extern char *sh_processor_type;
 
 /* Local function declarations.  */
 
-static void e7000_close PARAMS ((int));
+static void e7000_close (int);
 
-static void e7000_fetch_register PARAMS ((int));
+static void e7000_fetch_register (int);
 
-static void e7000_store_register PARAMS ((int));
+static void e7000_store_register (int);
 
-static void e7000_command PARAMS ((char *, int));
+static void e7000_command (char *, int);
 
-static void e7000_login_command PARAMS ((char *, int));
+static void e7000_login_command (char *, int);
 
-static void e7000_ftp_command PARAMS ((char *, int));
+static void e7000_ftp_command (char *, int);
 
-static void e7000_drain_command PARAMS ((char *, int));
+static void e7000_drain_command (char *, int);
 
-static void expect PARAMS ((char *));
+static void expect (char *);
 
-static void expect_full_prompt PARAMS ((void));
+static void expect_full_prompt (void);
 
-static void expect_prompt PARAMS ((void));
+static void expect_prompt (void);
 
-static int e7000_parse_device PARAMS ((char *args, char *dev_name,
-				       int baudrate));
+static int e7000_parse_device (char *args, char *dev_name, int baudrate);
 /* Variables. */
 
-static serial_t e7000_desc;
+static struct serial *e7000_desc;
 
 /* Allow user to chose between using hardware breakpoints or memory. */
 static int use_hard_breakpoints = 0;	/* use sw breakpoints by default */
@@ -125,8 +148,7 @@ static int timeout = 20;
 /* Send data to e7000debug.  */
 
 static void
-puts_e7000debug (buf)
-     char *buf;
+puts_e7000debug (char *buf)
 {
   if (!e7000_desc)
     error ("Use \"target e7000 ...\" first.");
@@ -134,8 +156,8 @@ puts_e7000debug (buf)
   if (remote_debug)
     printf_unfiltered ("Sending %s\n", buf);
 
-  if (SERIAL_WRITE (e7000_desc, buf, strlen (buf)))
-    fprintf_unfiltered (gdb_stderr, "SERIAL_WRITE failed: %s\n", safe_strerror (errno));
+  if (serial_write (e7000_desc, buf, strlen (buf)))
+    fprintf_unfiltered (gdb_stderr, "serial_write failed: %s\n", safe_strerror (errno));
 
   /* And expect to see it echoed, unless using the pc interface */
 #if 0
@@ -145,25 +167,22 @@ puts_e7000debug (buf)
 }
 
 static void
-putchar_e7000 (x)
-     int x;
+putchar_e7000 (int x)
 {
   char b[1];
 
   b[0] = x;
-  SERIAL_WRITE (e7000_desc, b, 1);
+  serial_write (e7000_desc, b, 1);
 }
 
 static void
-write_e7000 (s)
-     char *s;
+write_e7000 (char *s)
 {
-  SERIAL_WRITE (e7000_desc, s, strlen (s));
+  serial_write (e7000_desc, s, strlen (s));
 }
 
 static int
-normal (x)
-     int x;
+normal (int x)
 {
   if (x == '\n')
     return '\r';
@@ -175,14 +194,13 @@ normal (x)
    returns -1, else returns next char.  Discards chars > 127.  */
 
 static int
-readchar (timeout)
-     int timeout;
+readchar (int timeout)
 {
   int c;
 
   do
     {
-      c = SERIAL_READCHAR (e7000_desc, timeout);
+      c = serial_readchar (e7000_desc, timeout);
     }
   while (c > 127);
 
@@ -207,7 +225,7 @@ readchar (timeout)
 
 #if 0
 char *
-tl (x)
+tl (int x)
 {
   static char b[8][10];
   static int p;
@@ -233,8 +251,7 @@ tl (x)
    out.  Let the user break out immediately.  */
 
 static void
-expect (string)
-     char *string;
+expect (char *string)
 {
   char *p = string;
   int c;
@@ -243,21 +260,6 @@ expect (string)
   while (1)
     {
       c = readchar (timeout);
-#if 0
-      notice_quit ();
-      if (quit_flag == 1)
-	{
-	  if (ctrl_c)
-	    {
-	      putchar_e7000 (CTRLC);
-	      --ctrl_c;
-	    }
-	  else
-	    {
-	      quit ();
-	    }
-	}
-#endif
 
       if (echo)
 	{
@@ -304,20 +306,19 @@ expect (string)
    into states from which we can't recover.  */
 
 static void
-expect_prompt ()
+expect_prompt (void)
 {
   expect (":");
 }
 
 static void
-expect_full_prompt ()
+expect_full_prompt (void)
 {
   expect ("\r:");
 }
 
 static int
-convert_hex_digit (ch)
-     int ch;
+convert_hex_digit (int ch)
 {
   if (ch >= '0' && ch <= '9')
     return ch - '0';
@@ -329,8 +330,7 @@ convert_hex_digit (ch)
 }
 
 static int
-get_hex (start)
-     int *start;
+get_hex (int *start)
 {
   int value = convert_hex_digit (*start);
   int try;
@@ -350,9 +350,7 @@ get_hex (start)
    them in registers starting at REGNO.  */
 
 static void
-get_hex_regs (n, regno)
-     int n;
-     int regno;
+get_hex_regs (int n, int regno)
 {
   long val;
   int i;
@@ -364,7 +362,7 @@ get_hex_regs (n, regno)
       val = 0;
       for (j = 0; j < 8; j++)
 	val = (val << 4) + get_hex_digit (j == 0);
-      supply_register (regno++, (char *) &val);
+      regcache_raw_supply (current_regcache, regno++, (char *) &val);
     }
 }
 #endif
@@ -373,10 +371,8 @@ get_hex_regs (n, regno)
    user types "run" after having attached.  */
 
 static void
-e7000_create_inferior (execfile, args, env)
-     char *execfile;
-     char *args;
-     char **env;
+e7000_create_inferior (char *execfile, char *args, char **env,
+		       int from_tty)
 {
   int entry_pt;
 
@@ -425,8 +421,7 @@ static char *dir = "";
 /* Grab the next token and buy some space for it */
 
 static char *
-next (ptr)
-     char **ptr;
+next (char **ptr)
 {
   char *p = *ptr;
   char *s;
@@ -449,9 +444,7 @@ next (ptr)
 }
 
 static void
-e7000_login_command (args, from_tty)
-     char *args;
-     int from_tty;
+e7000_login_command (char *args, int from_tty)
 {
   if (args)
     {
@@ -473,9 +466,7 @@ e7000_login_command (args, from_tty)
 /* Start an ftp transfer from the E7000 to a host */
 
 static void
-e7000_ftp_command (args, from_tty)
-     char *args;
-     int from_tty;
+e7000_ftp_command (char *args, int from_tty)
 {
   /* FIXME: arbitrary limit on machine names and such.  */
   char buf[200];
@@ -505,10 +496,7 @@ e7000_ftp_command (args, from_tty)
 }
 
 static int
-e7000_parse_device (args, dev_name, baudrate)
-     char *args;
-     char *dev_name;
-     int baudrate;
+e7000_parse_device (char *args, char *dev_name, int baudrate)
 {
   char junk[128];
   int n = 0;
@@ -541,7 +529,7 @@ or \t\ttarget e7000 tcp_remote <host>[:<port>]\n\
 or \t\ttarget e7000 pc\n");
 	}
 
-#if !defined(__GO32__) && !defined(_WIN32)
+#if !defined(__GO32__) && !defined(_WIN32) && !defined(__CYGWIN__)
       /* FIXME!  test for ':' is ambiguous */
       if (n == 1 && strchr (dev_name, ':') == 0)
 	{
@@ -560,15 +548,14 @@ or \t\ttarget e7000 pc\n");
 /* Stub for catch_errors.  */
 
 static int
-e7000_start_remote (dummy)
-     char *dummy;
+e7000_start_remote (void *dummy)
 {
   int loop;
   int sync;
   int try;
   int quit_trying;
 
-  immediate_quit = 1;		/* Allow user to interrupt it */
+  immediate_quit++;		/* Allow user to interrupt it */
 
   /* Hello?  Are you there?  */
   sync = 0;
@@ -626,7 +613,7 @@ e7000_start_remote (dummy)
   if (!sync)
     {
       fprintf_unfiltered (gdb_stderr, "Giving up after %d tries...\n", try);
-      error ("Unable to syncronize with target.\n");
+      error ("Unable to synchronize with target.\n");
     }
 
   puts_e7000debug ("\r");
@@ -634,7 +621,7 @@ e7000_start_remote (dummy)
   puts_e7000debug ("b -\r");	/* Clear breakpoints */
   expect_prompt ();
 
-  immediate_quit = 0;
+  immediate_quit--;
 
 /* This is really the job of start_remote however, that makes an assumption
    that the target is about to print out a status message of some sort.  That
@@ -643,17 +630,13 @@ e7000_start_remote (dummy)
   flush_cached_frames ();
   registers_changed ();
   stop_pc = read_pc ();
-  set_current_frame (create_new_frame (read_fp (), stop_pc));
-  select_frame (get_current_frame (), 0);
-  print_stack_frame (selected_frame, -1, 1);
+  print_stack_frame (get_selected_frame (), 0, SRC_AND_LOC);
 
   return 1;
 }
 
 static void
-e7000_open (args, from_tty)
-     char *args;
-     int from_tty;
+e7000_open (char *args, int from_tty)
 {
   int n;
 
@@ -663,17 +646,17 @@ e7000_open (args, from_tty)
 
   push_target (&e7000_ops);
 
-  e7000_desc = SERIAL_OPEN (dev_name);
+  e7000_desc = serial_open (dev_name);
 
   if (!e7000_desc)
     perror_with_name (dev_name);
 
-  SERIAL_SETBAUDRATE (e7000_desc, baudrate);
-  SERIAL_RAW (e7000_desc);
-
-#ifdef GDB_TARGET_IS_H8300
-  h8300hmode = 1;
-#endif
+  if (serial_setbaudrate (e7000_desc, baudrate))
+    {
+      serial_close (e7000_desc);
+      perror_with_name (dev_name);
+    }
+  serial_raw (e7000_desc);
 
   /* Start the remote connection; if error (0), discard this target.
      In particular, if the user quits, be sure to discard it
@@ -688,12 +671,11 @@ e7000_open (args, from_tty)
 /* Close out all files and local state before this target loses control. */
 
 static void
-e7000_close (quitting)
-     int quitting;
+e7000_close (int quitting)
 {
   if (e7000_desc)
     {
-      SERIAL_CLOSE (e7000_desc);
+      serial_close (e7000_desc);
       e7000_desc = 0;
     }
 }
@@ -702,8 +684,7 @@ e7000_close (quitting)
    when you want to detach and do something else with your gdb.  */
 
 static void
-e7000_detach (from_tty)
-     int from_tty;
+e7000_detach (char *arg, int from_tty)
 {
   pop_target ();		/* calls e7000_close to do the real work */
   if (from_tty)
@@ -713,8 +694,7 @@ e7000_detach (from_tty)
 /* Tell the remote machine to resume.  */
 
 static void
-e7000_resume (pid, step, sig)
-     int pid, step, sig;
+e7000_resume (ptid_t ptid, int step, enum target_signal sigal)
 {
   if (step)
     puts_e7000debug ("S\r");
@@ -734,8 +714,6 @@ e7000_resume (pid, step, sig)
    BREAK POINT
  */
 
-#ifdef GDB_TARGET_IS_H8300
-
 char *want_h8300h = "PC=%p CCR=%c\n\
  ER0 - ER3  %0 %1 %2 %3\n\
  ER4 - ER7  %4 %5 %6 %7\n";
@@ -753,17 +731,13 @@ char *want_nopc_h8300s = "%p CCR=%c EXR=%9\n\
  ER0 - ER3  %0 %1 %2 %3\n\
  ER4 - ER7  %4 %5 %6 %7";
 
-#endif
-
-#ifdef GDB_TARGET_IS_SH
-
-char *want = "PC=%16 SR=%22\n\
+char *want_sh = "PC=%16 SR=%22\n\
 PR=%17 GBR=%18 VBR=%19\n\
 MACH=%20 MACL=%21\n\
 R0-7  %0 %1 %2 %3 %4 %5 %6 %7\n\
 R8-15 %8 %9 %10 %11 %12 %13 %14 %15\n";
 
-char *want_nopc = "%16 SR=%22\n\
+char *want_nopc_sh = "%16 SR=%22\n\
  PR=%17 GBR=%18 VBR=%19\n\
  MACH=%20 MACL=%21\n\
  R0-7  %0 %1 %2 %3 %4 %5 %6 %7\n\
@@ -779,7 +753,7 @@ R4_BANK0-R7_BANK0 %29 %30 %31 %32\n\
 R0_BANK1-R3_BANK1 %33 %34 %35 %36\n\
 R4_BANK1-R7_BANK1 %37 %38 %39 %40";
 
-char *want_sh3_nopc = "%16 SR=%22\n\
+char *want_nopc_sh3 = "%16 SR=%22\n\
  PR=%17 GBR=%18 VBR=%19\n\
  MACH=%20 MACL=%21 SSR=%22 SPC=%23\n\
  R0-7  %0 %1 %2 %3 %4 %5 %6 %7\n\
@@ -789,16 +763,14 @@ char *want_sh3_nopc = "%16 SR=%22\n\
  R0_BANK1-R3_BANK1 %33 %34 %35 %36\n\
  R4_BANK1-R7_BANK1 %37 %38 %39 %40";
 
-#endif
-
 static int
-gch ()
+gch (void)
 {
   return readchar (timeout);
 }
 
 static unsigned int
-gbyte ()
+gbyte (void)
 {
   int high = convert_hex_digit (gch ());
   int low = convert_hex_digit (gch ());
@@ -806,15 +778,16 @@ gbyte ()
   return (high << 4) + low;
 }
 
-void
-fetch_regs_from_dump (nextchar, want)
-     int (*nextchar) ();
-     char *want;
+static void
+fetch_regs_from_dump (int (*nextchar) (), char *want)
 {
   int regno;
-  char buf[MAX_REGISTER_RAW_SIZE];
+  char buf[MAX_REGISTER_SIZE];
 
   int thischar = nextchar ();
+
+  if (want == NULL)
+    internal_error (__FILE__, __LINE__, "Register set not selected.");
 
   while (*want)
     {
@@ -880,9 +853,9 @@ fetch_regs_from_dump (nextchar, want)
 	      want++;
 	      break;
 #endif
-#ifdef FP_REGNUM
+#ifdef DEPRECATED_FP_REGNUM
 	    case 'f':
-	      regno = FP_REGNUM;
+	      regno = DEPRECATED_FP_REGNUM;
 	      want++;
 	      break;
 #endif
@@ -903,41 +876,49 @@ fetch_regs_from_dump (nextchar, want)
 		}
 
 	      else
-		abort ();
+		internal_error (__FILE__, __LINE__, "failed internal consistency check");
 	    }
 	  store_signed_integer (buf,
-				REGISTER_RAW_SIZE (regno),
-				(LONGEST) get_hex (&thischar, nextchar));
-	  supply_register (regno, buf);
+				register_size (current_gdbarch, regno),
+				(LONGEST) get_hex (&thischar));
+	  regcache_raw_supply (current_regcache, regno, buf);
 	  break;
 	}
     }
 }
 
 static void
-e7000_fetch_registers ()
+e7000_fetch_registers (void)
 {
   int regno;
-  char *wanted;
+  char *wanted = NULL;
 
   puts_e7000debug ("R\r");
 
-#ifdef GDB_TARGET_IS_SH
-  wanted = want;
   if (TARGET_ARCHITECTURE->arch == bfd_arch_sh)
-    switch (TARGET_ARCHITECTURE->mach)
-      {
-      case bfd_mach_sh3:
-      case bfd_mach_sh3e:
-      case bfd_mach_sh4:
-	wanted = want_sh3;
-      }
-#else
-  if (h8300smode)
-    wanted = want_h8300s;
-  else
-    wanted = want_h8300h;
-#endif
+    {
+      wanted = want_sh;
+      switch (TARGET_ARCHITECTURE->mach)
+	{
+	case bfd_mach_sh3:
+	case bfd_mach_sh3e:
+	case bfd_mach_sh4:
+	  wanted = want_sh3;
+	}
+    }
+  if (TARGET_ARCHITECTURE->arch == bfd_arch_h8300)
+    {
+      wanted = want_h8300h;
+      switch (TARGET_ARCHITECTURE->mach)
+	{
+	case bfd_mach_h8300s:
+	case bfd_mach_h8300sn:
+	case bfd_mach_h8300sx:
+	case bfd_mach_h8300sxn:
+	  wanted = want_h8300s;
+	}
+    }
+
   fetch_regs_from_dump (gch, wanted);
 
   /* And supply the extra ones the simulator uses */
@@ -945,7 +926,7 @@ e7000_fetch_registers ()
     {
       int buf = 0;
 
-      supply_register (regno, (char *) (&buf));
+      regcache_raw_supply (current_regcache, regno, (char *) (&buf));
     }
 }
 
@@ -953,8 +934,7 @@ e7000_fetch_registers ()
    errno value.  */
 
 static void
-e7000_fetch_register (regno)
-     int regno;
+e7000_fetch_register (int regno)
 {
   e7000_fetch_registers ();
 }
@@ -962,7 +942,7 @@ e7000_fetch_register (regno)
 /* Store the remote registers from the contents of the block REGS.  */
 
 static void
-e7000_store_registers ()
+e7000_store_registers (void)
 {
   int regno;
 
@@ -975,8 +955,7 @@ e7000_store_registers ()
 /* Store register REGNO, or all if REGNO == 0.  Return errno value.  */
 
 static void
-e7000_store_register (regno)
-     int regno;
+e7000_store_register (int regno)
 {
   char buf[200];
 
@@ -986,69 +965,76 @@ e7000_store_register (regno)
       return;
     }
 
-#ifdef GDB_TARGET_IS_H8300
-  if (regno <= 7)
+  if (TARGET_ARCHITECTURE->arch == bfd_arch_h8300)
     {
-      sprintf (buf, ".ER%d %x\r", regno, read_register (regno));
-      puts_e7000debug (buf);
-    }
-  else if (regno == PC_REGNUM)
-    {
-      sprintf (buf, ".PC %x\r", read_register (regno));
-      puts_e7000debug (buf);
-    }
-  else if (regno == CCR_REGNUM)
-    {
-      sprintf (buf, ".CCR %x\r", read_register (regno));
-      puts_e7000debug (buf);
-    }
-#endif /* GDB_TARGET_IS_H8300 */
-
-#ifdef  GDB_TARGET_IS_SH
-  switch (regno)
-    {
-    default:
-      sprintf (buf, ".R%d %x\r", regno, read_register (regno));
-      puts_e7000debug (buf);
-      break;
-
-    case PC_REGNUM:
-      sprintf (buf, ".PC %x\r", read_register (regno));
-      puts_e7000debug (buf);
-      break;
-
-    case SR_REGNUM:
-      sprintf (buf, ".SR %x\r", read_register (regno));
-      puts_e7000debug (buf);
-      break;
-
-    case PR_REGNUM:
-      sprintf (buf, ".PR %x\r", read_register (regno));
-      puts_e7000debug (buf);
-      break;
-
-    case GBR_REGNUM:
-      sprintf (buf, ".GBR %x\r", read_register (regno));
-      puts_e7000debug (buf);
-      break;
-
-    case VBR_REGNUM:
-      sprintf (buf, ".VBR %x\r", read_register (regno));
-      puts_e7000debug (buf);
-      break;
-
-    case MACH_REGNUM:
-      sprintf (buf, ".MACH %x\r", read_register (regno));
-      puts_e7000debug (buf);
-      break;
-
-    case MACL_REGNUM:
-      sprintf (buf, ".MACL %x\r", read_register (regno));
-      puts_e7000debug (buf);
-      break;
+      if (regno <= 7)
+	{
+	  sprintf (buf, ".ER%d %s\r", regno, phex_nz (read_register (regno), 0));
+	  puts_e7000debug (buf);
+	}
+      else if (regno == PC_REGNUM)
+	{
+	  sprintf (buf, ".PC %s\r", phex_nz (read_register (regno), 0));
+	  puts_e7000debug (buf);
+	}
+#ifdef CCR_REGNUM
+      else if (regno == CCR_REGNUM)
+	{
+	  sprintf (buf, ".CCR %s\r", phex_nz (read_register (regno), 0));
+	  puts_e7000debug (buf);
+	}
+#endif
     }
 
-#endif /* GDB_TARGET_IS_SH */
+  else if (TARGET_ARCHITECTURE->arch == bfd_arch_sh)
+    {
+      if (regno == PC_REGNUM)
+	{
+	  sprintf (buf, ".PC %s\r", phex_nz (read_register (regno), 0));
+	  puts_e7000debug (buf);
+	}
+
+      else if (regno == SR_REGNUM)
+	{
+	  sprintf (buf, ".SR %s\r", phex_nz (read_register (regno), 0));
+	  puts_e7000debug (buf);
+	}
+
+      else if (regno ==  PR_REGNUM)
+	{
+	  sprintf (buf, ".PR %s\r", phex_nz (read_register (regno), 0));
+	  puts_e7000debug (buf);
+	}
+
+      else if (regno == GBR_REGNUM)
+	{
+	  sprintf (buf, ".GBR %s\r", phex_nz (read_register (regno), 0));
+	  puts_e7000debug (buf);
+	}
+
+      else if (regno == VBR_REGNUM)
+	{
+	  sprintf (buf, ".VBR %s\r", phex_nz (read_register (regno), 0));
+	  puts_e7000debug (buf);
+	}
+
+      else if (regno == MACH_REGNUM)
+	{
+	  sprintf (buf, ".MACH %s\r", phex_nz (read_register (regno), 0));
+	  puts_e7000debug (buf);
+	}
+
+      else if (regno == MACL_REGNUM)
+	{
+	  sprintf (buf, ".MACL %s\r", phex_nz (read_register (regno), 0));
+	  puts_e7000debug (buf);
+	}
+      else
+	{
+	  sprintf (buf, ".R%d %s\r", regno, phex_nz (read_register (regno), 0));
+	  puts_e7000debug (buf);
+	}
+    }
 
   expect_prompt ();
 }
@@ -1060,21 +1046,19 @@ e7000_store_register (regno)
    debugged.  */
 
 static void
-e7000_prepare_to_store ()
+e7000_prepare_to_store (void)
 {
   /* Do nothing, since we can store individual regs */
 }
 
 static void
-e7000_files_info ()
+e7000_files_info (struct target_ops *ops)
 {
   printf_unfiltered ("\tAttached to %s at %d baud.\n", dev_name, baudrate);
 }
 
 static int
-stickbyte (where, what)
-     char *where;
-     unsigned int what;
+stickbyte (char *where, unsigned int what)
 {
   static CONST char digs[] = "0123456789ABCDEF";
 
@@ -1087,10 +1071,7 @@ stickbyte (where, what)
 /* Write a small ammount of memory. */
 
 static int
-write_small (memaddr, myaddr, len)
-     CORE_ADDR memaddr;
-     unsigned char *myaddr;
-     int len;
+write_small (CORE_ADDR memaddr, unsigned char *myaddr, int len)
 {
   int i;
   char buf[200];
@@ -1100,15 +1081,15 @@ write_small (memaddr, myaddr, len)
       if (((memaddr + i) & 3) == 0 && (i + 3 < len))
 	{
 	  /* Can be done with a long word */
-	  sprintf (buf, "m %x %x%02x%02x%02x;l\r",
-		   memaddr + i,
+	  sprintf (buf, "m %s %x%02x%02x%02x;l\r",
+		   paddr_nz (memaddr + i),
 		   myaddr[i], myaddr[i + 1], myaddr[i + 2], myaddr[i + 3]);
 	  puts_e7000debug (buf);
 	  i += 3;
 	}
       else
 	{
-	  sprintf (buf, "m %x %x\r", memaddr + i, myaddr[i]);
+	  sprintf (buf, "m %s %x\r", paddr_nz (memaddr + i), myaddr[i]);
 	  puts_e7000debug (buf);
 	}
     }
@@ -1134,10 +1115,7 @@ write_small (memaddr, myaddr, len)
  */
 
 static int
-write_large (memaddr, myaddr, len)
-     CORE_ADDR memaddr;
-     unsigned char *myaddr;
-     int len;
+write_large (CORE_ADDR memaddr, unsigned char *myaddr, int len)
 {
   int i;
 #define maxstride  128
@@ -1192,7 +1170,7 @@ write_large (memaddr, myaddr, len)
       compose[where++] = '\n';
       compose[where++] = 0;
 
-      SERIAL_WRITE (e7000_desc, compose, where);
+      serial_write (e7000_desc, compose, where);
       j = readchar (0);
       if (j == -1)
 	{
@@ -1231,10 +1209,7 @@ write_large (memaddr, myaddr, len)
    then.  */
 
 static int
-e7000_write_inferior_memory (memaddr, myaddr, len)
-     CORE_ADDR memaddr;
-     unsigned char *myaddr;
-     int len;
+e7000_write_inferior_memory (CORE_ADDR memaddr, unsigned char *myaddr, int len)
 {
   if (len < 16 || using_tcp || using_pc)
     return write_small (memaddr, myaddr, len);
@@ -1252,10 +1227,7 @@ e7000_write_inferior_memory (memaddr, myaddr, len)
  */
 
 static int
-e7000_read_inferior_memory (memaddr, myaddr, len)
-     CORE_ADDR memaddr;
-     unsigned char *myaddr;
-     int len;
+e7000_read_inferior_memory (CORE_ADDR memaddr, unsigned char *myaddr, int len)
 {
   int count;
   int c;
@@ -1270,7 +1242,7 @@ e7000_read_inferior_memory (memaddr, myaddr, len)
       return 0;
     }
 
-  sprintf (buf, "m %x;l\r", memaddr);
+  sprintf (buf, "m %s;l\r", paddr_nz (memaddr));
   puts_e7000debug (buf);
 
   for (count = 0; count < len; count += 4)
@@ -1334,10 +1306,8 @@ e7000_read_inferior_memory (memaddr, myaddr, len)
  */
 
 static int
-e7000_read_inferior_memory_large (memaddr, myaddr, len)
-     CORE_ADDR memaddr;
-     unsigned char *myaddr;
-     int len;
+e7000_read_inferior_memory_large (CORE_ADDR memaddr, unsigned char *myaddr,
+				  int len)
 {
   int count;
   int c;
@@ -1351,7 +1321,7 @@ e7000_read_inferior_memory_large (memaddr, myaddr, len)
       return 0;
     }
 
-  sprintf (buf, "d %x %x\r", memaddr, memaddr + len - 1);
+  sprintf (buf, "d %s %s\r", paddr_nz (memaddr), paddr_nz (memaddr + len - 1));
   puts_e7000debug (buf);
 
   count = 0;
@@ -1399,10 +1369,8 @@ e7000_read_inferior_memory_large (memaddr, myaddr, len)
 #if 0
 
 static int
-fast_but_for_the_pause_e7000_read_inferior_memory (memaddr, myaddr, len)
-     CORE_ADDR memaddr;
-     char *myaddr;
-     int len;
+fast_but_for_the_pause_e7000_read_inferior_memory (CORE_ADDR memaddr,
+						   char *myaddr, int len)
 {
   int loop;
   int c;
@@ -1488,13 +1456,16 @@ fast_but_for_the_pause_e7000_read_inferior_memory (memaddr, myaddr, len)
 
 #endif
 
+/* Transfer LEN bytes between GDB address MYADDR and target address
+   MEMADDR.  If WRITE is non-zero, transfer them to the target,
+   otherwise transfer them from the target.  TARGET is unused.
+
+   Returns the number of bytes transferred. */
+
 static int
-e7000_xfer_inferior_memory (memaddr, myaddr, len, write, target)
-     CORE_ADDR memaddr;
-     unsigned char *myaddr;
-     int len;
-     int write;
-     struct target_ops *target;	/* ignored */
+e7000_xfer_inferior_memory (CORE_ADDR memaddr, char *myaddr, int len,
+			    int write, struct mem_attrib *attrib,
+			    struct target_ops *target)
 {
   if (write)
     return e7000_write_inferior_memory (memaddr, myaddr, len);
@@ -1505,16 +1476,12 @@ e7000_xfer_inferior_memory (memaddr, myaddr, len, write, target)
 }
 
 static void
-e7000_kill (args, from_tty)
-     char *args;
-     int from_tty;
+e7000_kill (void)
 {
 }
 
 static void
-e7000_load (args, from_tty)
-     char *args;
-     int from_tty;
+e7000_load (char *args, int from_tty)
 {
   struct cleanup *old_chain;
   asection *section;
@@ -1580,7 +1547,7 @@ e7000_load (args, from_tty)
       perror_with_name (filename);
       return;
     }
-  old_chain = make_cleanup ((make_cleanup_func) bfd_close, pbfd);
+  old_chain = make_cleanup_bfd_close (pbfd);
 
   if (!bfd_check_format (pbfd, bfd_object))
     error ("\"%s\" is not an object file: %s", filename,
@@ -1602,13 +1569,13 @@ e7000_load (args, from_tty)
 	  file_ptr fptr;
 
 	  section_address = bfd_get_section_vma (pbfd, section);
-	  section_size = bfd_get_section_size_before_reloc (section);
+	  section_size = bfd_get_section_size (section);
 
 	  if (!quiet)
-	    printf_filtered ("[Loading section %s at 0x%x (%d bytes)]\n",
+	    printf_filtered ("[Loading section %s at 0x%s (%s bytes)]\n",
 			     bfd_get_section_name (pbfd, section),
-			     section_address,
-			     section_size);
+			     paddr_nz (section_address),
+			     paddr_u (section_size));
 
 	  fptr = 0;
 
@@ -1636,9 +1603,9 @@ e7000_load (args, from_tty)
 
 	      bfd_get_section_contents (pbfd, section, buf + 10, fptr, count);
 
-	      if (SERIAL_WRITE (e7000_desc, buf, count + 10))
+	      if (serial_write (e7000_desc, buf, count + 10))
 		fprintf_unfiltered (gdb_stderr,
-				    "e7000_load: SERIAL_WRITE failed: %s\n",
+				    "e7000_load: serial_write failed: %s\n",
 				    safe_strerror (errno));
 
 	      expect ("OK");
@@ -1667,7 +1634,7 @@ e7000_load (args, from_tty)
   if (exec_bfd)
     write_pc (bfd_get_start_address (exec_bfd));
 
-  inferior_pid = 0;		/* No process now */
+  inferior_ptid = null_ptid;	/* No process now */
 
 /* This is necessary because many things were based on the PC at the time that
    we attached to the monitor, which is no longer valid now that we have loaded
@@ -1682,7 +1649,7 @@ e7000_load (args, from_tty)
       entry = bfd_get_start_address (pbfd);
 
       if (!quiet)
-	printf_unfiltered ("[Starting %s at 0x%x]\n", filename, entry);
+	printf_unfiltered ("[Starting %s at 0x%s]\n", filename, paddr_nz (entry));
 
 /*      start_routine (entry); */
     }
@@ -1700,7 +1667,7 @@ e7000_load (args, from_tty)
    instructions.  */
 
 static void
-e7000_mourn_inferior ()
+e7000_mourn_inferior (void)
 {
   remove_breakpoints ();
   unpush_target (&e7000_ops);
@@ -1720,9 +1687,7 @@ static CORE_ADDR breakaddr[MAX_BREAKPOINTS] =
 {0};
 
 static int
-e7000_insert_breakpoint (addr, shadow)
-     CORE_ADDR addr;
-     unsigned char *shadow;
+e7000_insert_breakpoint (CORE_ADDR addr, char *shadow)
 {
   int i;
   char buf[200];
@@ -1738,12 +1703,12 @@ e7000_insert_breakpoint (addr, shadow)
 #ifdef HARD_BREAKPOINTS
 	if (BC_BREAKPOINTS)
 	  {
-	    sprintf (buf, "BC%d A=%x\r", i + 1, addr);
+	    sprintf (buf, "BC%d A=%s\r", i + 1, paddr_nz (addr));
 	    puts_e7000debug (buf);
 	  }
 	else
 	  {
-	    sprintf (buf, "B %x\r", addr);
+	    sprintf (buf, "B %s\r", paddr_nz (addr));
 	    puts_e7000debug (buf);
 	  }
 #else
@@ -1765,9 +1730,7 @@ e7000_insert_breakpoint (addr, shadow)
 }
 
 static int
-e7000_remove_breakpoint (addr, shadow)
-     CORE_ADDR addr;
-     unsigned char *shadow;
+e7000_remove_breakpoint (CORE_ADDR addr, char *shadow)
 {
   int i;
   char buf[200];
@@ -1784,12 +1747,12 @@ e7000_remove_breakpoint (addr, shadow)
 	  }
 	else
 	  {
-	    sprintf (buf, "B - %x\r", addr);
+	    sprintf (buf, "B - %s\r", paddr_nz (addr));
 	    puts_e7000debug (buf);
 	  }
 	expect_prompt ();
 #else
-	sprintf (buf, "B - %x\r", addr);
+	sprintf (buf, "B - %s\r", paddr_nz (addr));
 	puts_e7000debug (buf);
 	expect_prompt ();
 
@@ -1801,8 +1764,8 @@ e7000_remove_breakpoint (addr, shadow)
 
 	return 0;
       }
-
-  warning ("Can't find breakpoint associated with 0x%x\n", addr);
+ 
+  warning ("Can't find breakpoint associated with 0x%s\n", paddr_nz (addr));
   return 1;
 }
 
@@ -1810,9 +1773,7 @@ e7000_remove_breakpoint (addr, shadow)
    is placed on the users terminal until the prompt is seen. */
 
 static void
-e7000_command (args, fromtty)
-     char *args;
-     int fromtty;
+e7000_command (char *args, int fromtty)
 {
   /* FIXME: arbitrary limit on length of args.  */
   char buf[200];
@@ -1844,17 +1805,14 @@ e7000_command (args, fromtty)
 
 
 static void
-e7000_drain_command (args, fromtty)
-     char *args;
-     int fromtty;
-
+e7000_drain_command (char *args, int fromtty)
 {
   int c;
 
   puts_e7000debug ("end\r");
   putchar_e7000 (CTRLC);
 
-  while ((c = readchar (1) != -1))
+  while ((c = readchar (1)) != -1)
     {
       if (quit_flag)
 	{
@@ -1871,7 +1829,7 @@ e7000_drain_command (args, fromtty)
 #define NITEMS 7
 
 static int
-why_stop ()
+why_stop (void)
 {
   static char *strings[NITEMS] =
   {
@@ -1915,9 +1873,8 @@ why_stop ()
 /* Suck characters, if a string match, then return the strings index
    otherwise echo them.  */
 
-int
-expect_n (strings)
-     char **strings;
+static int
+expect_n (char **strings)
 {
   char *(ptr[10]);
   int n;
@@ -2001,16 +1958,16 @@ expect_n (strings)
    pc, and the simulators never do. */
 
 static void
-sub2_from_pc ()
+sub2_from_pc (void)
 {
   char buf[4];
   char buf2[200];
 
   store_signed_integer (buf,
-			REGISTER_RAW_SIZE (PC_REGNUM),
+			register_size (current_gdbarch, PC_REGNUM),
 			read_register (PC_REGNUM) - 2);
-  supply_register (PC_REGNUM, buf);
-  sprintf (buf2, ".PC %x\r", read_register (PC_REGNUM));
+  regcache_raw_supply (current_regcache, PC_REGNUM, buf);
+  sprintf (buf2, ".PC %s\r", phex_nz (read_register (PC_REGNUM), 0));
   puts_e7000debug (buf2);
 }
 
@@ -2031,17 +1988,15 @@ static char *estrings[] =
 /* Wait until the remote machine stops, then return, storing status in
    STATUS just as `wait' would.  */
 
-static int
-e7000_wait (pid, status)
-     int pid;
-     struct target_waitstatus *status;
+static ptid_t
+e7000_wait (ptid_t ptid, struct target_waitstatus *status)
 {
   int stop_reason;
   int regno;
   int running_count = 0;
   int had_sleep = 0;
   int loop = 1;
-  char *wanted_nopc;
+  char *wanted_nopc = NULL;
 
   /* Then echo chars until PC= string seen */
   gch ();			/* Drop cr */
@@ -2080,29 +2035,36 @@ e7000_wait (pid, status)
   /* Skip till the PC= */
   expect ("=");
 
-#ifdef GDB_TARGET_IS_SH
-  wanted_nopc = want_nopc;
   if (TARGET_ARCHITECTURE->arch == bfd_arch_sh)
-    switch (TARGET_ARCHITECTURE->mach)
-      {
-      case bfd_mach_sh3:
-      case bfd_mach_sh3e:
-      case bfd_mach_sh4:
-	wanted_nopc = want_sh3_nopc;
-      }
-#else
-  if (h8300smode)
-    wanted_nopc = want_nopc_h8300s;
-  else
-    wanted_nopc = want_nopc_h8300h;
-#endif
+    {
+      wanted_nopc = want_nopc_sh;
+      switch (TARGET_ARCHITECTURE->mach)
+	{
+	case bfd_mach_sh3:
+	case bfd_mach_sh3e:
+	case bfd_mach_sh4:
+	  wanted_nopc = want_nopc_sh3;
+	}
+    }
+  if (TARGET_ARCHITECTURE->arch == bfd_arch_h8300)
+    {
+      wanted_nopc = want_nopc_h8300h;
+      switch (TARGET_ARCHITECTURE->mach)
+	{
+	case bfd_mach_h8300s:
+	case bfd_mach_h8300sn:
+	case bfd_mach_h8300sx:
+	case bfd_mach_h8300sxn:
+	  wanted_nopc = want_nopc_h8300s;
+	}
+    }
   fetch_regs_from_dump (gch, wanted_nopc);
 
   /* And supply the extra ones the simulator uses */
   for (regno = NUM_REALREGS; regno < NUM_REGS; regno++)
     {
       int buf = 0;
-      supply_register (regno, (char *) &buf);
+      regcache_raw_supply (current_regcache, regno, (char *) &buf);
     }
 
   stop_reason = why_stop ();
@@ -2149,16 +2111,16 @@ e7000_wait (pid, status)
       break;
     default:
       /* Get the user's attention - this should never happen. */
-      abort ();
+      internal_error (__FILE__, __LINE__, "failed internal consistency check");
     }
 
-  return 0;
+  return inferior_ptid;
 }
 
 /* Stop the running program.  */
 
 static void
-e7000_stop ()
+e7000_stop (void)
 {
   /* Sending a ^C is supposed to stop the running program.  */
   putchar_e7000 (CTRLC);
@@ -2172,8 +2134,8 @@ static void
 init_e7000_ops (void)
 {
   e7000_ops.to_shortname = "e7000";
-  e7000_ops.to_longname = "Remote Hitachi e7000 target";
-  e7000_ops.to_doc = "Use a remote Hitachi e7000 ICE connected by a serial line;\n\
+  e7000_ops.to_longname = "Remote Renesas e7000 target";
+  e7000_ops.to_doc = "Use a remote Renesas e7000 ICE connected by a serial line;\n\
 or a network connection.\n\
 Arguments are the name of the device for the serial line,\n\
 the speed to connect at in bits per second.\n\
@@ -2182,14 +2144,9 @@ target e7000 /dev/ttya 9600\n\
 target e7000 foobar";
   e7000_ops.to_open = e7000_open;
   e7000_ops.to_close = e7000_close;
-  e7000_ops.to_attach = 0;
-  e7000_ops.to_post_attach = NULL;
-  e7000_ops.to_require_attach = NULL;
   e7000_ops.to_detach = e7000_detach;
-  e7000_ops.to_require_detach = NULL;
   e7000_ops.to_resume = e7000_resume;
   e7000_ops.to_wait = e7000_wait;
-  e7000_ops.to_post_wait = NULL;
   e7000_ops.to_fetch_registers = e7000_fetch_register;
   e7000_ops.to_store_registers = e7000_store_register;
   e7000_ops.to_prepare_to_store = e7000_prepare_to_store;
@@ -2197,53 +2154,24 @@ target e7000 foobar";
   e7000_ops.to_files_info = e7000_files_info;
   e7000_ops.to_insert_breakpoint = e7000_insert_breakpoint;
   e7000_ops.to_remove_breakpoint = e7000_remove_breakpoint;
-  e7000_ops.to_terminal_init = 0;
-  e7000_ops.to_terminal_inferior = 0;
-  e7000_ops.to_terminal_ours_for_output = 0;
-  e7000_ops.to_terminal_ours = 0;
-  e7000_ops.to_terminal_info = 0;
   e7000_ops.to_kill = e7000_kill;
   e7000_ops.to_load = e7000_load;
-  e7000_ops.to_lookup_symbol = 0;
   e7000_ops.to_create_inferior = e7000_create_inferior;
-  e7000_ops.to_post_startup_inferior = NULL;
-  e7000_ops.to_acknowledge_created_inferior = NULL;
-  e7000_ops.to_clone_and_follow_inferior = NULL;
-  e7000_ops.to_post_follow_inferior_by_clone = NULL;
-  e7000_ops.to_insert_fork_catchpoint = NULL;
-  e7000_ops.to_remove_fork_catchpoint = NULL;
-  e7000_ops.to_insert_vfork_catchpoint = NULL;
-  e7000_ops.to_remove_vfork_catchpoint = NULL;
-  e7000_ops.to_has_forked = NULL;
-  e7000_ops.to_has_vforked = NULL;
-  e7000_ops.to_can_follow_vfork_prior_to_exec = NULL;
-  e7000_ops.to_post_follow_vfork = NULL;
-  e7000_ops.to_insert_exec_catchpoint = NULL;
-  e7000_ops.to_remove_exec_catchpoint = NULL;
-  e7000_ops.to_has_execd = NULL;
-  e7000_ops.to_reported_exec_events_per_exec_call = NULL;
-  e7000_ops.to_has_exited = NULL;
   e7000_ops.to_mourn_inferior = e7000_mourn_inferior;
-  e7000_ops.to_can_run = 0;
-  e7000_ops.to_notice_signals = 0;
-  e7000_ops.to_thread_alive = 0;
   e7000_ops.to_stop = e7000_stop;
-  e7000_ops.to_pid_to_exec_file = NULL;
-  e7000_ops.to_core_file_to_sym_file = NULL;
   e7000_ops.to_stratum = process_stratum;
-  e7000_ops.DONT_USE = 0;
   e7000_ops.to_has_all_memory = 1;
   e7000_ops.to_has_memory = 1;
   e7000_ops.to_has_stack = 1;
   e7000_ops.to_has_registers = 1;
   e7000_ops.to_has_execution = 1;
-  e7000_ops.to_sections = 0;
-  e7000_ops.to_sections_end = 0;
   e7000_ops.to_magic = OPS_MAGIC;
 };
 
+extern initialize_file_ftype _initialize_remote_e7000; /* -Wmissing-prototypes */
+
 void
-_initialize_remote_e7000 ()
+_initialize_remote_e7000 (void)
 {
   init_e7000_ops ();
   add_target (&e7000_ops);
@@ -2260,8 +2188,9 @@ _initialize_remote_e7000 ()
   add_com ("drain", class_obscure, e7000_drain_command,
 	   "Drain pending e7000 text buffers.");
 
-  add_show_from_set (add_set_cmd ("usehardbreakpoints", no_class,
-				var_integer, (char *) &use_hard_breakpoints,
-	"Set use of hardware breakpoints for all breakpoints.\n", &setlist),
-		     &showlist);
+  deprecated_add_show_from_set
+    (add_set_cmd ("usehardbreakpoints", no_class,
+		  var_integer, (char *) &use_hard_breakpoints, "\
+Set use of hardware breakpoints for all breakpoints.\n", &setlist),
+     &showlist);
 }

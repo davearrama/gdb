@@ -1,6 +1,6 @@
 /* Remote debugging interface for Densan DVE-R3900 ROM monitor for
    GDB, the GNU debugger.
-   Copyright 1997 Free Software Foundation, Inc.
+   Copyright 1997, 1998, 2000, 2001 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -28,10 +28,12 @@
 #include "command.h"
 #include "gdb_string.h"
 #include <time.h>
+#include "regcache.h"
+#include "mips-tdep.h"
 
 /* Type of function passed to bfd_map_over_sections.  */
 
-typedef void (*section_map_func) PARAMS ((bfd * abfd, asection * sect, PTR obj));
+typedef void (*section_map_func) (bfd * abfd, asection * sect, void *obj);
 
 /* Packet escape character used by Densan monitor.  */
 
@@ -44,8 +46,7 @@ typedef void (*section_map_func) PARAMS ((bfd * abfd, asection * sect, PTR obj))
 
 /* External functions.  */
 
-extern void report_transfer_performance PARAMS ((unsigned long,
-						 time_t, time_t));
+extern void report_transfer_performance (unsigned long, time_t, time_t);
 
 /* Certain registers are "bitmapped", in that the monitor can only display
    them or let the user modify them as a series of named bitfields.
@@ -62,36 +63,32 @@ struct bit_field
 
 /* Local functions for register manipulation.  */
 
-static void r3900_supply_register PARAMS ((char *regname, int regnamelen,
-					   char *val, int vallen));
-static void fetch_bad_vaddr PARAMS ((void));
-static unsigned long fetch_fields PARAMS ((struct bit_field * bf));
-static void fetch_bitmapped_register PARAMS ((int regno,
-					      struct bit_field * bf));
-static void r3900_fetch_registers PARAMS ((int regno));
-static void store_bitmapped_register PARAMS ((int regno,
-					      struct bit_field * bf));
-static void r3900_store_registers PARAMS ((int regno));
+static void r3900_supply_register (char *regname, int regnamelen,
+				   char *val, int vallen);
+static void fetch_bad_vaddr (void);
+static unsigned long fetch_fields (struct bit_field *bf);
+static void fetch_bitmapped_register (int regno, struct bit_field *bf);
+static void r3900_fetch_registers (int regno);
+static void store_bitmapped_register (int regno, struct bit_field *bf);
+static void r3900_store_registers (int regno);
 
 /* Local functions for fast binary loading.  */
 
-static void write_long PARAMS ((char *buf, long n));
-static void write_long_le PARAMS ((char *buf, long n));
-static int debug_readchar PARAMS ((int hex));
-static void debug_write PARAMS ((unsigned char *buf, int buflen));
-static void ignore_packet PARAMS ((void));
-static void send_packet PARAMS ((char type, unsigned char *buf, int buflen,
-				 int seq));
-static void process_read_request PARAMS ((unsigned char *buf, int buflen));
-static void count_section PARAMS ((bfd * abfd, asection * s,
-				   unsigned int *section_count));
-static void load_section PARAMS ((bfd * abfd, asection * s,
-				  unsigned int *data_count));
-static void r3900_load PARAMS ((char *filename, int from_tty));
+static void write_long (char *buf, long n);
+static void write_long_le (char *buf, long n);
+static int debug_readchar (int hex);
+static void debug_write (unsigned char *buf, int buflen);
+static void ignore_packet (void);
+static void send_packet (char type, unsigned char *buf, int buflen, int seq);
+static void process_read_request (unsigned char *buf, int buflen);
+static void count_section (bfd * abfd, asection * s,
+			   unsigned int *section_count);
+static void load_section (bfd * abfd, asection * s, unsigned int *data_count);
+static void r3900_load (char *filename, int from_tty);
 
 /* Miscellaneous local functions.  */
 
-static void r3900_open PARAMS ((char *args, int from_tty));
+static void r3900_open (char *args, int from_tty);
 
 
 /* Pointers to static functions in monitor.c for fetching and storing
@@ -100,13 +97,13 @@ static void r3900_open PARAMS ((char *args, int from_tty));
    format, and those that can't be modified at all.  In those cases
    we have to use our own functions to fetch and store their values.  */
 
-static void (*orig_monitor_fetch_registers) PARAMS ((int regno));
-static void (*orig_monitor_store_registers) PARAMS ((int regno));
+static void (*orig_monitor_fetch_registers) (int regno);
+static void (*orig_monitor_store_registers) (int regno);
 
 /* Pointer to static function in monitor. for loading programs.
    We use this function for loading S-records via the serial link.  */
 
-static void (*orig_monitor_load) PARAMS ((char *file, int from_tty));
+static void (*orig_monitor_load) (char *file, int from_tty);
 
 /* This flag is set if a fast ethernet download should be used.  */
 
@@ -117,7 +114,7 @@ static int ethernet = 0;
    different names than GDB does, and don't support all the registers
    either.  */
 
-static char *r3900_regnames[NUM_REGS] =
+static char *r3900_regnames[] =
 {
   "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
   "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
@@ -125,11 +122,11 @@ static char *r3900_regnames[NUM_REGS] =
   "r24", "r25", "r26", "r27", "r28", "r29", "r30", "r31",
 
   "S",				/* PS_REGNUM */
-  "l",				/* LO_REGNUM */
-  "h",				/* HI_REGNUM */
-  "B",				/* BADVADDR_REGNUM */
-  "Pcause",			/* CAUSE_REGNUM */
-  "p"				/* PC_REGNUM */
+  "l",				/* MIPS_EMBED_LO_REGNUM */
+  "h",				/* MIPS_EMBED_HI_REGNUM */
+  "B",				/* MIPS_EMBED_BADVADDR_REGNUM */
+  "Pcause",			/* MIPS_EMBED_CAUSE_REGNUM */
+  "p"				/* MIPS_EMBED_PC_REGNUM */
 };
 
 
@@ -271,19 +268,19 @@ reg_table[] =
   }
   ,
   {
-    "HI", HI_REGNUM
+    "HI", MIPS_EMBED_HI_REGNUM
   }
   ,
   {
-    "LO", LO_REGNUM
+    "LO", MIPS_EMBED_LO_REGNUM
   }
   ,
   {
-    "PC", PC_REGNUM
+    "PC", MIPS_EMBED_PC_REGNUM
   }
   ,
   {
-    "BadV", BADVADDR_REGNUM
+    "BadV", MIPS_EMBED_BADVADDR_REGNUM
   }
   ,
   {
@@ -378,11 +375,7 @@ static struct bit_field cause_fields[] =
    the hex value before passing it to monitor_supply_register.  */
 
 static void
-r3900_supply_register (regname, regnamelen, val, vallen)
-     char *regname;
-     int regnamelen;
-     char *val;
-     int vallen;
+r3900_supply_register (char *regname, int regnamelen, char *val, int vallen)
 {
   int regno = -1;
   int i;
@@ -421,14 +414,14 @@ r3900_supply_register (regname, regnamelen, val, vallen)
    you modify it.  */
 
 static void
-fetch_bad_vaddr ()
+fetch_bad_vaddr (void)
 {
   char buf[20];
 
   monitor_printf ("xB\r");
   monitor_expect ("BadV=", NULL, 0);
   monitor_expect_prompt (buf, sizeof (buf));
-  monitor_supply_register (BADVADDR_REGNUM, buf);
+  monitor_supply_register (mips_regnum (current_gdbarch)->badvaddr, buf);
 }
 
 
@@ -436,8 +429,7 @@ fetch_bad_vaddr ()
    combined binary value.  */
 
 static unsigned long
-fetch_fields (bf)
-     struct bit_field *bf;
+fetch_fields (struct bit_field *bf)
 {
   char buf[20];
   unsigned long val = 0;
@@ -461,22 +453,27 @@ fetch_fields (bf)
 
 
 static void
-fetch_bitmapped_register (regno, bf)
-     int regno;
-     struct bit_field *bf;
+fetch_bitmapped_register (int regno, struct bit_field *bf)
 {
   unsigned long val;
-  unsigned char regbuf[MAX_REGISTER_RAW_SIZE];
+  unsigned char regbuf[MAX_REGISTER_SIZE];
+  char *regname = NULL;
 
-  monitor_printf ("x%s\r", r3900_regnames[regno]);
+  if (regno >= sizeof (r3900_regnames) / sizeof (r3900_regnames[0]))
+    internal_error (__FILE__, __LINE__,
+                    "fetch_bitmapped_register: regno out of bounds");
+  else
+    regname = r3900_regnames[regno];
+
+  monitor_printf ("x%s\r", regname);
   val = fetch_fields (bf);
   monitor_printf (".\r");
   monitor_expect_prompt (NULL, 0);
 
   /* supply register stores in target byte order, so swap here */
 
-  store_unsigned_integer (regbuf, REGISTER_RAW_SIZE (regno), val);
-  supply_register (regno, regbuf);
+  store_unsigned_integer (regbuf, register_size (current_gdbarch, regno), val);
+  regcache_raw_supply (current_regcache, regno, regbuf);
 
 }
 
@@ -487,37 +484,36 @@ fetch_bitmapped_register (regno, bf)
    a very unusual fashion by the monitor, and must be handled specially.  */
 
 static void
-r3900_fetch_registers (regno)
-     int regno;
+r3900_fetch_registers (int regno)
 {
-  switch (regno)
-    {
-    case BADVADDR_REGNUM:
-      fetch_bad_vaddr ();
-      return;
-    case PS_REGNUM:
-      fetch_bitmapped_register (PS_REGNUM, status_fields);
-      return;
-    case CAUSE_REGNUM:
-      fetch_bitmapped_register (CAUSE_REGNUM, cause_fields);
-      return;
-    default:
-      orig_monitor_fetch_registers (regno);
-    }
+  if (regno == mips_regnum (current_gdbarch)->badvaddr)
+    fetch_bad_vaddr ();
+  else if (regno == PS_REGNUM)
+    fetch_bitmapped_register (PS_REGNUM, status_fields);
+  else if (regno == mips_regnum (current_gdbarch)->cause)
+    fetch_bitmapped_register (mips_regnum (current_gdbarch)->cause,
+			      cause_fields);
+  else
+    orig_monitor_fetch_registers (regno);
 }
 
 
 /* Write the new value of the bitmapped register to the monitor.  */
 
 static void
-store_bitmapped_register (regno, bf)
-     int regno;
-     struct bit_field *bf;
+store_bitmapped_register (int regno, struct bit_field *bf)
 {
   unsigned long oldval, newval;
+  char *regname = NULL;
+
+  if (regno >= sizeof (r3900_regnames) / sizeof (r3900_regnames[0]))
+    internal_error (__FILE__, __LINE__,
+                    "fetch_bitmapped_register: regno out of bounds");
+  else
+    regname = r3900_regnames[regno];
 
   /* Fetch the current value of the register.  */
-  monitor_printf ("x%s\r", r3900_regnames[regno]);
+  monitor_printf ("x%s\r", regname);
   oldval = fetch_fields (bf);
   newval = read_register (regno);
 
@@ -542,29 +538,22 @@ store_bitmapped_register (regno, bf)
 
 
 static void
-r3900_store_registers (regno)
-     int regno;
+r3900_store_registers (int regno)
 {
-  switch (regno)
-    {
-    case PS_REGNUM:
-      store_bitmapped_register (PS_REGNUM, status_fields);
-      return;
-    case CAUSE_REGNUM:
-      store_bitmapped_register (CAUSE_REGNUM, cause_fields);
-      return;
-    default:
-      orig_monitor_store_registers (regno);
-    }
+  if (regno == PS_REGNUM)
+    store_bitmapped_register (PS_REGNUM, status_fields);
+  else if (regno == mips_regnum (current_gdbarch)->cause)
+    store_bitmapped_register (mips_regnum (current_gdbarch)->cause,
+			      cause_fields);
+  else
+    orig_monitor_store_registers (regno);
 }
 
 
 /* Write a 4-byte integer to the buffer in big-endian order.  */
 
 static void
-write_long (buf, n)
-     char *buf;
-     long n;
+write_long (char *buf, long n)
 {
   buf[0] = (n >> 24) & 0xff;
   buf[1] = (n >> 16) & 0xff;
@@ -576,9 +565,7 @@ write_long (buf, n)
 /* Write a 4-byte integer to the buffer in little-endian order.  */
 
 static void
-write_long_le (buf, n)
-     char *buf;
-     long n;
+write_long_le (char *buf, long n)
 {
   buf[0] = n & 0xff;
   buf[1] = (n >> 8) & 0xff;
@@ -592,8 +579,7 @@ write_long_le (buf, n)
    character in hexadecimal; otherwise, print it in ASCII.  */
 
 static int
-debug_readchar (hex)
-     int hex;
+debug_readchar (int hex)
 {
   char buf[10];
   int c = monitor_readchar ();
@@ -619,9 +605,7 @@ debug_readchar (hex)
    print the sent buffer in hex.  */
 
 static void
-debug_write (buf, buflen)
-     unsigned char *buf;
-     int buflen;
+debug_write (unsigned char *buf, int buflen)
 {
   char s[10];
 
@@ -654,9 +638,9 @@ debug_write (buf, buflen)
  */
 
 static void
-ignore_packet ()
+ignore_packet (void)
 {
-  int c;
+  int c = -1;
   int len;
 
   /* Ignore lots of trash (messages about section addresses, for example)
@@ -693,10 +677,7 @@ ignore_packet ()
  */
 
 static void
-send_packet (type, buf, buflen, seq)
-     char type;
-     unsigned char *buf;
-     int buflen, seq;
+send_packet (char type, unsigned char *buf, int buflen, int seq)
 {
   unsigned char hdr[4];
   int len = buflen;
@@ -769,9 +750,7 @@ send_packet (type, buf, buflen, seq)
  */
 
 static void
-process_read_request (buf, buflen)
-     unsigned char *buf;
-     int buflen;
+process_read_request (unsigned char *buf, int buflen)
 {
   unsigned char len[4];
   int i, chunk;
@@ -807,10 +786,7 @@ process_read_request (buf, buflen)
 /* Count loadable sections (helper function for r3900_load).  */
 
 static void
-count_section (abfd, s, section_count)
-     bfd *abfd;
-     asection *s;
-     unsigned int *section_count;
+count_section (bfd *abfd, asection *s, unsigned int *section_count)
 {
   if (s->flags & SEC_LOAD && bfd_section_size (abfd, s) != 0)
     (*section_count)++;
@@ -832,10 +808,7 @@ count_section (abfd, s, section_count)
  */
 
 static void
-load_section (abfd, s, data_count)
-     bfd *abfd;
-     asection *s;
-     unsigned int *data_count;
+load_section (bfd *abfd, asection *s, unsigned int *data_count)
 {
   if (s->flags & SEC_LOAD)
     {
@@ -867,7 +840,7 @@ load_section (abfd, s, data_count)
       buffer = (unsigned char *) xmalloc (section_size);
       bfd_get_section_contents (abfd, s, buffer, 0, section_size);
       process_read_request (buffer, section_size);
-      free (buffer);
+      xfree (buffer);
     }
 }
 
@@ -891,9 +864,7 @@ load_section (abfd, s, data_count)
  */
 
 static void
-r3900_load (filename, from_tty)
-     char *filename;
-     int from_tty;
+r3900_load (char *filename, int from_tty)
 {
   bfd *abfd;
   unsigned int data_count = 0;
@@ -962,7 +933,7 @@ r3900_load (filename, from_tty)
   if (exec_bfd)
     write_pc (bfd_get_start_address (exec_bfd));
 
-  inferior_pid = 0;		/* No process now */
+  inferior_ptid = null_ptid;		/* No process now */
 
   /* This is necessary because many things were based on the PC at the
      time that we attached to the monitor, which is no longer valid
@@ -995,9 +966,7 @@ static struct target_ops r3900_ops;
 static struct monitor_ops r3900_cmds;
 
 static void
-r3900_open (args, from_tty)
-     char *args;
-     int from_tty;
+r3900_open (char *args, int from_tty)
 {
   char buf[64];
   int i;
@@ -1028,7 +997,7 @@ r3900_open (args, from_tty)
 }
 
 void
-_initialize_r3900_rom ()
+_initialize_r3900_rom (void)
 {
   r3900_cmds.flags = MO_NO_ECHO_ON_OPEN |
     MO_ADDR_BITS_REMOVE |

@@ -1,3 +1,670 @@
+2004-07-26  Andrew Cagney  <cagney@gnu.org>
+
+	Problem from Olaf Hering <olh@suse.de>.
+	* Makefile.in (install-man, installdirs): Add DESTDIR prefix.
+
+2004-07-10  Ben Elliston  <bje@au.ibm.com>
+
+	* hw-tree.c (parse_integer_property): Typo fix in comments.
+	* sim-options.c	(sim_args_command): Likewise.
+
+2004-06-28  Andrew Cagney  <cagney@gnu.org>
+
+	* run.c: Rename ui_loop_hook to deprecated_ui_loop_hook.
+
+2004-06-27  J"orn Rennecke <joern.rennecke@superh.com>
+
+	* callback.c (os_shutdown): Fix bug in last change: actually
+	mark file descriptors as available on startup.
+
+2004-06-25  J"orn Rennecke <joern.rennecke@superh.com>
+
+	[ include/gdb: * callback.h (host_callback_struct): Replace
+		       members fdopen and alwaysopen with fd_buddy.  ]
+        * callback.c: Changed all users.
+
+2004-06-15  Alan Modra  <amodra@bigpond.net.au>
+
+	* sim-load.c (sim_load_file): Use bfd_get_section_size
+	instead of bfd_get_section_size_before_reloc.
+
+2004-05-18  Daniel Jacobowitz  <dan@debian.org>
+
+	* dv-glue.c (hw_glue_finish): Cast result of sizeof to long before
+	passing it to printf.
+
+2004-05-10  Daniel Jacobowitz  <dan@debian.org>
+
+	* callback.c: Update copyright dates.
+	* run.c: Likewise.
+	* sim-basics.h: Likewise.
+	* sim-load.c: Likewise.
+	* syscall.c: Likewise.
+
+2004-05-10  Maciej W. Rozycki  <macro@ds2.pg.gda.pl>
+
+	* callback.c: Include cconfig.h instead of config.h.
+	* run.c: Likewise.
+	* sim-basics.h: Likewise.
+	* sim-load.c: Likewise.
+	* syscall.c: Likewise.
+
+2004-01-16  Ben Elliston  <bje@wasabisystems.com>
+
+	* Makefile.in (clean): Remove rm -f $(ALL), as $(ALL) is empty.
+
+2003-12-19  Kazuhiro Inaoka  <inaoka.kazuhiro@renesas.com>
+
+	* sim-core.c (sim_core_trans_addr): Added for m32r-linux-run.
+
+2003-11-22  Kazu Hirata  <kazu@cs.umass.edu>
+
+	* sim-options.c (standard_options): Fix the names of H8
+	variants.
+
+2003-10-30  Andrew Cagney  <cagney@redhat.com>
+
+	* sim-trace.c, sim-base.h: Replace "struct symbol_cache_entry"
+	with "struct bfd_symbol".
+
+2003-10-21  Andrew Cagney  <cagney@redhat.com>
+
+	* callback.c (os_truncate): Call "truncate", and not "stat".
+
+2003-10-20  Andrew Cagney  <cagney@redhat.com>
+
+	* sim-base.h: Replace "struct sec" with "struct bfd_section".
+
+2003-10-15  J"orn Rennecke <joern.rennecke@superh.com>
+
+	* callback.c (os_ftruncate, os_truncate): New functions.
+	(default_callback): Initialize ftruncate and truncate members.
+
+2003-09-08  Dave Brolley  <brolley@redhat.com>
+
+	On behalf of Doug Evans <dje@sebabeach.org>
+	* cgen.sh: New arg archfile.
+	* Make-common.in (cgen-arch,cgen-cpu,cgen-defs,cgen-decode,
+	cgen-cpu-decode,cgen-desc): Update call to cgen.sh.
+
+2003-08-28  Andrew Cagney  <cagney@redhat.com>
+
+	* dv-glue.c (hw_glue_finish): Change %d to %ld to match sizeof.
+	* sim-options.c (print_help): Cast the format with specifier to
+	"int".
+
+2003-08-20  Michael Snyder  <msnyder@redhat.com>
+            Dave Brolley  <brolley@redhat.com>
+
+	* cgen-par.h (flags, word1): New target-specific 
+	fields of CGEN_WRITE_QUEUE_ELEMENT.
+	(CGEN_WRITE_QUEUE_ELEMENT_FLAGS): New accessor macro.
+	(CGEN_WRITE_QUEUE_ELEMENT_WORD1): New accessor macro.
+	* gennltvals.sh: Add frv target.
+	* nltvals.def: Add frv target.
+
+2003-06-23  Michael Snyder  <msnyder@redhat.com>
+
+	* nrun.c (main): Delete h8/300 ifdef (sim now handles signals).
+	* sim-reg.c: Fix cut-and-paste bug in comment.
+
+2003-06-22  Andrew Cagney  <cagney@redhat.com>
+
+	From matthew green <mrg@redhat.com>:
+        * sim-fpu.h: Update copyright.
+	(sim_fpu_fraction, sim_fpu_guard): New prototypes.
+        * sim-fpu.c: Update copyright.
+	(sim_fpu_fraction, sim_fpu_guard): New inline functions.
+
+2003-06-17  Frank Ch. Eigler  <fche@redhat.com>
+
+	From Doug Evans <dje@sebabeach.org>:
+	* cgen-trace.h (sim_disasm_read_memory): Update args to be compatible
+	with disassemble_info:read_memory_func.
+	* cgen-trace.c (sim_disasm_read_memory): Ditto.
+
+2003-06-04  Michael Snyder  <msnyder@redhat.com>
+
+	* common/run.c (main): Remove SIM_H8300 ifdef.
+	(usage): Ditto.
+	* common/sim-options.c (STANDARD_OPTIONS): Add SIM_H8300SX.
+	(standard_options): Add '-x' for h8/300sx.
+	(standard_option_handler): Add case for SIM_H8300SX.
+
+2003-04-13  Michael Snyder  <msnyder@redhat.com>
+
+	* Make-common.in (sim-events.o, sim-config.o): Depend on sim-main.h.
+
+2003-03-01  Andrew Cagney  <cagney@redhat.com>
+
+	* sim-engine.c (sim_engine_halt): If jmpbuf is invalid, abort.
+	(sim_engine_vabort): Ditto.
+
+2003-02-27  Andrew Cagney  <cagney@redhat.com>
+
+	* sim-utils.h (sim_analyze_program, sim_load_file): Rename _bfd to bfd.
+	* sim-hload.c (sim_load), sim-base.h (sim_state_base): Ditto.
+	* nrun.c (main): Ditto.
+
+2003-02-26  Andrew Cagney  <cagney@redhat.com>
+
+	* sim-engine.h (sim_engine_abort): Add noreturn attribute.
+	(sim_engine_vabort): Ditto.
+	(sim_engine_halt, sim_engine_restart): Ditto.
+
+2003-02-20  Andrew Cagney  <ac131313@redhat.com>
+
+	* Make-common.in (SIM_NEW_COMMON_OBJS): Remove sim-break.o
+	(sim-break_h): Delete macro.
+	(sim-break.o): Delete rule.
+	* sim-break.c: Delete file.
+	* sim-break.h: Delete file.
+	* sim-base.h [SIM_HAVE_BREAKPOINTS]: Don't include "sim-break.h".
+	(STATE_BREAKPOINTS): Delete macro.
+	(sim_state_base): Delete field breakpoints.
+	* sim-module.c (modules) [SIM_HAVE_BREAKPOINTS]: Don't add
+	sim_break_install to array.
+
+2003-01-08  Kazu Hirata  <kazu@cs.umass.edu>
+
+	* run.c (usage): Fix typos.
+
+2002-11-27  Richard Sandiford  <rsandifo@redhat.com>
+
+	* sim-fpu.c (sim_fpu_inv): Use sim_fpu_div.
+
+2002-11-22  Andrew Cagney  <ac131313@redhat.com>
+
+	* dv-core.c: Update copyright.  sim/common contributed to the FSF.
+	* dv-glue.c, dv-pal.c, hw-base.c, hw-base.h, hw-device.c: Ditto.
+	* hw-device.h, hw-handles.c, hw-handles.h: Ditto.
+	* hw-instances.c, hw-instances.h, hw-properties.c: Ditto.
+	* hw-properties.h, hw-tree.c, hw-tree.h, sim-alu.h: Ditto.
+	* sim-basics.h, sim-bits.c, sim-bits.h, sim-config.c: Ditto.
+	* sim-config.h, sim-core.c, sim-core.h, sim-endian.c: Ditto.
+	* sim-endian.h, sim-events.c, sim-events.h, sim-inline.c: Ditto.
+	* sim-inline.h, sim-io.c, sim-io.h, sim-n-bits.h: Ditto.
+	* sim-n-core.h, sim-n-endian.h, sim-types.h: Ditto.
+
+2002-11-13  Andrew Cagney  <cagney@redhat.com>
+
+	* run.c (main): Remove SIM_HAVE_ENVIRONMENT from #endif.
+
+2002-11-06  Richard Sandiford  <rsandifo@redhat.com>
+
+	* Make-common.in (SIM_EXTRA_DISTCLEAN): New macro.
+	(distclean): Depend on it.
+
+2002-10-14  Alan Modra  <amodra@bigpond.net.au>
+
+	* cgen-trace.h: Test __BFD_H_SEEN__ rather than BFD_VERSION.
+
+2002-08-29  Dave Brolley  <brolley@redhat.com>
+
+	* Make-common.in (CGEN_READ_SCM): Remove ../../cgen/stamp-cgen.
+
+2002-07-17  Andrew Cagney  <cagney@redhat.com>
+
+	* run-sim.h: Add #ifdef RUN_SIM_H wrapper.
+	(sim_set_callbacks, sim_size, sim_trace)
+	(sim_set_trace, sim_set_profile_size, sim_kill): Declare.  Moved
+	to here from "gdb/remote-sim.h".
+
+2002-07-16  Andrew Cagney  <ac131313@redhat.com>
+
+	* sim-resume.c (sim_resume): Add local variable sig_to_deliver to
+	avoid possible longjmp problems with automatic variable siggnal.
+
+2002-07-14  Andrew Cagney  <ac131313@redhat.com>
+
+	From 2002-07-11 Momchil Velikov <velco@fadata.bg>:
+	* Make-common.in (installdirs): Make $(libdir) too, needed when
+	installing libsim.a.
+
+2002-07-13  Andrew Cagney  <ac131313@redhat.com>
+
+	* gennltvals.sh (dir): Mark d30v as obsolete.
+	* nltvals.def: Remove d30v.
+
+2002-06-17  Andrew Cagney  <cagney@redhat.com>
+
+	* hw-events.c (hw_event_queue_schedule): Initialize `dummy'.
+
+	* sim-memopt.c: Include <unistd.h>.
+	(do_memopt_add): Fix printf format.
+	* sim-events.c (sim_events_schedule): Initialize ``dummy''.
+
+2002-06-16  Andrew Cagney  <ac131313@redhat.com>
+
+	* aclocal.m4 (SIM_AC_OPTION_WARNINGS): Update to match GDB's
+	--enable-gdb-build-warnings.
+	* configure: Regenerated to track ../common/aclocal.m4 changes.
+
+2002-06-09  Aldy Hernandez  <aldyh@redhat.com>
+
+        * sim-fpu.c (unpack_fpu): Initialize exponent for
+        sim_fpu_class_zero.
+        (i2fpu): Same.
+        (sim_fpu_sqrt): Same.
+
+2002-06-08  Andrew Cagney  <cagney@redhat.com>
+
+	* gentmap.c (gen_targ_map_c): Generate "gdb/callback.h".
+	* sim-basics.h: Include "gdb/callback.h" and "gdb/remote-sim.h".
+	* run.c: Ditto.
+	* sim-load.c: Ditto.
+	* callback.c: Ditto.
+	* syscall.c: Ditto.
+	* Make-common.in (callback_h): Define.
+	(remote_sim_h): Define.
+	(run.o): Update.
+	(callback.o): Update.
+	(syscall.o): Update.
+	(sim-load.o): 
+	(nrun.o): Update.
+	(sim-hload.o): Update.
+	(sim-io.o): Update.
+	(sim-reason.o): Update.
+	(sim-reg.o): Update.
+	(sim-resume.o): Update.
+
+2002-05-30  Kazu Hirata  <kazu@cs.umass.edu>
+
+	* run.c: Fix formatting.
+
+2002-05-20  Nick Clifton  <nickc@cambridge.redhat.com>
+
+	* run-sim.h: New header.  Provide prototypes for functions used
+	between run() and libsim.a which are not used by GDB.
+	* run.c: Include run-sim.h.
+        (main): If SIM_TARGET_SWITCHES is defined call
+        sim_target_parse_command_line.
+        (usage): If SIM_TARGET_SWITCHES is defined call
+        sim_target_display_usage.
+
+2002-05-17  Andrey Volkov  <avolkov@transas.com>
+
+	* run.c: Made h8300s as new target, not h8300h alias.
+	Added new option -S (h8300s target)
+	* sim-options.c: Ditto.
+	
+2002-05-01  Chris Demetriou  <cgd@broadcom.com>
+
+	* callback.c: Use 'deprecated' rather than 'depreciated.'
+
+2002-02-24  Andrew Cagney  <ac131313@redhat.com>
+
+	From wiz at danbala:
+	* sim-fpu.h: Fix grammar and typos.
+	Fix PR gdb/287.
+
+2002-02-10  Chris Demetriou  <cgd@broadcom.com>
+
+	* callback.c: Fix some spelling errors.
+	* hw-device.h: Likewise.
+	* hw-tree.c: Likewise.
+	* sim-abort.c: Likewise.
+	* sim-alu.h: Likewise.
+	* sim-core.h: Likewise.
+	* sim-events.c: Likewise.
+	* sim-events.h: Likewise.
+	* sim-fpu.h: Likewise.
+	* sim-profile.h: Likewise.
+	* sim-utils.c: Likewise.
+
+2002-01-31  Hans-Peter Nilsson  <hp@axis.com>
+
+	* cgen-ops.h (ADDCQI, ADDCFQI, ADDOFQI, SUBCQI, SUBCFQI, SUBOFQI):
+	New functions.
+
+2002-01-20  Ben Elliston  <bje@redhat.com>
+
+	* sim-fpu.h (SIM_FPU_IS_QNAN): Replace "Quite" with "Quiet" in
+	the comment for this enumerator.
+
+2002-01-14  Ben Elliston  <bje@redhat.com>
+
+	* sim-fpu.h: Fix comment about sim_fpu_* constants.
+
+2001-12-20  Kazu Hirata  <kazu@hxi.com>
+
+	* run.c (usage): Fix a typo.
+
+2001-07-05  Ben Elliston  <bje@redhat.com>
+
+	* Make-common.in (srccgen): Remove.
+	(CGEN_CPU_DIR): Define.
+	(CGEN_READ_SCM): Redefine without $(srccgen).
+	(CGEN_ARCH_SCM): Ditto.
+	(CGEN_CPU_SCM): Ditto.
+	(CGEN_DECODE_SCM): Ditto.
+	(CGEN_DESC_SCM): Ditto.
+
+2001-04-25  Frank Ch. Eigler  <fche@redhat.com>
+
+	* sim-load.c (sim_load_file): Put it back: external now.
+	* sim-utils.c (sim_analyze_program): Ditto.  Nyuk nyuk nyuk.
+
+2001-04-21  Andrew Cagney  <ac131313@redhat.com>
+
+	* sim-load.c (sim_load_file): Delete call bfd_cache_close.  BFD
+	internal interface.
+	* sim-utils.c (sim_analyze_program): Ditto.
+
+2001-04-19  Frank Ch. Eigler  <fche@redhat.com>
+
+	* sim-utils.c (sim_analyze_program): Call bfd_cache_close after
+	we're finished with its immediate use.
+	* sim-load.c (sim_load_file): Ditto.
+
+2001-03-16  Frank Ch. Eigler  <fche@redhat.com>
+
+	Add support for mmap-based memory regions.
+	* sim-memopt.c (mmap_next_fd): New global.
+	(sim_memory_init): Reinitialize it.
+	(OPTION_MEMORY_MAPFILE, memory_option_handler): Support new
+	"--memory-mapfile FILE" option.  Check for some errors.
+	(do_memopt_add): Conditionally do mmap instead of malloc for
+	backing store of simulated memory.  Check for more errors.
+	(do_simopt_delete, sim_memory_uninstall): Corresponding cleanup.
+	* sim-memopt.h (munmap_length): New member of _sim_memopt.
+	* configure.in: Look for mmap/fstat related functions and headers.
+	* config.in, configure: Regenerated.
+
+2001-03-15  Frank Ch. Eigler  <fche@redhat.com>
+
+	* sim-core.c (sim_core_map_attach): Correct overlap-related
+	error messages.
+
+2001-03-07  Michael Meissner  <meissner@redhat.com>
+
+	* run.c (alloca-conf.h): Delete, no longer provided.
+
+2001-02-22  Ben Elliston  <bje@redhat.com>
+
+	* sim-trace.h (TRACE_VPU_IDX): Add.
+	(TRACE_vpu): Define.
+	(WITH_TRACE_VPU_P): Likewise.
+	(TRACE_VPU_P): Likewise.
+	* sim-trace.c (OPTION_TRACE_VPU): Define.
+	(trace_options): Add --trace-vpu.
+	(trace_option_handler): Handle OPTION_TRACE_VPU.
+	(trace_option_handler): Include VPU tracing in --trace-semantics.
+	(trace_idx_to_str): Handle TRACE_VPU_IDX.
+
+2001-02-21  Ben Elliston  <bje@redhat.com>
+
+	* sim-trace.h (TRACE_BRANCH_INPUT1): New macro.
+	(TRACE_BRANCH_INPUT2): Likewise.
+
+2001-02-09  Ben Elliston  <bje@redhat.com>
+
+	* (profile_print_pc): Write header out in target byte order.
+
+2001-02-09  Ben Elliston  <bje@redhat.com>
+
+	* sim-profile.c (profile_pc_init): Correct bug in loop logic when
+	adjusting the pc shift value.
+
+2001-01-12  Chris Demetriou  <cgd@sibyte.com>
+
+	* aclocal.m4 (SIM_AC_OPTION_SCACHE): Properly handle the case
+	where a numeric value is supplied.
+
+2001-01-06  Ben Elliston  <bje@redhat.com>
+
+	* cgen.sh: Allow extrafiles to include the semantics files when
+	generating an ISA-specific decoder.
+
+2000-12-27  Alexandre Oliva  <aoliva@redhat.com>
+
+	* Make-common.in (sim-io.o): Depend on targ-vals.h.
+
+2000-12-23  Ben Elliston  <bje@redhat.com>
+
+	* cgen-trace.c (trace_result): Handle 'f' type operands; output
+	them to the trace stream using sim_fpu_printn_fpu. Include
+	"sim-fpu.h".
+
+2000-12-15  Ben Elliston  <bje@redhat.com>
+
+	* sim-fpu.h (sim_fpu_printn_fpu): Declare.
+	* sim-fpu.c (print_bits): Add digits parameter. Print only as many
+	trailing digits as specified (-1 to print all digits).
+	(sim_fpu_print_fpu): New wrapper around sim_fpu_printn_fpu.
+	(sim_fpu_printn_fpu): Rename from sim_fpu_print_fpu; update calls
+	to print_bits ().
+
+2000-12-13  Ben Elliston  <bje@redhat.com>
+
+	* cgen.sh: Set prefix/PREFIX (append ISA if applicable). Factor
+	sed expressions into $sedscript, substituting @prefix@/@PREFIX@.
+	(defs): New action.
+
+2000-12-12  Geoffrey Keating  <geoffk@redhat.com>
+
+	* sim-endian.h: Don't have parameters on macro definitions which
+	are simply renaming functions, to permit use of XCONCAT2 in both
+	the macro name and the arguments in a use of such a definition.
+
+2000-12-11  Ben Elliston  <bje@redhat.com>
+
+	* cgen-ops.h (SUBWORDDFDI): New function.
+
+2000-12-05  Ben Elliston  <bje@redhat.com>
+
+	* Make-common.in (cgen-defs): New target.
+	(cgen-decode): Pass $(EXTRAFILES).
+
+	* genmloop.sh: Use @prefix@, not @cpu@ throughout. Add -prefix and
+	-outfile-suffix options.
+
+2000-12-04  Ben Elliston  <bje@redhat.com>
+
+	* cgen-ops.h (SUBWORDSIQI): Mask off top bits.
+	(SUBWORDSIUQI): Likewise.
+	(SUBWORDDIHI): Likewise.
+	(SUBWORDDIQI): New function.
+
+	* cgen-trace.c (disassemble_insn): Remove unused declaration.
+	* cgen-scache.c (scache_option_handler): Remove unused local var.
+
+2000-12-03  Ben Elliston  <bje@redhat.com>
+
+	* sim-profile.c (profile_option_handler): Remove unused prof_nr.
+
+2000-11-26  Stephane Carrez  <Stephane.Carrez@worldnet.fr>
+
+	* hw-events.c (delete_hw_event_data): Remove the scheduled events.
+
+2000-11-26  Stephane Carrez  <Stephane.Carrez@worldnet.fr>
+
+	* dv-core.c (dv_core_attach_address_callback): Don't abort if
+	space is not zero.
+
+2000-11-24  Stephane Carrez  <Stephane.Carrez@worldnet.fr>
+
+	* hw-base.c (hw_delete): Don't free base_of_hw since it's freed.
+	(set_hw_delete): Moved the macro as a function.
+	* hw-base.h (set_hw_delete): Declare as external function.
+	* hw-alloc.c (delete_hw_alloc_data): Allow to free the memory
+	allocated using hw_malloc.
+	
+2000-11-24  Stephane Carrez  <Stephane.Carrez@worldnet.fr>
+
+	* sim-options.c (sim_parse_args): Free the memory used for
+	long_options, short_options, handlers, opt_cpu, orig_val.
+
+2000-11-20  Ben Elliston  <bje@redhat.com>
+
+	* cgen-ops.h (SUBBI): New macro.
+	(SUBWORDSIQI, SUBWORDSIHI, SUBWORDSIUQI): New functions.
+	(SUBWORDDIHI, SUBWORDDIUQI, SUBWORDDIDF): Likewise.
+
+2000-11-16  Ben Elliston  <bje@redhat.com>
+
+	* cgen-types.h (VOID): New type.
+
+2000-11-09  Ben Elliston  <bje@redhat.com>
+
+	* sim-fpu.c (sim_fpu_one): Set exponent to 0.
+	(sim_fpu_two): Set exponent to 1.
+
+2000-10-26  Ben Elliston  <bje@redhat.com>
+
+        * cgen.sh: Handle an isa argument between cpu and mach. Default to
+        `all'. Pass `-i' options to cgen applications.
+        * Make-common.in (cgen-arch, cgen-cpu, cgen-decode, cgen-cpu-decode,
+        cgen-desc): Pass $(isa) to cgen.sh.
+
+2000-10-08  Ben Elliston  <bje@redhat.com>
+
+	* cgen-utils.c (cgen_rtx_error): New function.
+
+2000-10-07  Ben Elliston  <bje@redhat.com>
+
+	* cgen-trace.c (sim_cgen_disassemble_insn): Handle failure
+	conditions for sim_core_read_buffer().
+
+2000-09-26  Dave Brolley  <brolley@redhat.com>
+
+	* cgen-utils.c (RORQI): New function.
+	(ROLQI): New function.
+	(RORHI): New function.
+	(ROLHI): New function.
+
+2000-08-28  Dave Brolley  <brolley@redhat.com>
+
+	* cgen-trace.c (sim_cgen_disassemble_insn): Make sure entire insn is
+	in insn_value if it will fit.
+
+2000-08-21  Frank Ch. Eigler  <fche@redhat.com>
+
+	* Make-common.in, cgen.sh: Contribute CGEN-related build targets/rules.
+
+2000-08-15  Dave Brolley  <brolley@redhat.com>
+
+	* sim-profile.c (profile_print_speed): Print cpu frequency if not zero.
+
+2000-08-15  Dave Brolley  <brolley@redhat.com>
+
+	* sim-profile.h (PROFILE_DATA): Add cpu_freq.
+	(PROFILE_CPU_FREQ): New macro.
+	* sim-profile.c (OPTION_PROFILE_CPU_FREQUENCY): New enumerator.
+	(profile-options): Add profile-cpu-frequency.
+	(parse_frequency): New function.
+	(profile_option_handler): Handle OPTION_PROFILE_CPU_FREQUENCY.
+	(profile_print_speed): Print cpu frequency and simulated execution time.
+	Re-indent other items to match.
+
+2000-08-09  Andrew Cagney  <cagney@lulu.cygnus.com>
+
+	* dv-sockser.c (dv_sockser_init): Eliminate MIN macro.
+
+2000-07-27  Frank Ch. Eigler  <fche@redhat.com>
+
+	From Maciej W. Rozycki <macro@ds2.pg.gda.pl>
+	* Makefile.in (install): Install run.1 man page.
+
+Thu Jul 27 21:56:08 2000  Andrew Cagney  <cagney@b1.cygnus.com>
+
+	From 2000-06-23 Doug Evans <dje@casey.transmeta.com>:
+	* Makefile.in (headers,nltvals.def): Merge.
+
+Thu Jul 27 20:37:47 2000  Andrew Cagney  <cagney@b1.cygnus.com>
+
+	From 2000-06-25 Stephane Carrez <Stephane.Carrez@worldnet.fr>:
+	* nrun.c (main): Print the simulator statistics only in
+	verbose mode.
+	* hw-properties.h (hw_find_integer_array_property): Fix
+	prototype (use signed_cell).
+
+	From 2000-06-25 Stephane Carrez <Stephane.Carrez@worldnet.fr>:
+	* sim-events.c (sim_events_remain_time): New function returning
+	the time that remains before the event is raised.
+	* hw-events.c (hw_event_remain_time): Likewise.
+	* sim-events.h (sim_events_remain_time): Declare.
+	* hw-events.h (hw_event_remain_time): Declare.
+
+	From 2000-06-25 Stephane Carrez <Stephane.Carrez@worldnet.fr>:
+	* sim-hw.c: Use <errno.h> instead of <sys/errno.h>
+	(OPTION_HW_LIST): New option --hw-list to list the devices.
+	(hw_option_handler): List the device tree with 'sim_hw_print'.
+
+	From 2000-06-25 Stephane Carrez <Stephane.Carrez@worldnet.fr>:
+	* sim-bits.h (_MSB_16, _LSB_16): Define for 16-bit targets.
+	(MASK, LSBIT, MSBIT): Likewise and use _MSB_16 and _LSB_16.
+	(EXTENDED): Define for 16-bit word size.
+	* sim-bits.c (LSEXTRACTED, MSEXTRACTED, LSINSERTED,
+	MSINSERTED, LSSEXT, MSSEXT): Implement for 16-bit word size.
+	* sim-types.h: Added support for 16-bit targets.
+
+2000-06-23  Frank Ch. Eigler  <fche@redhat.com>
+
+	* cgen-trace.h (TRACE_USEFUL_MASK): Remove TRACE_EVENTS_IDX.
+
+2000-06-24  Frank Ch. Eigler  <fche@redhat.com>
+
+	From Maciej W. Rozycki <macro@ds2.pg.gda.pl>:
+	* Makefile.in (distclean): Clean cconfig.h also.
+
+Tue May 23 21:39:23 2000  Andrew Cagney  <cagney@b1.cygnus.com>
+
+	* configure: Regenerated to track ../common/aclocal.m4 changes.
+
+Tue May 23 21:35:53 2000  Andrew Cagney  <cagney@b1.cygnus.com>
+
+	* aclocal.m4 (sim-profile): Enable the profiler by default.
+
+Tue May 23 20:30:12 2000  Andrew Cagney  <cagney@amy.cygnus.com>
+
+	* run.c (main): Initialize sigrc.
+
+Wed Apr 26 16:18:44 2000  Andrew Cagney  <cagney@b1.cygnus.com>
+
+	* sim-events.c (update_time_from_event): Add more detailed event
+ 	tracing.
+
+2000-03-30  Dave Brolley  <brolley@redhat.com>
+
+	* aclocal.m4 (cgen): Use guile to run cgen.
+
+2000-03-23  Dave Brolley  <brolley@redhat.com>
+
+	* cgen-fpu.h: Rename extsfdf to fextsfdf. Rename truncdfsf to
+	ftruncdfsf.
+	* cgen-accfp.c (fextsfdf): New function.
+	(ftruncdfsf): New function.
+	(cgen_init_accurate_fpu): Initialize fextsfdf and ftruncdfsf.
+
+2000-03-13  Jeff Johnston <jjohnstn@cygnus.com>
+
+	* cgen-ops.h: Added TRUNCSISI.
+
+2000-03-08  Dave Brolley  <brolley@redhat.com>
+
+	* cgen-par.h (cgen_write_queue_kind): Add CGEN_FN_SF_WRITE.
+	(CGEN_WRITE_QUEUE_ELEMENT): Add fn_sf_write.
+	(sim_queue_fn_si_write): Last argument is has type USI.
+	(sim_queue_fn_sf_write): New function.
+	* cgen-par.c (sim_queue_fn_si_write): Declare 'value' as USI.
+	(sim_queue_fn_sf_write): New function.
+	(cgen_write_queue_element_execute): Handle CGEN_FN_SF_WRITE.
+
+Tue Feb 22 16:45:09 2000  Andrew Cagney  <cagney@b1.cygnus.com>
+
+	* run.c (main): When SIM_HAVE_ENVIRONMENT enable tracing with
+ 	sim_set_trace and run simulator using sim_resume.
+	(main): Add option ``-o'' - operating environment.  Only continue
+ 	after a signal when operating environment.
+	(main): Always set REASON and SIGRC using sim_stop_reason.
+	(sim_trace): Delete extern declaration.
+
+2000-02-08  Nick Clifton  <nickc@cygnus.com>
+
+	* callback.c: Fix compile time warning messages.
+	* run.c: Fix compile time warning messages.
+     
 1999-12-17  Dave Brolley  <brolley@cygnus.com>
 
 	* sim-profile.h: (set_profile_option_mask): Add prototype.
@@ -145,6 +812,11 @@ Mon Sep 20 21:44:06 1999  Geoffrey Keating  <geoffk@cygnus.com>
 
         * sim-fpu.c (i2fpu): Keep the guard bits sticky when converting
         large values.
+
+Tue Feb  8 16:33:48 2000  Andrew Cagney  <cagney@b1.cygnus.com>
+
+	* run.c (main): Check the sim_stop_reason and only halt simulation
+ 	when a valid stop condition is identified.
 
 Wed Sep 15 14:12:37 1999  Andrew Cagney  <cagney@b1.cygnus.com>
 

@@ -1,5 +1,6 @@
 /* Remote debugging interface for ABug Rom monitor for GDB, the GNU debugger.
-   Copyright 1995, 1996, 1998 Free Software Foundation, Inc.
+   Copyright 1995, 1996, 1998, 1999, 2000, 2001
+   Free Software Foundation, Inc.
 
    Written by Rob Savoye of Cygnus Support
 
@@ -25,17 +26,16 @@
 #include "target.h"
 #include "monitor.h"
 #include "serial.h"
+#include "regcache.h"
+
+#include "m68k-tdep.h"
 
 /* Prototypes for local functions. */
 
-static void abug_open PARAMS ((char *args, int from_tty));
+static void abug_open (char *args, int from_tty);
 
 static void
-abug_supply_register (regname, regnamelen, val, vallen)
-     char *regname;
-     int regnamelen;
-     char *val;
-     int vallen;
+abug_supply_register (char *regname, int regnamelen, char *val, int vallen)
 {
   int regno;
 
@@ -57,12 +57,12 @@ abug_supply_register (regname, regnamelen, val, vallen)
     case 'D':
       if (regname[1] < '0' || regname[1] > '7')
 	return;
-      regno = regname[1] - '0' + D0_REGNUM;
+      regno = regname[1] - '0' + M68K_D0_REGNUM;
       break;
     case 'A':
       if (regname[1] < '0' || regname[1] > '7')
 	return;
-      regno = regname[1] - '0' + A0_REGNUM;
+      regno = regname[1] - '0' + M68K_A0_REGNUM;
       break;
     default:
       return;
@@ -78,12 +78,22 @@ abug_supply_register (regname, regnamelen, val, vallen)
  * registers either. So, typing "info reg sp" becomes an "A7".
  */
 
-static char *abug_regnames[NUM_REGS] =
+static const char *
+abug_regname (int index)
 {
-  "D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7",
-  "A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7",
-  "PC",
-};
+  static char *regnames[] =
+  {
+    "D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7",
+    "A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7",
+    "PC",
+  };
+
+  if ((index >= (sizeof (regnames) / sizeof (regnames[0]))) 
+       || (index < 0) || (index >= NUM_REGS))
+    return NULL;
+  else
+    return regnames[index];
+}
 
 /*
  * Define the monitor command strings. Since these are passed directly
@@ -134,7 +144,7 @@ init_abug_cmds (void)
   abug_cmds.getreg.term_cmd = ".\r";	/* getreg.term_cmd */
   abug_cmds.dump_registers = "rd\r";	/* dump_registers */
   abug_cmds.register_pattern = "\\(\\w+\\) +=\\([0-9a-fA-F]+\\b\\)";	/* register_pattern */
-  abug_cmds.supply_register = abug_supply_register;	/* supply_register */
+  abug_cmds.supply_register = abug_supply_register;
   abug_cmds.load_routine = NULL;	/* load_routine (defaults to SRECs) */
   abug_cmds.load = "lo 0\r";	/* download command */
   abug_cmds.loadresp = "\n";	/* load response */
@@ -143,20 +153,21 @@ init_abug_cmds (void)
   abug_cmds.cmd_end = NULL;	/* optional command terminator */
   abug_cmds.target = &abug_ops;	/* target operations */
   abug_cmds.stopbits = SERIAL_1_STOPBITS;	/* number of stop bits */
-  abug_cmds.regnames = abug_regnames;	/* registers names */
+  abug_cmds.regnames = NULL;	/* registers names */
+  abug_cmds.regname = abug_regname;
   abug_cmds.magic = MONITOR_OPS_MAGIC;	/* magic */
 };
 
 static void
-abug_open (args, from_tty)
-     char *args;
-     int from_tty;
+abug_open (char *args, int from_tty)
 {
   monitor_open (args, &abug_cmds, from_tty);
 }
 
+extern initialize_file_ftype _initialize_abug_rom; /* -Wmissing-prototypes */
+
 void
-_initialize_abug_rom ()
+_initialize_abug_rom (void)
 {
   init_abug_cmds ();
   init_monitor_ops (&abug_ops);

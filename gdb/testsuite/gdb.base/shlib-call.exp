@@ -1,4 +1,4 @@
-#   Copyright (C) 1997, 1998 Free Software Foundation, Inc.
+#   Copyright 1997, 1998, 1999, 2000, 2004 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -65,12 +65,20 @@ if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}.o" object {debug
 if {$gcc_compiled == 0} {
     if [istarget "hppa*-hp-hpux*"] then {
 	set additional_flags "additional_flags=+z"
+    } elseif { [istarget "mips-sgi-irix*"] } {
+	# Disable SGI compiler's implicit -Dsgi
+	set additional_flags "additional_flags=-Usgi"
     } else {
 	# don't know what the compiler is...
 	set additional_flags ""
     }
 } else {
-    set additional_flags "additional_flags=-fpic"
+    if { ([istarget "powerpc*-*-aix*"]
+       || [istarget "rs6000*-*-aix*"]) } {
+	set additional_flags ""
+    } else {
+	set additional_flags "additional_flags=-fpic"
+    }
 }
 
 if {[gdb_compile "${srcdir}/${subdir}/${libfile}1.c" "${objdir}/${subdir}/${libfile}1.o" object [list debug $additional_flags]] != ""} {
@@ -93,7 +101,17 @@ if [istarget "hppa*-*-hpux*"] {
 	gdb_suppress_entire_file "Testcase compile failed, so all tests in this file will automatically fail."
     }
 }
-if {[gdb_compile "${objdir}/${subdir}/${testfile}.o ${objdir}/${subdir}/${libfile}1.sl ${objdir}/${subdir}/${libfile}2.sl" "${binfile}" executable {debug}] != ""} {
+
+if { ($gcc_compiled 
+      &&  ([istarget "powerpc*-*-aix*"]
+	|| [istarget "rs6000*-*-aix*"] )) } {
+    set additional_flags "additional_flags=-L${objdir}/${subdir}"
+} elseif { [istarget "mips-sgi-irix*"] } {
+    set additional_flags "additional_flags=-rpath ${objdir}/${subdir}"
+} else {
+    set additional_flags ""
+}
+if {[gdb_compile "${objdir}/${subdir}/${testfile}.o ${objdir}/${subdir}/${libfile}1.sl ${objdir}/${subdir}/${libfile}2.sl" "${binfile}" executable [list debug $additional_flags]] != ""} {
      gdb_suppress_entire_file "Testcase compile failed, so all tests in this file will automatically fail."
 }
 
@@ -139,13 +157,19 @@ gdb_expect {
 
 
 #step -over
-    send_gdb "next\n"
-    gdb_expect {
-        -re ".*address of sgs is $hex.*g = shr2\\(g\\).*$gdb_prompt $" {
-             pass "next over shr1" }
-        -re ".*$gdb_prompt $" { fail "next over shr1" }
-        timeout { fail "next over shr1 (timeout)" }
-    }
+  if ![gdb_skip_stdio_test "next over shr1"] {
+      send_gdb "next\n"
+      gdb_expect {
+	  -re ".*address of sgs is $hex.*g = shr2\\(g\\).*$gdb_prompt $" {
+	      pass "next over shr1" 
+	  }
+	  -re ".*$gdb_prompt $" { fail "next over shr1" }
+	  timeout { fail "next over shr1 (timeout)" }
+      }
+  } else {
+      gdb_test "next" "" ""
+  }
+
 
 #print g
 send_gdb "print g\n"
@@ -157,21 +181,27 @@ gdb_expect {
   }
 
 #print shr1(1)
-send_gdb "print shr1(1)\n"
-gdb_expect {
-    -re ".*address of sgs is $hex.*\[0-9\]* = 2.*$gdb_prompt $" {
-        pass "print shr1(1)" }
-    -re ".*$gdb_prompt $" { fail "print  shr1(1)" }
-    timeout           { fail "(timeout) print shr1(1)" }
+  if ![gdb_skip_stdio_test "print shr1(1)"] {
+      send_gdb "print shr1(1)\n"
+      gdb_expect {
+	  -re ".*address of sgs is $hex.*\[0-9\]* = 2.*$gdb_prompt $" {
+	      pass "print shr1(1)" 
+	  }
+	  -re ".*$gdb_prompt $" { fail "print shr1(1)" }
+	  timeout               { fail "(timeout) print shr1(1)" }
+      }
   }
 
 #print shr1(g)
-send_gdb "print shr1(g)\n"
-gdb_expect {
-    -re ".*address of sgs is $hex.*\[0-9\]* = 4.*$gdb_prompt $" {
-        pass "print shr1(g)" }
-    -re ".*$gdb_prompt $" { fail "print  shr1(g)" }
-    timeout           { fail "(timeout) print shr1(g)" }
+  if ![gdb_skip_stdio_test "print shr1(g)"] {
+      send_gdb "print shr1(g)\n"
+      gdb_expect {
+	  -re ".*address of sgs is $hex.*\[0-9\]* = 4.*$gdb_prompt $" {
+	      pass "print shr1(g)" 
+	  }
+	  -re ".*$gdb_prompt $" { fail "print shr1(g)" }
+	  timeout               { fail "(timeout) print shr1(g)" }
+      }
   }
 
 #break shr2
@@ -180,19 +210,22 @@ gdb_test "break shr2" \
     "Breakpoint.*file.*shr2.c, line.*" \
     "breakpoint function shr2"
 
-gdb_test continue "Continuing\\..*Breakpoint \[0-9\]+, shr2 \\(.*\\) at.*shr2\\.c:7.*7.*return 2.x;" \
-"run until breakpoint set at a function"
+gdb_test "continue" \
+	"Continuing\\..*Breakpoint \[0-9\]+, shr2 \\(.*\\) at.*shr2\\.c:7.*7.*return 2.x;" \
+	"run until breakpoint set at a function"
 
 
 #print shr1(1)
-send_gdb "print shr1(1)\n"
-gdb_expect {
-    -re ".*address of sgs is $hex.*\[0-9\]* = 2.*$gdb_prompt $" {
-        pass "print shr1(1)"
-      }
-    -re ".*$gdb_prompt $" { fail "print  shr1(1)" }
-    timeout           { fail "(timeout) print shr1(1)" }
-  }
+if ![gdb_skip_stdio_test "print shr1(1) 2nd time"] {
+    send_gdb "print shr1(1)\n"
+    gdb_expect {
+	-re ".*address of sgs is $hex.*\[0-9\]* = 2.*$gdb_prompt $" {
+	    pass "print shr1(1) 2nd time"
+	}
+	-re ".*$gdb_prompt $" { fail "print shr1(1) 2nd time" }
+	timeout               { fail "(timeout) print shr1(1) 2nd time" }
+    }
+}
 
 #print mainshr1(1)
 send_gdb "print mainshr1(1)\n"
@@ -206,18 +239,27 @@ gdb_expect {
 
 #step -return
     send_gdb "step\n"
+    # A step at this point will either take us entirely out of
+    # the function or into the function's epilogue.  The exact
+    # behavior will differ depending upon upon whether or not
+    # the compiler emits line number information for the epilogue.
     gdb_expect {
-        -re ".*\\\}.*$gdb_prompt $" { pass "step inside shr2 (shlib func)"}
-        -re ".*$gdb_prompt $" { fail "step inside shr2 (shlib func)" }
-        timeout { fail "step inside shr2 (shlib func) (timeout)" }
-    }
-    
-    send_gdb "step\n"
-    gdb_expect {
-        -re "main \\(\\) at.*g = mainshr1\\(g\\);.*$gdb_prompt $" { pass "step out of shr2 to main"}
-        -re ".*$gdb_prompt $" { fail "step out of shr2 to main" }
+        -re "main \\(\\) at.*g = mainshr1\\(g\\);.*$gdb_prompt $" { 
+	    pass "step out of shr2 to main"
+	}
+        -re ".*\\\}.*$gdb_prompt $" {
+	    pass "step out of shr2 to main (stopped in shr2 epilogue)"
+	    send_gdb "step\n"
+	    gdb_expect {
+		-re "main \\(\\) at.*g = mainshr1\\(g\\);.*$gdb_prompt $" { pass "step out of shr2 epilogue to main"}
+		-re ".*$gdb_prompt $" { fail "step out of shr2 epilogue to main" }
+		timeout { fail "step out of shr2 epilogue to main (timeout)" }
+	    }
+	}
+        -re ".*$gdb_prompt $" { fail "step out of shr2" }
         timeout { fail "step out of shr2 to main (timeout)" }
     }
+    
 
 #print mainshr1(1)
 send_gdb "print mainshr1(1)\n"
@@ -249,10 +291,20 @@ send_gdb "set width 0\n" ; gdb_expect -re "$gdb_prompt $"
 
 # PR's 16495, 18213
 # test that we can re-set breakpoints in shared libraries
-gdb_test "break shr1" "Breakpoint 1.*" "set bp in shared library"
-gdb_test "run" "Starting program:.*Breakpoint 1,.*" "run to bp in shared library"
-gdb_test "cont" ".*Program exited normally..*"
-gdb_test "run" "Starting program:.*Breakpoint 1,.*" "re-run to bp in shared library (PR's 16495, 18213)"
-gdb_test "cont" ".*Program exited normally..*"
+gdb_breakpoint "shr1" "allow-pending"
+
+# FIXME: should not send "run" explicitly.  Non-portable.
+
+if ![is_remote target] {
+  gdb_test "run" "Starting program:.*Breakpoint .,.*" \
+	"run to bp in shared library"
+
+  gdb_test "cont" ".*Program exited normally..*"
+
+  gdb_test "run" "Starting program:.*Breakpoint .,.*" \
+	"re-run to bp in shared library (PR's 16495, 18213)"
+
+  gdb_test "cont" ".*Program exited normally..*"
+}
 
 return 0

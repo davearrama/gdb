@@ -1,5 +1,5 @@
 /* Parameters for CISCO m68k.
-   Copyright (C) 1994 Free Software Foundation, Inc.
+   Copyright 1994, 1996, 2000 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -22,8 +22,6 @@
 
 #define DEFAULT_PROMPT		"(cisco-68k-gdb) "	/* Default prompt */
 
-#include "m68k/tm-m68k.h"
-
 /* Offsets (in target ints) into jmp_buf.  Defined in /csc/sys/sun/asm.S. */
 
 #define JB_ELEMENT_SIZE 4
@@ -42,15 +40,7 @@
 #define JB_A6 11
 #define JB_SP 12
 
-/* Figure out where the longjmp will land.  Slurp the args out of the stack.
-   We expect the first arg to be a pointer to the jmp_buf structure from which
-   we extract the pc (JB_PC) that we will land at.  The pc is copied into ADDR.
-   This routine returns true on success */
-
-#define GET_LONGJMP_TARGET(ADDR) get_longjmp_target(ADDR)
-extern int get_longjmp_target PARAMS ((CORE_ADDR *));
-
 /* BFD handles finding the registers in the core file, so they are at
    the start of the BFD .reg section.  */
-#define REGISTER_U_ADDR(addr,blockend,regno) (addr = REGISTER_BYTE (regno))
+#define REGISTER_U_ADDR(addr,blockend,regno) (addr = DEPRECATED_REGISTER_BYTE (regno))
 #define KERNEL_U_ADDR 0

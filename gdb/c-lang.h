@@ -1,5 +1,6 @@
 /* C language support definitions for GDB, the GNU debugger.
-   Copyright 1992, 1996, 2000 Free Software Foundation, Inc.
+   Copyright 1992, 1994, 1995, 1996, 1997, 1998, 2000, 2002
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -22,14 +23,16 @@
 #if !defined (C_LANG_H)
 #define C_LANG_H 1
 
+struct ui_file;
+struct language_arch_info;
+
 #include "value.h"
+#include "macroexp.h"
 
 
-extern int
-c_parse PARAMS ((void));	/* Defined in c-exp.y */
+extern int c_parse (void);	/* Defined in c-exp.y */
 
-extern void
-c_error PARAMS ((char *));	/* Defined in c-exp.y */
+extern void c_error (char *);	/* Defined in c-exp.y */
 
 /* Defined in c-typeprint.c */
 extern void c_print_type (struct type *, char *, struct ui_file *, int,
@@ -50,16 +53,21 @@ extern void c_printstr (struct ui_file * stream, char *string,
 			unsigned int length, int width,
 			int force_ellipses);
 
-extern struct type *c_create_fundamental_type PARAMS ((struct objfile *, int));
+extern void scan_macro_expansion (char *expansion);
+extern int scanning_macro_expansion (void);
+extern void finished_macro_expansion (void);
 
-extern struct type **CONST_PTR (c_builtin_types[]);
+extern macro_lookup_ftype *expression_macro_lookup_func;
+extern void *expression_macro_lookup_baton;
+
+extern struct type *c_create_fundamental_type (struct objfile *, int);
+
+extern void c_language_arch_info (struct gdbarch *gdbarch,
+				  struct language_arch_info *lai);
 
 /* These are in c-typeprint.c: */
 
 extern void c_type_print_base (struct type *, struct ui_file *, int, int);
-
-extern void c_type_print_varspec_prefix (struct type *, struct ui_file *,
-					 int, int);
 
 /* These are in cp-valprint.c */
 
@@ -77,11 +85,9 @@ extern void cp_print_value_fields (struct type *, struct type *, char *,
 				   int, enum val_prettyprint,
 				   struct type **, int);
 
-extern int
-cp_is_vtbl_ptr_type PARAMS ((struct type *));
+extern int cp_is_vtbl_ptr_type (struct type *);
 
-extern int
-cp_is_vtbl_member PARAMS ((struct type *));
+extern int cp_is_vtbl_member (struct type *);
 
 
 #endif /* !defined (C_LANG_H) */

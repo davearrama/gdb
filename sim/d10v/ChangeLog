@@ -1,3 +1,135 @@
+2004-06-28  Andrew Cagney  <cagney@gnu.org>
+
+	* interp.c (sim_resume): Rename ui_loop_hook to
+	deprecated_ui_loop_hook.
+
+2003-10-30  Andrew Cagney  <cagney@redhat.com>
+
+	* simops.c: Replace "struct symbol_cache_entry" with "struct
+	bfd_symbol".
+
+2003-06-22  Andrew Cagney  <cagney@redhat.com>
+
+	* interp.c (xfer_mem): Simplify.  Only do a single partial
+	transfer.  Problem reported by Tom Rix.
+
+2003-05-07  Andrew Cagney  <cagney@redhat.com>
+
+	* interp.c (sim_d10v_translate_addr): Add "regcache" parameter.
+	(sim_d10v_translate_imap_addr): Ditto.
+	(sim_d10v_translate_dmap_addr): Ditto.
+	(xfer_mem): Pass NULL regcache to sim_d10v_translate_addr.
+	(dmem_addr): Pass NULL regcache to sim_d10v_translate_dmap_addr.
+	(dmap_register, imap_register): Add "regcache" parameter.
+	(imem_addr): Pass NULL regcache to sim_d10v_translate_imap_addr.
+	(sim_fetch_register): Pass NULL regcache to imap_register and
+	dmap_register.
+
+2003-02-27  Andrew Cagney  <cagney@redhat.com>
+
+	* interp.c (sim_open, sim_create_inferior): Rename _bfd to bfd.
+
+2002-11-13  Andrew Cagney  <cagney@redhat.com>
+
+	* simops.c: Include <string.h>.
+
+2002-06-17  Andrew Cagney  <cagney@redhat.com>
+
+	* d10v_sim.h (SET_PSW_BIT): Add cast to avoid inverting an enum.
+
+2002-06-16  Andrew Cagney  <ac131313@redhat.com>
+
+	* configure: Regenerated to track ../common/aclocal.m4 changes.
+
+2002-06-13  Tom Rix  <trix@redhat.com>
+
+	* interp.c (xfer_mem): Fix transfers across multiple segments.
+ 
+2002-06-09  Andrew Cagney  <cagney@redhat.com>
+
+	* Makefile.in (INCLUDE): Update path to callback.h.
+	* gencode.c: Do not include "callback.h".
+	* d10v_sim.h: Include "gdb/callback.h" and "gdb/remote-sim.h".
+	* interp.c: Ditto.
+
+2002-06-08  Andrew Cagney  <cagney@redhat.com>
+
+	* interp.c (sim_fetch_register): Fix name of enum used in cast.
+	(sim_store_register): Ditto.
+
+2002-06-02  Elena Zannoni  <ezannoni@redhat.com>
+
+        From Jason Eckhardt <jle@redhat.com>
+        * d10v_sim.h (INC_ADDR): Correctly handle the case where MOD_E is
+        less than MOD_S (post-decrement).
+
+2002-06-01  Andrew Cagney  <ac131313@redhat.com>
+
+	* interp.c (sim_fetch_register, sim_store_register): Use a switch
+	statement and enums from "sim-d10v.h".
+
+2002-05-28  Elena Zannoni  <ezannoni@redhat.com>
+
+	* interp.c (sim_create_inferior): Add comment.
+
+	From Alan Matsuoka <alanm@redhat.com>:
+	From 2001-04-27 Jason Eckhardt <jle@cygnus.com>:
+	* simops.c (OP_4400): Output "mvf0f" instead of "mf0f".
+	(OP_4401): Output "mvf0t" instead of "mf0t".
+	(OP_460B): Do not output a flag register.
+	(OP_4609): Do not output a flag register.
+
+2002-05-23  Andrew Cagney  <ac131313@redhat.com>
+
+	* Makefile.in (INCLUDE): Add "gdb/sim-d10v.h".
+	* interp.c: Include "gdb/sim-d10v.h" instead of "sim-d10v.h".
+
+2001-08-01  John R. Moore  <jmoore@redhat.com>
+
+	* interp.c (sim_create_inferior): Removed a hack that stated
+	it was setting r0/r1 with argc/argv.
+
+2001-04-15  J.T. Conklin  <jtc@redback.com>
+
+	* Makefile.in (simops.o): Add simops.h to dependency list.
+
+Tue May 23 21:39:23 2000  Andrew Cagney  <cagney@b1.cygnus.com>
+
+	* configure: Regenerated to track ../common/aclocal.m4 changes.
+
+Tue Apr 18 16:26:41 2000  Andrew Cagney  <cagney@b1.cygnus.com>
+
+	* interp.c (sim_resume): Deliver SIGILL.
+	(lookup_hash): Do not print SIGILL message.
+
+Tue Feb 22 18:24:56 2000  Andrew Cagney  <cagney@b1.cygnus.com>
+
+	* Makefile.in (SIM_EXTRA_CFLAGS): Define SIM_HAVE_ENVIRONMENT.
+	* interp.c (sim_set_trace): Replace sim_trace.  Enable tracing.
+
+Tue Feb  8 17:41:12 2000  Andrew Cagney  <cagney@b1.cygnus.com>
+
+	* d10v_sim.h (SIG_D10V_BUS): Define.
+
+	* simops.c (address_exception): Delete function.
+	(OP_30000000, OP_6401, OP_6001, OP_6000, OP_32010000, OP_31000000,
+ 	OP_6601, OP_6201, OP_6200, OP_33010000, OP_34000000, OP_6800,
+ 	OP_6C1F, OP_6801, OP_6C01, OP_36010000, OP_35000000, OP_6A00,
+ 	OP_6E1F, OP_6A01, OP_6E01, OP_37010000): Replace call to
+ 	address_exception with code that sets SIG_D10V_BUS.
+
+	* interp.c (sim_resume): When SIGBUS or SIGSEGV, deliver a bus
+ 	error to the simulator before resuming execution.
+	(sim_trace): Check stop reason and use that to determine sim_trace
+ 	return value.
+	(sim_stop_reason): For SIG_D10V_BUS return a SIGBUS / SIGSEGV
+ 	sigrc.
+
+Tue Jan 18 16:07:42 MST 2000	Diego Novillo <dnovillo@cygnus.com>
+
+	* interp.c (sim_create_inferior): Change internal initial value for
+	DMAP2 to 0x2000.
+
 Mon Jan  3 02:06:07 2000  Andrew Cagney  <cagney@b1.cygnus.com>
 
 	* interp.c (lookup_hash): Stop the update of the PC when there was
@@ -11,6 +143,11 @@ Mon Jan  3 00:14:33 2000  Andrew Cagney  <cagney@b1.cygnus.com>
  	OP_6C1F, OP_6801, OP_6C01, OP_36010000, OP_35000000, OP_6A00,
  	OP_6E1F, OP_6A01, OP_6E01, OP_37010000): For "ld", "ld2w", "st"
  	and "st2w" check that the address is aligned.
+
+1999-12-30  Chandra Chavva   <cchavva@cygnus.com>
+	
+	* d10v_sim.h (INC_ADDR): Added code to assign
+	proper address for loads with predec operations.
 
 1999-11-25  Nick Clifton  <nickc@cygnus.com>
 

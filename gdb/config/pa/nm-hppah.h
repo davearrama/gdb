@@ -1,5 +1,6 @@
 /* Native support for HPPA-RISC machine running HPUX, for GDB.
-   Copyright 1991, 1992 Free Software Foundation, Inc. 
+   Copyright 1991, 1992, 1994, 1996, 1998, 1999, 2000, 2002
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,13 +19,15 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
+struct target_ops;
+
 #define U_REGS_OFFSET 0
 
 #define KERNEL_U_ADDR 0
 
 /* What a coincidence! */
 #define REGISTER_U_ADDR(addr, blockend, regno)				\
-{ addr = (int)(blockend) + REGISTER_BYTE (regno);}
+{ addr = (int)(blockend) + DEPRECATED_REGISTER_BYTE (regno);}
 
 /* This isn't really correct, because ptrace is actually a 32-bit
    interface.  However, the modern HP-UX targets all really use
@@ -38,39 +41,16 @@
    So I don't feel the least bit guilty about this.  */
 #define PTRACE_ARG3_TYPE CORE_ADDR
 
-/* HPUX 8.0, in its infinite wisdom, has chosen to prototype ptrace
-   with five arguments, so programs written for normal ptrace lose.  */
-#define FIVE_ARG_PTRACE
-
 /* We need to figure out where the text region is so that we use the
-   appropriate ptrace operator to manipulate text.  Simply reading/writing
-   user space will crap out HPUX.  */
-#define NEED_TEXT_START_END 1
-
-/* This macro defines the register numbers (from REGISTER_NAMES) that
-   are effectively unavailable to the user through ptrace().  It allows
-   us to include the whole register set in REGISTER_NAMES (inorder to
-   better support remote debugging).  If it is used in
-   fetch/store_inferior_registers() gdb will not complain about I/O errors
-   on fetching these registers.  If all registers in REGISTER_NAMES
-   are available, then return false (0).  */
-
-#define CANNOT_STORE_REGISTER(regno)            \
-                   ((regno) == 0) ||     \
-                   ((regno) == PCSQ_HEAD_REGNUM) || \
-                   ((regno) >= PCSQ_TAIL_REGNUM && (regno) < IPSW_REGNUM) ||  \
-                   ((regno) > IPSW_REGNUM && (regno) < FP4_REGNUM)
+   appropriate ptrace operator to manipulate text.  Simply
+   reading/writing user space will crap out HPUX.  */
+#define DEPRECATED_HPUX_TEXT_END deprecated_hpux_text_end
+extern void deprecated_hpux_text_end (struct target_ops *exec_ops);
 
 /* In hppah-nat.c: */
 #define FETCH_INFERIOR_REGISTERS
 #define CHILD_XFER_MEMORY
-#define CHILD_POST_FOLLOW_INFERIOR_BY_CLONE
-#define CHILD_POST_FOLLOW_VFORK
-
-/* While this is for use by threaded programs, it doesn't appear
- * to hurt non-threaded ones.  This is used in infrun.c: */
-#define PREPARE_TO_PROCEED(select_it) hppa_prepare_to_proceed()
-extern int hppa_prepare_to_proceed PARAMS ((void));
+#define CHILD_FOLLOW_FORK
 
 /* In infptrace.c or infttrace.c: */
 #define CHILD_PID_TO_EXEC_FILE
@@ -80,23 +60,18 @@ extern int hppa_prepare_to_proceed PARAMS ((void));
 #define CHILD_REMOVE_FORK_CATCHPOINT
 #define CHILD_INSERT_VFORK_CATCHPOINT
 #define CHILD_REMOVE_VFORK_CATCHPOINT
-#define CHILD_HAS_FORKED
-#define CHILD_HAS_VFORKED
-#define CHILD_CAN_FOLLOW_VFORK_PRIOR_TO_EXEC
 #define CHILD_INSERT_EXEC_CATCHPOINT
 #define CHILD_REMOVE_EXEC_CATCHPOINT
-#define CHILD_HAS_EXECD
 #define CHILD_REPORTED_EXEC_EVENTS_PER_EXEC_CALL
-#define CHILD_HAS_SYSCALL_EVENT
 #define CHILD_POST_ATTACH
 #define CHILD_THREAD_ALIVE
 #define CHILD_PID_TO_STR
+#define CHILD_WAIT
+struct target_waitstatus;
+extern ptid_t child_wait (ptid_t, struct target_waitstatus *);
 
-#define REQUIRE_ATTACH(pid) hppa_require_attach(pid)
-extern int hppa_require_attach PARAMS ((int));
-
-#define REQUIRE_DETACH(pid,signal) hppa_require_detach(pid,signal)
-extern int hppa_require_detach PARAMS ((int, int));
+extern int hppa_require_attach (int);
+extern int hppa_require_detach (int, int);
 
 /* So we can cleanly use code in infptrace.c.  */
 #define PT_KILL		PT_EXIT
@@ -112,15 +87,6 @@ extern int hppa_require_detach PARAMS ((int, int));
 #define PT_WRITE_I	PT_WIUSER
 #define PT_WRITE_D	PT_WDUSER
 
-/* attach/detach works to some extent under BSD and HPUX.  So long
-   as the process you're attaching to isn't blocked waiting on io,
-   blocked waiting on a signal, or in a system call things work 
-   fine.  (The problems in those cases are related to the fact that
-   the kernel can't provide complete register information for the
-   target process...  Which really pisses off GDB.)  */
-
-#define ATTACH_DETACH
-
 /* In infptrace or infttrace.c: */
 
 /* Starting with HP-UX 10.30, support is provided (in the form of
@@ -132,43 +98,18 @@ extern int hppa_require_detach PARAMS ((int, int));
    10.20 will at least link.  However, the "can I use a fast watchpoint?"
    query will always return "No" for 10.20. */
 
-#define TARGET_HAS_HARDWARE_WATCHPOINTS
-
 /* The PA can watch any number of locations (generic routines already check
    that all intermediates are in watchable memory locations). */
+extern int hppa_can_use_hw_watchpoint (int type, int cnt, int ot);
 #define TARGET_CAN_USE_HARDWARE_WATCHPOINT(type, cnt, ot) \
         hppa_can_use_hw_watchpoint(type, cnt, ot)
 
-/* The PA can also watch memory regions of arbitrary size, since we're using
-   a page-protection scheme.  (On some targets, apparently watch registers
-   are used, which can only accomodate regions of REGISTER_SIZE.) */
+/* The PA can also watch memory regions of arbitrary size, since we're
+   using a page-protection scheme.  (On some targets, apparently watch
+   registers are used, which can only accomodate regions of
+   DEPRECATED_REGISTER_SIZE.)  */
 #define TARGET_REGION_SIZE_OK_FOR_HW_WATCHPOINT(byte_count) \
         (1)
-
-/* However, some addresses may not be profitable to use hardware to watch,
-   or may be difficult to understand when the addressed object is out of
-   scope, and hence should be unwatched.  On some targets, this may have
-   severe performance penalties, such that we might as well use regular
-   watchpoints, and save (possibly precious) hardware watchpoints for other
-   locations.
-
-   On HP-UX, we choose not to watch stack-based addresses, because
-
-   [1] Our implementation relies on page protection traps.  The granularity
-   of these is large and so can generate many false hits, which are expensive
-   to respond to.
-
-   [2] Watches of "*p" where we may not know the symbol that p points to,
-   make it difficult to know when the addressed object is out of scope, and
-   hence shouldn't be watched.  Page protection that isn't removed when the
-   addressed object is out of scope will either degrade execution speed
-   (false hits) or give false triggers (when the address is recycled by
-   other calls).
-
-   Since either of these points results in a slow-running inferior, we might
-   as well use normal watchpoints, aka single-step & test. */
-#define TARGET_RANGE_PROFITABLE_FOR_HW_WATCHPOINT(pid,start,len) \
-        hppa_range_profitable_for_hw_watchpoint(pid, start, (LONGEST)(len))
 
 /* On HP-UX, we're using page-protection to implement hardware watchpoints.
    When an instruction attempts to write to a write-protected memory page,
@@ -191,12 +132,6 @@ extern int hppa_require_detach PARAMS ((int, int));
          ! stepped_after_stopped_by_watchpoint && \
          bpstat_have_active_hw_watchpoints ())
 
-/* When a hardware watchpoint triggers, we'll move the inferior past it
-   by removing all eventpoints; stepping past the instruction that caused
-   the trigger; reinserting eventpoints; and checking whether any watched
-   location changed. */
-#define HAVE_NONSTEPPABLE_WATCHPOINT
-
 /* Our implementation of "hardware" watchpoints uses memory page-protection
    faults.  However, HP-UX has unfortunate interactions between these and
    system calls; basically, it's unsafe to have page protections on when a
@@ -210,29 +145,33 @@ extern int hppa_require_detach PARAMS ((int, int));
  */
 #define TARGET_ENABLE_HW_WATCHPOINTS(pid) \
         hppa_enable_page_protection_events (pid)
-extern void hppa_enable_page_protection_events PARAMS ((int));
+extern void hppa_enable_page_protection_events (int);
 
 #define TARGET_DISABLE_HW_WATCHPOINTS(pid) \
         hppa_disable_page_protection_events (pid)
-extern void hppa_disable_page_protection_events PARAMS ((int));
+extern void hppa_disable_page_protection_events (int);
 
 /* Use these macros for watchpoint insertion/deletion.  */
+extern int hppa_insert_hw_watchpoint (int pid, CORE_ADDR start, LONGEST len,
+				      int type);
 #define target_insert_watchpoint(addr, len, type) \
-        hppa_insert_hw_watchpoint (inferior_pid, addr, (LONGEST)(len), type)
+        hppa_insert_hw_watchpoint (PIDGET (inferior_ptid), addr, (LONGEST)(len), type)
 
+extern int hppa_remove_hw_watchpoint (int pid, CORE_ADDR start, LONGEST len,
+				      int type);
 #define target_remove_watchpoint(addr, len, type) \
-        hppa_remove_hw_watchpoint (inferior_pid, addr, (LONGEST)(len), type)
+        hppa_remove_hw_watchpoint (PIDGET (inferior_ptid), addr, (LONGEST)(len), type)
 
 /* We call our k-thread processes "threads", rather
  * than processes.  So we need a new way to print
  * the string.  Code is in hppah-nat.c.
  */
 
-extern char *child_pid_to_str PARAMS ((pid_t));
+extern char *child_pid_to_str (ptid_t);
 
-#define target_tid_to_str( pid ) \
-        hppa_tid_to_str( pid )
-extern char *hppa_tid_to_str PARAMS ((pid_t));
+#define target_tid_to_str( ptid ) \
+        hppa_tid_to_str( ptid )
+extern char *hppa_tid_to_str (ptid_t);
 
 /* For this, ID can be either a process or thread ID, and the function
    will describe it appropriately, returning the description as a printable
@@ -243,7 +182,7 @@ extern char *hppa_tid_to_str PARAMS ((pid_t));
  */
 #define target_pid_or_tid_to_str(ID) \
         hppa_pid_or_tid_to_str (ID)
-extern char *hppa_pid_or_tid_to_str PARAMS ((pid_t));
+extern char *hppa_pid_or_tid_to_str (ptid_t);
 
 /* This is used when handling events caused by a call to vfork().  On ptrace-
    based HP-UXs, when you resume the vforked child, the parent automagically
@@ -261,7 +200,7 @@ extern char *hppa_pid_or_tid_to_str PARAMS ((pid_t));
  */
 #define ENSURE_VFORKING_PARENT_REMAINS_STOPPED(PID) \
         hppa_ensure_vforking_parent_remains_stopped (PID)
-extern void hppa_ensure_vforking_parent_remains_stopped PARAMS ((int));
+extern void hppa_ensure_vforking_parent_remains_stopped (int);
 
 /* This is used when handling events caused by a call to vfork().
 
@@ -275,12 +214,10 @@ extern void hppa_ensure_vforking_parent_remains_stopped PARAMS ((int));
  */
 #define RESUME_EXECD_VFORKING_CHILD_TO_GET_PARENT_VFORK() \
         hppa_resume_execd_vforking_child_to_get_parent_vfork ()
-extern int hppa_resume_execd_vforking_child_to_get_parent_vfork PARAMS ((void));
+extern int hppa_resume_execd_vforking_child_to_get_parent_vfork (void);
 
 #define HPUXHPPA
 
-#define MAY_SWITCH_FROM_INFERIOR_PID (1)
-
 #define MAY_FOLLOW_EXEC (1)
 
-#define USE_THREAD_STEP_NEEDED (1)
+#include "infttrace.h" /* For parent_attach_all.  */

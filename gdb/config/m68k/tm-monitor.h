@@ -1,5 +1,6 @@
 /* Target machine definitions for a generic m68k monitor/emulator.
-   Copyright (C) 1986, 1987, 1989, 1993, 1995 Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1989, 1993, 1994, 1995, 1996, 1998, 1999, 2003
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -34,12 +35,5 @@
 /* No float registers.  */
 
 /*#define NUM_REGS 18 */
-
-#include "m68k/tm-m68k.h"
-
-/* Need to do this for ELF targets, where we can't figure out the boundaries of
-   the entry file.  This method stops the backtrace when we reach main.  */
-
-#define FRAME_CHAIN_VALID(fp,fi) func_frame_chain_valid (fp, fi)
 
 /* FIXME, should do GET_LONGJMP_TARGET for newlib.  */

@@ -1,5 +1,5 @@
 /* Remote target communications for serial-line targets in custom GDB protocol
-   Copyright 1999, Free Software Foundation, Inc.
+   Copyright 1999 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -53,5 +53,12 @@ extern void remote_cisco_objfile_relocate (bfd_signed_vma text_off,
 					   bfd_signed_vma bss_off);
 
 extern void async_remote_interrupt_twice (void *arg);
+
+extern int remote_write_bytes (CORE_ADDR memaddr, char *myaddr, int len);
+
+extern int remote_read_bytes (CORE_ADDR memaddr, char *myaddr, int len);
+
+extern void (*deprecated_target_resume_hook) (void);
+extern void (*deprecated_target_wait_loop_hook) (void);
 
 #endif

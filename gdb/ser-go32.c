@@ -1,12 +1,12 @@
 /* Remote serial interface for local (hardwired) serial ports for GO32.
-   Copyright 1992, 1993, 2000 Free Software Foundation, Inc.
+   Copyright 1992, 1993, 2000, 2001 Free Software Foundation, Inc.
 
    Contributed by Nigel Stephens, Algorithmics Ltd. (nigel@algor.co.uk).
 
-   This version uses DPMI interrupts to handle buffered i/o 
+   This version uses DPMI interrupts to handle buffered i/o
    without the separate "asynctsr" program.
 
-   This file is part of GDB.  
+   This file is part of GDB.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@
 #include "defs.h"
 #include "gdbcmd.h"
 #include "serial.h"
+#include "gdb_string.h"
 
 
 /*
@@ -127,23 +128,17 @@
 #define	MSR_DDSR	0x02
 #define	MSR_DCTS	0x01
 
+#include <time.h>
 #include <dos.h>
 #include <go32.h>
 #include <dpmi.h>
 typedef unsigned long u_long;
-
-/* DPMI Communication */
-static union REGS dpmi_regs;
-static struct SREGS dpmi_sregs;
 
 /* 16550 rx fifo trigger point */
 #define FIFO_TRIGGER	FIFO_TRIGGER_4
 
 /* input buffer size */
 #define CBSIZE	4096
-
-/* return raw 18Hz clock count */
-extern long rawclock (void);
 
 #define RAWHZ	18
 
@@ -217,31 +212,31 @@ static struct dos_ttystate
 ports[4] =
 {
   {
-    COM1ADDR, 4
+    COM1ADDR, 4, 0, NULL, 0, 0, "", 0, 0, 0, 0, 0, 0, 0, 0
   }
   ,
   {
-    COM2ADDR, 3
+    COM2ADDR, 3, 0, NULL, 0, 0, "", 0, 0, 0, 0, 0, 0, 0, 0
   }
   ,
   {
-    COM3ADDR, 4
+    COM3ADDR, 4, 0, NULL, 0, 0, "", 0, 0, 0, 0, 0, 0, 0, 0
   }
   ,
   {
-    COM4ADDR, 3
+    COM4ADDR, 3, 0, NULL, 0, 0, "", 0, 0, 0, 0, 0, 0, 0, 0
   }
 };
 
-static int dos_open PARAMS ((serial_t scb, const char *name));
-static void dos_raw PARAMS ((serial_t scb));
-static int dos_readchar PARAMS ((serial_t scb, int timeout));
-static int dos_setbaudrate PARAMS ((serial_t scb, int rate));
-static int dos_write PARAMS ((serial_t scb, const char *str, int len));
-static void dos_close PARAMS ((serial_t scb));
-static serial_ttystate dos_get_tty_state PARAMS ((serial_t scb));
-static int dos_set_tty_state PARAMS ((serial_t scb, serial_ttystate state));
-static int dos_baudconv PARAMS ((int rate));
+static int dos_open (struct serial *scb, const char *name);
+static void dos_raw (struct serial *scb);
+static int dos_readchar (struct serial *scb, int timeout);
+static int dos_setbaudrate (struct serial *scb, int rate);
+static int dos_write (struct serial *scb, const char *str, int len);
+static void dos_close (struct serial *scb);
+static serial_ttystate dos_get_tty_state (struct serial *scb);
+static int dos_set_tty_state (struct serial *scb, serial_ttystate state);
+static int dos_baudconv (int rate);
 
 #define inb(p,a)	inportb((p)->base + (a))
 #define outb(p,a,v)	outportb((p)->base + (a), (v))
@@ -250,8 +245,7 @@ static int dos_baudconv PARAMS ((int rate));
 
 
 static int
-dos_getc (port)
-     volatile struct dos_ttystate *port;
+dos_getc (volatile struct dos_ttystate *port)
 {
   int c;
 
@@ -268,9 +262,7 @@ dos_getc (port)
 
 
 static int
-dos_putc (c, port)
-     int c;
-     struct dos_ttystate *port;
+dos_putc (int c, struct dos_ttystate *port)
 {
   if (port->count >= CBSIZE - 1)
     return -1;
@@ -282,8 +274,7 @@ dos_putc (c, port)
 
 
 static void
-dos_comisr (irq)
-     int irq;
+dos_comisr (int irq)
 {
   struct dos_ttystate *port;
   unsigned char iir, lsr, c;
@@ -362,29 +353,24 @@ dos_comisr (irq)
     }
 }
 
-#ifdef __STDC__
 #define ISRNAME(x) dos_comisr##x
-#else
-#define ISRNAME(x) dos_comisr/**/x
-#endif
-#define ISR(x) static void ISRNAME(x)() {dos_comisr(x);}
+#define ISR(x) static void ISRNAME(x)(void) {dos_comisr(x);}
 
-ISR (0) ISR (1) ISR (2) ISR (3)
-ISR (4) ISR (5) ISR (6) ISR (7)
+ISR (0) ISR (1) ISR (2) ISR (3) /* OK */
+ISR (4) ISR (5) ISR (6) ISR (7) /* OK */
 
-     typedef void (*isr_t) ();
+typedef void (*isr_t) (void);
 
-     static isr_t isrs[NINTR] =
-     {
+static isr_t isrs[NINTR] =
+  {
        ISRNAME (0), ISRNAME (1), ISRNAME (2), ISRNAME (3),
        ISRNAME (4), ISRNAME (5), ISRNAME (6), ISRNAME (7)
-};
+  };
 
 
 
-     static struct intrupt *
-       dos_hookirq (irq)
-     unsigned int irq;
+static struct intrupt *
+dos_hookirq (unsigned int irq)
 {
   struct intrupt *intr;
   unsigned int vec;
@@ -423,7 +409,8 @@ ISR (4) ISR (5) ISR (6) ISR (7)
   intr->new_pmhandler.pm_offset = (u_long) isr;
   _go32_dpmi_allocate_iret_wrapper (&intr->new_pmhandler);
 
-  if (_go32_dpmi_set_protected_mode_interrupt_vector (vec, &intr->new_pmhandler))
+  if (_go32_dpmi_set_protected_mode_interrupt_vector (vec,
+						      &intr->new_pmhandler))
     {
       return 0;
     }
@@ -439,8 +426,7 @@ ISR (4) ISR (5) ISR (6) ISR (7)
 
 
 static void
-dos_unhookirq (intr)
-     struct intrupt *intr;
+dos_unhookirq (struct intrupt *intr)
 {
   unsigned int irq, vec;
   unsigned char mask;
@@ -467,9 +453,7 @@ dos_unhookirq (intr)
 
 
 static int
-dos_open (scb, name)
-     serial_t scb;
-     const char *name;
+dos_open (struct serial *scb, const char *name)
 {
   struct dos_ttystate *port;
   int fd, i;
@@ -491,6 +475,10 @@ dos_open (scb, name)
       return -1;
     }
 
+  /* FIXME: this is a Bad Idea (tm)!  One should *never* invent file
+     handles, since they might be already used by other files/devices.
+     The Right Way to do this is to create a real handle by dup()'ing
+     some existing one.  */
   fd = name[3] - '1';
   port = &ports[fd];
   if (port->refcnt++ > 0)
@@ -517,7 +505,8 @@ ok:
   outb (port, com_ier, 0);
 
   /* tentatively enable 16550 fifo, and see if it responds */
-  outb (port, com_fifo, FIFO_ENABLE | FIFO_RCV_RST | FIFO_XMT_RST | FIFO_TRIGGER);
+  outb (port, com_fifo,
+	FIFO_ENABLE | FIFO_RCV_RST | FIFO_XMT_RST | FIFO_TRIGGER);
   sleep (1);
   port->fifo = ((inb (port, com_iir) & IIR_FIFO_MASK) == IIR_FIFO_MASK);
 
@@ -569,8 +558,7 @@ ok:
 
 
 static void
-dos_close (scb)
-     serial_t scb;
+dos_close (struct serial *scb)
 {
   struct dos_ttystate *port;
   struct intrupt *intrupt;
@@ -612,23 +600,19 @@ dos_close (scb)
 
 
 static int
-dos_noop (scb)
-     serial_t scb;
+dos_noop (struct serial *scb)
 {
   return 0;
 }
 
 static void
-dos_raw (scb)
-     serial_t scb;
+dos_raw (struct serial *scb)
 {
   /* Always in raw mode */
 }
 
 static int
-dos_readchar (scb, timeout)
-     serial_t scb;
-     int timeout;
+dos_readchar (struct serial *scb, int timeout)
 {
   struct dos_ttystate *port = &ports[scb->fd];
   long then;
@@ -639,7 +623,6 @@ dos_readchar (scb, timeout)
     {
       if (timeout >= 0 && (rawclock () - then) >= 0)
 	return SERIAL_TIMEOUT;
-      notice_quit ();
     }
 
   return c;
@@ -647,11 +630,23 @@ dos_readchar (scb, timeout)
 
 
 static serial_ttystate
-dos_get_tty_state (scb)
-     serial_t scb;
+dos_get_tty_state (struct serial *scb)
 {
   struct dos_ttystate *port = &ports[scb->fd];
   struct dos_ttystate *state;
+
+  /* Are they asking about a port we opened?  */
+  if (port->refcnt <= 0)
+    {
+      /* We've never heard about this port.  We should fail this call,
+	 unless they are asking about one of the 3 standard handles,
+	 in which case we pretend the handle was open by us if it is
+	 connected to a terminal device.  This is beacuse Unix
+	 terminals use the serial interface, so GDB expects the
+	 standard handles to go through here.  */
+      if (scb->fd >= 3 || !isatty (scb->fd))
+	return NULL;
+    }
 
   state = (struct dos_ttystate *) xmalloc (sizeof *state);
   *state = *port;
@@ -659,9 +654,7 @@ dos_get_tty_state (scb)
 }
 
 static int
-dos_set_tty_state (scb, ttystate)
-     serial_t scb;
-     serial_ttystate ttystate;
+dos_set_tty_state (struct serial *scb, serial_ttystate ttystate)
 {
   struct dos_ttystate *state;
 
@@ -671,10 +664,8 @@ dos_set_tty_state (scb, ttystate)
 }
 
 static int
-dos_noflush_set_tty_state (scb, new_ttystate, old_ttystate)
-     serial_t scb;
-     serial_ttystate new_ttystate;
-     serial_ttystate old_ttystate;
+dos_noflush_set_tty_state (struct serial *scb, serial_ttystate new_ttystate,
+			   serial_ttystate old_ttystate)
 {
   struct dos_ttystate *state;
 
@@ -684,8 +675,7 @@ dos_noflush_set_tty_state (scb, new_ttystate, old_ttystate)
 }
 
 static int
-dos_flush_input (scb)
-     serial_t scb;
+dos_flush_input (struct serial *scb)
 {
   struct dos_ttystate *port = &ports[scb->fd];
   disable ();
@@ -693,11 +683,11 @@ dos_flush_input (scb)
   if (port->fifo)
     outb (port, com_fifo, FIFO_ENABLE | FIFO_RCV_RST | FIFO_TRIGGER);
   enable ();
+  return 0;
 }
 
 static void
-dos_print_tty_state (serial_t scb,
-		     serial_ttystate ttystate,
+dos_print_tty_state (struct serial *scb, serial_ttystate ttystate,
 		     struct ui_file *stream)
 {
   /* Nothing to print */
@@ -705,15 +695,14 @@ dos_print_tty_state (serial_t scb,
 }
 
 static int
-dos_baudconv (rate)
-     int rate;
+dos_baudconv (int rate)
 {
   long x, err;
 
   if (rate <= 0)
     return -1;
 
-#define divrnd(n, q)	(((n) * 2 / (q) + 1) / 2)	/* divide and round off */
+#define divrnd(n, q)	(((n) * 2 / (q) + 1) / 2) /* divide and round off */
   x = divrnd (COMTICK, rate);
   if (x <= 0)
     return -1;
@@ -729,9 +718,7 @@ dos_baudconv (rate)
 
 
 static int
-dos_setbaudrate (scb, rate)
-     serial_t scb;
-     int rate;
+dos_setbaudrate (struct serial *scb, int rate)
 {
   struct dos_ttystate *port = &ports[scb->fd];
 
@@ -763,9 +750,7 @@ dos_setbaudrate (scb, rate)
 }
 
 static int
-dos_setstopbits (scb, num)
-     serial_t scb;
-     int num;
+dos_setstopbits (struct serial *scb, int num)
 {
   struct dos_ttystate *port = &ports[scb->fd];
   unsigned char cfcr;
@@ -792,10 +777,7 @@ dos_setstopbits (scb, num)
 }
 
 static int
-dos_write (scb, str, len)
-     serial_t scb;
-     const char *str;
-     int len;
+dos_write (struct serial *scb, const char *str, int len)
 {
   volatile struct dos_ttystate *port = &ports[scb->fd];
   int fifosize = port->fifo ? 16 : 1;
@@ -807,9 +789,16 @@ dos_write (scb, str, len)
       /* send the data, fifosize bytes at a time */
       cnt = fifosize > len ? len : fifosize;
       port->txbusy = 1;
+      /* Francisco Pastor <fpastor.etra-id@etra.es> says OUTSB messes
+	 up the communications with UARTs with FIFOs.  */
+#ifdef UART_FIFO_WORKS
       outportsb (port->base + com_data, str, cnt);
       str += cnt;
       len -= cnt;
+#else
+      for ( ; cnt > 0; cnt--, len--)
+	outportb (port->base + com_data, *str++);
+#endif
 #ifdef DOS_STATS
       cnts[CNT_TX] += cnt;
 #endif
@@ -829,8 +818,7 @@ dos_write (scb, str, len)
 
 
 static int
-dos_sendbreak (scb)
-     serial_t scb;
+dos_sendbreak (struct serial *scb)
 {
   volatile struct dos_ttystate *port = &ports[scb->fd];
   unsigned char cfcr;
@@ -868,22 +856,23 @@ static struct serial_ops dos_ops =
   dos_setbaudrate,
   dos_setstopbits,
   dos_noop,			/* wait for output to drain */
+  (void (*)(struct serial *, int))NULL	/* change into async mode */
 };
 
 
 static void
-dos_info (arg, from_tty)
-     char *arg;
-     int from_tty;
+dos_info (char *arg, int from_tty)
 {
   struct dos_ttystate *port;
+#ifdef DOS_STATS
   int i;
+#endif
 
   for (port = ports; port < &ports[4]; port++)
     {
       if (port->baudrate == 0)
 	continue;
-      printf_filtered ("Port:\tCOM%d (%sactive)\n", port - ports + 1,
+      printf_filtered ("Port:\tCOM%ld (%sactive)\n", (long)(port - ports) + 1,
 		       port->intrupt ? "" : "not ");
       printf_filtered ("Addr:\t0x%03x (irq %d)\n", port->base, port->irq);
       printf_filtered ("16550:\t%s\n", port->fifo ? "yes" : "no");
@@ -902,10 +891,8 @@ dos_info (arg, from_tty)
 
 
 void
-_initialize_ser_dos ()
+_initialize_ser_dos (void)
 {
-  struct cmd_list_element *c;
-
   serial_add_interface (&dos_ops);
 
   /* Save original interrupt mask register. */
@@ -916,61 +903,61 @@ _initialize_ser_dos ()
     intrupts[1].inuse =		/* keyboard */
     intrupts[2].inuse = 1;	/* slave icu */
 
-  add_show_from_set (
-		      add_set_cmd ("com1base", class_obscure, var_zinteger,
-				   (char *) &ports[0].base,
-				   "Set COM1 base i/o port address.",
-				   &setlist),
-		      &showlist);
+  deprecated_add_show_from_set
+    (add_set_cmd ("com1base", class_obscure, var_zinteger,
+		  (char *) &ports[0].base,
+		  "Set COM1 base i/o port address.",
+		  &setlist),
+     &showlist);
 
-  add_show_from_set (
-		      add_set_cmd ("com1irq", class_obscure, var_zinteger,
-				   (char *) &ports[0].irq,
-				   "Set COM1 interrupt request.",
-				   &setlist),
-		      &showlist);
+  deprecated_add_show_from_set
+    (add_set_cmd ("com1irq", class_obscure, var_zinteger,
+		  (char *) &ports[0].irq,
+		  "Set COM1 interrupt request.",
+		  &setlist),
+     &showlist);
 
-  add_show_from_set (
-		      add_set_cmd ("com2base", class_obscure, var_zinteger,
-				   (char *) &ports[1].base,
-				   "Set COM2 base i/o port address.",
-				   &setlist),
-		      &showlist);
+  deprecated_add_show_from_set
+    (add_set_cmd ("com2base", class_obscure, var_zinteger,
+		  (char *) &ports[1].base,
+		  "Set COM2 base i/o port address.",
+		  &setlist),
+     &showlist);
 
-  add_show_from_set (
-		      add_set_cmd ("com2irq", class_obscure, var_zinteger,
-				   (char *) &ports[1].irq,
-				   "Set COM2 interrupt request.",
-				   &setlist),
-		      &showlist);
+  deprecated_add_show_from_set
+    (add_set_cmd ("com2irq", class_obscure, var_zinteger,
+		  (char *) &ports[1].irq,
+		  "Set COM2 interrupt request.",
+		  &setlist),
+     &showlist);
 
-  add_show_from_set (
-		      add_set_cmd ("com3base", class_obscure, var_zinteger,
-				   (char *) &ports[2].base,
-				   "Set COM3 base i/o port address.",
-				   &setlist),
-		      &showlist);
+  deprecated_add_show_from_set
+    (add_set_cmd ("com3base", class_obscure, var_zinteger,
+		  (char *) &ports[2].base,
+		  "Set COM3 base i/o port address.",
+		  &setlist),
+     &showlist);
 
-  add_show_from_set (
-		      add_set_cmd ("com3irq", class_obscure, var_zinteger,
-				   (char *) &ports[2].irq,
-				   "Set COM3 interrupt request.",
-				   &setlist),
-		      &showlist);
+  deprecated_add_show_from_set
+    (add_set_cmd ("com3irq", class_obscure, var_zinteger,
+		  (char *) &ports[2].irq,
+		  "Set COM3 interrupt request.",
+		  &setlist),
+     &showlist);
 
-  add_show_from_set (
-		      add_set_cmd ("com4base", class_obscure, var_zinteger,
-				   (char *) &ports[3].base,
-				   "Set COM4 base i/o port address.",
-				   &setlist),
-		      &showlist);
+  deprecated_add_show_from_set
+    (add_set_cmd ("com4base", class_obscure, var_zinteger,
+		  (char *) &ports[3].base,
+		  "Set COM4 base i/o port address.",
+		  &setlist),
+     &showlist);
 
-  add_show_from_set (
-		      add_set_cmd ("com4irq", class_obscure, var_zinteger,
-				   (char *) &ports[3].irq,
-				   "Set COM4 interrupt request.",
-				   &setlist),
-		      &showlist);
+  deprecated_add_show_from_set
+    (add_set_cmd ("com4irq", class_obscure, var_zinteger,
+		  (char *) &ports[3].irq,
+		  "Set COM4 interrupt request.",
+		  &setlist),
+     &showlist);
 
   add_info ("serial", dos_info,
 	    "Print DOS serial port status.");

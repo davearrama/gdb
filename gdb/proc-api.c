@@ -1,5 +1,7 @@
 /* Machine independent support for SVR4 /proc (process file system) for GDB.
-   Copyright 1999 Free Software Foundation, Inc.
+
+   Copyright 1999, 2000, 2001, 2003 Free Software Foundation, Inc.
+
    Written by Michael Snyder at Cygnus Solutions.
    Based on work by Fred Fish, Stu Grossman, Geoff Noer, and others.
 
@@ -27,6 +29,7 @@ Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #include "defs.h"
 #include "gdbcmd.h"
+#include "completer.h"
 
 #if defined (NEW_PROC_API)
 #define _STRUCTURED_PROC 1
@@ -35,10 +38,14 @@ Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/procfs.h>
+#ifdef HAVE_SYS_PROC_H
 #include <sys/proc.h>	/* for struct proc */
+#endif
+#ifdef HAVE_SYS_USER_H
 #include <sys/user.h>	/* for struct user */
+#endif
 #include <fcntl.h>	/* for O_RDWR etc. */
-#include <sys/wait.h>
+#include "gdb_wait.h"
 
 #include "proc-utils.h"
 
@@ -53,16 +60,21 @@ struct trans {
   char *desc;                   /* Short description of value */
 };
 
-static int   procfs_trace    = 1;
-/*static int   info_verbose    = 1;*/	/* kludge */
+static int   procfs_trace    = 0;
 static FILE *procfs_file     = NULL;
 static char *procfs_filename = "procfs_trace";
 
 static void
-set_procfs_trace_cmd (args, from_tty, c)
-     char *args;
-     int from_tty;
-     struct cmd_list_element *c;
+prepare_to_trace (void)
+{
+  if (procfs_trace)			/* if procfs tracing turned on */
+    if (procfs_file == NULL)		/* if output file not yet open */
+      if (procfs_filename != NULL)	/* if output filename known */
+	procfs_file = fopen (procfs_filename, "a");	/* open output file */
+}
+
+static void
+set_procfs_trace_cmd (char *args, int from_tty, struct cmd_list_element *c)
 {
 #if 0	/* not sure what I might actually need to do here, if anything */
   if (procfs_file)
@@ -71,10 +83,7 @@ set_procfs_trace_cmd (args, from_tty, c)
 }
 
 static void
-set_procfs_file_cmd (args, from_tty, c)
-     char *args;
-     int from_tty;
-     struct cmd_list_element *c;
+set_procfs_file_cmd (char *args, int from_tty, struct cmd_list_element *c)
 {
   /* Just changed the filename for procfs tracing.
      If a file was already open, close it.  */
@@ -110,8 +119,12 @@ static struct trans ioctl_table[] = {
   { PIOCGETPTIMER,   "PIOCGETPTIMER",   "get process timers" },
 #endif	/* irix event counters */
   { PIOCGENTRY,    "PIOCGENTRY",   "get traced syscall entry set" },
+#if defined (PIOCGETPR)
   { PIOCGETPR,     "PIOCGETPR",    "read struct proc" },
+#endif
+#if defined (PIOCGETU)
   { PIOCGETU,      "PIOCGETU",     "read user area" },
+#endif
 #if defined (PIOCGETUTK) && (defined(KERNEL) || defined(SHOW_UTT)) /* osf */
   { PIOCGETUTK,  "PIOCGETUTK", "get the utask struct" },
 #endif
@@ -209,20 +222,16 @@ static struct trans ioctl_table[] = {
 };
 
 int
-ioctl_with_trace (fd, opcode, ptr, file, line)
-     int  fd;
-     long opcode;
-     void *ptr;
-     char *file;
-     int  line;
+ioctl_with_trace (int fd, long opcode, void *ptr, char *file, int line)
 {
-  int i, ret, arg1;
+  int i = 0;
+  int ret;
+  int arg1;
+
+  prepare_to_trace ();
 
   if (procfs_trace)
     {
-      if (procfs_file == NULL && procfs_filename != NULL)
-	procfs_file = fopen (procfs_filename, "a");
-
       for (i = 0; ioctl_table[i].name != NULL; i++)
 	if (ioctl_table[i].value == opcode)
 	  break;
@@ -364,13 +373,15 @@ ioctl_with_trace (fd, opcode, ptr, file, line)
       if (procfs_file)
 	fflush (procfs_file);
     }
+  errno = 0;
   ret = ioctl (fd, opcode, ptr);
   if (procfs_trace && ret < 0)
     {
       fprintf (procfs_file ? procfs_file : stdout, 
-	       "[ioctl (%s) FAILED!]\n",
+	       "[ioctl (%s) FAILED! (%s)]\n",
 	       ioctl_table[i].name != NULL ? 
-	       ioctl_table[i].name : "<unknown>");
+	       ioctl_table[i].name : "<unknown>",
+	       safe_strerror (errno));
       if (procfs_file)
 	fflush (procfs_file);
     }
@@ -388,9 +399,13 @@ static struct trans rw_table[] = {
 #ifdef PCCSIG			/* solaris */
   { PCCSIG,   "PCCSIG",   "clear current signal" },
 #endif
+#ifdef PCDSTOP			/* solaris */
   { PCDSTOP,  "PCDSTOP",  "post stop request" },
+#endif
   { PCKILL,   "PCKILL",   "post a signal" },
+#ifdef PCNICE			/* solaris */
   { PCNICE,   "PCNICE",   "set nice priority" },
+#endif
 #ifdef PCREAD			/* solaris */
   { PCREAD,   "PCREAD",   "read from the address space" },
   { PCWRITE,  "PCWRITE",  "write to the address space" },
@@ -410,7 +425,9 @@ static struct trans rw_table[] = {
   { PCSEXIT,  "PCSEXIT",  "set traced syscall exit  set" },
   { PCSFAULT, "PCSFAULT", "set traced fault set" },
   { PCSFPREG, "PCSFPREG", "set floating point registers" },
+#ifdef PCSHOLD			/* solaris */
   { PCSHOLD,  "PCSHOLD",  "set signal mask" },
+#endif
   { PCSREG,   "PCSREG",   "set general registers" },
   { PCSSIG,   "PCSSIG",   "set current signal" },
   { PCSTOP,   "PCSTOP",   "post stop request and wait" },
@@ -424,7 +441,9 @@ static struct trans rw_table[] = {
 #ifdef PCTWSTOP			/* solaris */
   { PCTWSTOP, "PCTWSTOP", "wait for stop, with timeout arg" },
 #endif
+#ifdef PCUNKILL			/* solaris */
   { PCUNKILL, "PCUNKILL", "delete a pending signal" },
+#endif
 #ifdef PCUNSET			/* solaris */
   { PCUNSET,  "PCUNSET",  "unset modes" },
 #endif
@@ -438,22 +457,16 @@ static struct trans rw_table[] = {
 static off_t lseek_offset;
 
 int
-write_with_trace (fd, arg, len, file, line)
-     int  fd;
-     long *arg;
-     size_t len;
-     char *file;
-     int  line;
+write_with_trace (int fd, void *varg, size_t len, char *file, int line)
 {
-  int  i;
-  long opcode = arg[0];
+  int i = ARRAY_SIZE (rw_table) - 1;
   int ret;
+  procfs_ctl_t *arg = (procfs_ctl_t *) varg;
 
+  prepare_to_trace ();
   if (procfs_trace)
     {
-      if (procfs_file == NULL && procfs_filename != NULL)
-	procfs_file = fopen (procfs_filename, "a");
-
+      procfs_ctl_t opcode = arg[0];
       for (i = 0; rw_table[i].name != NULL; i++)
 	if (rw_table[i].value == opcode)
 	  break;
@@ -477,7 +490,9 @@ write_with_trace (fd, arg, len, file, line)
       case PCUNSET:
 #endif
 #ifdef PCRESET
+#if PCRESET != PCUNSET
       case PCRESET:
+#endif
 #endif
 	fprintf (procfs_file ? procfs_file : stdout, 
 		 "write (PCRESET, %s) %s\n", 
@@ -513,12 +528,14 @@ write_with_trace (fd, arg, len, file, line)
 	proc_prettyfprint_syscalls (procfs_file ? procfs_file : stdout,
 				    (sysset_t *) &arg[1], 0);
 	break;
+#ifdef PCSHOLD
       case PCSHOLD:
 	fprintf (procfs_file ? procfs_file : stdout, 
 		 "write (PCSHOLD) ");
 	proc_prettyfprint_signalset (procfs_file ? procfs_file : stdout,
 				     (sigset_t *) &arg[1], 0);
 	break;
+#endif
       case PCSSIG:
 	fprintf (procfs_file ? procfs_file : stdout, 
 		 "write (PCSSIG) ");
@@ -537,10 +554,14 @@ write_with_trace (fd, arg, len, file, line)
 	  fprintf (procfs_file ? procfs_file : stdout, "clearFlt ");
 	if (arg[1] & PRSTEP)
 	  fprintf (procfs_file ? procfs_file : stdout, "step ");
+#ifdef PRSABORT
 	if (arg[1] & PRSABORT)
 	  fprintf (procfs_file ? procfs_file : stdout, "syscallAbort ");
+#endif
+#ifdef PRSTOP
 	if (arg[1] & PRSTOP)
 	  fprintf (procfs_file ? procfs_file : stdout, "stopReq ");
+#endif
 	  
 	fprintf (procfs_file ? procfs_file : stdout, "\n");
 	break;
@@ -553,13 +574,7 @@ write_with_trace (fd, arg, len, file, line)
 	break;
       default:
 	{
-	  static unsigned char break_insn[] = BREAKPOINT;
-
-	  if (len == sizeof (break_insn) &&
-	      memcmp (arg, &break_insn, len) == 0)
-	    fprintf (procfs_file ? procfs_file : stdout, 
-		     "write (<breakpoint at 0x%08x>) \n", lseek_offset);
-	  else if (rw_table[i].name)
+	  if (rw_table[i].name)
 	    fprintf (procfs_file ? procfs_file : stdout, 
 		     "write (%s) %s\n", 
 		     rw_table[i].name, 
@@ -568,11 +583,12 @@ write_with_trace (fd, arg, len, file, line)
 	    {
 	      if (lseek_offset != -1)
 		fprintf (procfs_file ? procfs_file : stdout, 
-			 "write (<unknown>, %d bytes at 0x%08x) \n", 
-			 len, lseek_offset);
+			 "write (<unknown>, %lud bytes at 0x%08lx) \n", 
+			 (unsigned long) len, (unsigned long) lseek_offset);
 	      else
 		fprintf (procfs_file ? procfs_file : stdout, 
-			 "write (<unknown>, %d bytes) \n", len);
+			 "write (<unknown>, %lud bytes) \n", 
+			 (unsigned long) len);
 	    }
 	  break;
 	}
@@ -580,13 +596,15 @@ write_with_trace (fd, arg, len, file, line)
       if (procfs_file)
 	fflush (procfs_file);
     }
-  ret = write (fd, arg, len);
+  errno = 0;
+  ret = write (fd, (void *) arg, len);
   if (procfs_trace && ret != len)
     {
       fprintf (procfs_file ? procfs_file : stdout, 
-	       "[write (%s) FAILED!\n",
+	       "[write (%s) FAILED! (%s)]\n",
 	       rw_table[i].name != NULL ? 
-	       rw_table[i].name : "<unknown>");
+	       rw_table[i].name : "<unknown>", 
+	       safe_strerror (errno));
       if (procfs_file)
 	fflush (procfs_file);
     }
@@ -596,43 +614,19 @@ write_with_trace (fd, arg, len, file, line)
 }
 
 off_t
-lseek_with_trace (fd, offset, whence, file, line)
-     int fd;
-     off_t offset;
-     int whence;
-     char *file;
-     int line;
+lseek_with_trace (int fd, off_t offset, int whence, char *file, int line)
 {
   off_t ret;
 
-#if 0	/* don't need output, just need address */
-  if (procfs_trace)
-    {
-      if (procfs_file == NULL && procfs_filename != NULL)
-	procfs_file = fopen (procfs_filename, "a");
-
-      if (info_verbose)
-	fprintf (procfs_file ? procfs_file : stdout, 
-		 "%s:%d -- ", file, line);
-      fprintf (procfs_file ? procfs_file : stdout, 
-	       "lseek (0x%08x, %s) \n", offset, 
-	       whence == SEEK_SET ? "SEEK_SET" :
-	       whence == SEEK_CUR ? "SEEK_CUR" : 
-	       whence == SEEK_END ? "SEEK_END" :
-	       "<unknown whence>");
-      if (procfs_file)
-	fflush (procfs_file);
-    }
-#endif
+  prepare_to_trace ();
+  errno = 0;
   ret = lseek (fd, offset, whence);
   lseek_offset = ret;
-  if (procfs_trace && ret == -1)
+  if (procfs_trace && (ret == -1 || errno != 0))
     {
-      if (procfs_file == NULL && procfs_filename != NULL)
-	procfs_file = fopen (procfs_filename, "a");
-
       fprintf (procfs_file ? procfs_file : stdout, 
-	       "[lseek (0x%08x) FAILED!\n", offset);
+	       "[lseek (0x%08lx) FAILED! (%s)]\n", 
+	       (unsigned long) offset, safe_strerror (errno));
       if (procfs_file)
 	fflush (procfs_file);
     }
@@ -643,30 +637,39 @@ lseek_with_trace (fd, offset, whence, file, line)
 #endif /* NEW_PROC_API */
 
 int
-open_with_trace (filename, mode, file, line)
-     char *filename;
-     int   mode;
-     char *file;
-     int   line;
+open_with_trace (char *filename, int mode, char *file, int line)
 {
-  int ret = open (filename, mode);
+  int ret;
 
+  prepare_to_trace ();
+  errno = 0;
+  ret = open (filename, mode);
   if (procfs_trace)
     {
-      if (procfs_file == NULL && procfs_filename != NULL)
-	procfs_file = fopen (procfs_filename, "a");
-
       if (info_verbose)
 	fprintf (procfs_file ? procfs_file : stdout, 
 		 "%s:%d -- ", file, line);
-      fprintf (procfs_file ? procfs_file : stdout, 
-	       "%d = open (%s, ", ret, filename);
-      if (mode == O_RDONLY)
-	fprintf (procfs_file ? procfs_file : stdout, "O_RDONLY) %d\n", line);
-      else if (mode == O_WRONLY)
-	fprintf (procfs_file ? procfs_file : stdout, "O_WRONLY) %d\n", line);
-      else if (mode == O_RDWR)
-	fprintf (procfs_file ? procfs_file : stdout, "O_RDWR)   %d\n", line);
+
+      if (errno)
+	{
+	  fprintf (procfs_file ? procfs_file : stdout, 
+		   "[open FAILED! (%s) line %d]\\n", 
+		   safe_strerror (errno), line);
+	}
+      else
+	{
+	  fprintf (procfs_file ? procfs_file : stdout, 
+		   "%d = open (%s, ", ret, filename);
+	  if (mode == O_RDONLY)
+	    fprintf (procfs_file ? procfs_file : stdout, "O_RDONLY) %d\n",
+		     line);
+	  else if (mode == O_WRONLY)
+	    fprintf (procfs_file ? procfs_file : stdout, "O_WRONLY) %d\n",
+		     line);
+	  else if (mode == O_RDWR)
+	    fprintf (procfs_file ? procfs_file : stdout, "O_RDWR)   %d\n",
+		     line);
+	}
       if (procfs_file)
 	fflush (procfs_file);
     }
@@ -675,23 +678,24 @@ open_with_trace (filename, mode, file, line)
 }
 
 int
-close_with_trace (fd, file, line)
-     int   fd;
-     char *file;
-     int   line;
+close_with_trace (int fd, char *file, int line)
 {
-  int ret = close (fd);
+  int ret;
 
+  prepare_to_trace ();
+  errno = 0;
+  ret = close (fd);
   if (procfs_trace)
     {
-      if (procfs_file == NULL && procfs_filename != NULL)
-	procfs_file = fopen (procfs_filename, "a");
-
       if (info_verbose)
 	fprintf (procfs_file ? procfs_file : stdout, 
 		 "%s:%d -- ", file, line);
-      fprintf (procfs_file ? procfs_file : stdout, 
-	       "%d = close (%d)\n", ret, fd);
+      if (errno)
+	fprintf (procfs_file ? procfs_file : stdout, 
+		 "[close FAILED! (%s)]\n", safe_strerror (errno));
+      else
+	fprintf (procfs_file ? procfs_file : stdout, 
+		 "%d = close (%d)\n", ret, fd);
       if (procfs_file)
 	fflush (procfs_file);
     }
@@ -699,19 +703,14 @@ close_with_trace (fd, file, line)
   return ret;
 }
 
-int
-wait_with_trace (wstat, file, line)
-     int  *wstat;
-     char *file;
-     int   line;
+pid_t
+wait_with_trace (int *wstat, char *file, int line)
 {
   int ret, lstat = 0;
 
+  prepare_to_trace ();
   if (procfs_trace)
     {
-      if (procfs_file == NULL && procfs_filename != NULL)
-	procfs_file = fopen (procfs_filename, "a");
-
       if (info_verbose)
 	fprintf (procfs_file ? procfs_file : stdout, 
 		 "%s:%d -- ", file, line);
@@ -720,11 +719,16 @@ wait_with_trace (wstat, file, line)
       if (procfs_file)
 	fflush (procfs_file);
     }
+  errno = 0;
   ret = wait (&lstat);
   if (procfs_trace)
     {
-      fprintf (procfs_file ? procfs_file : stdout, 
-	       "returned pid %d, status 0x%x\n", ret, lstat);
+      if (errno)
+	fprintf (procfs_file ? procfs_file : stdout, 
+		 "[wait FAILED! (%s)]\n", safe_strerror (errno));
+      else
+	fprintf (procfs_file ? procfs_file : stdout, 
+		 "returned pid %d, status 0x%x\n", ret, lstat);
       if (procfs_file)
 	fflush (procfs_file);
     }
@@ -735,37 +739,26 @@ wait_with_trace (wstat, file, line)
 }
 
 void
-procfs_note (msg, file, line)
-     char *msg;
-     char *file;
-     int   line;
+procfs_note (char *msg, char *file, int line)
 {
+  prepare_to_trace ();
   if (procfs_trace)
     {
-      if (procfs_file == NULL && procfs_filename != NULL)
-	procfs_file = fopen (procfs_filename, "a");
-
       if (info_verbose)
 	fprintf (procfs_file ? procfs_file : stdout, 
 		 "%s:%d -- ", file, line);
-      fprintf (procfs_file ? procfs_file : stdout, msg);
+      fprintf (procfs_file ? procfs_file : stdout, "%s", msg);
       if (procfs_file)
 	fflush (procfs_file);
     }
 }
 
 void
-proc_prettyfprint_status (flags, why, what, thread)
-     long flags;
-     int  why;
-     int  what;
-     int  thread;
+proc_prettyfprint_status (long flags, int why, int what, int thread)
 {
+  prepare_to_trace ();
   if (procfs_trace)
     {
-      if (procfs_file == NULL && procfs_filename != NULL)
-	procfs_file = fopen (procfs_filename, "a");
-
       if (thread)
 	fprintf (procfs_file ? procfs_file : stdout,
 		 "Thread %d: ", thread);
@@ -783,26 +776,22 @@ proc_prettyfprint_status (flags, why, what, thread)
 
 
 void
-_initialize_proc_api ()
+_initialize_proc_api (void)
 {
   struct cmd_list_element *c;
 
   c = add_set_cmd ("procfs-trace", no_class,
 		   var_boolean, (char *) &procfs_trace, 
-		   "Set tracing for /proc ioctl calls.\n", &setlist);
+		   "Set tracing for /proc api calls.\n", &setlist);
 
-  add_show_from_set (c, &showlist);
-  c->function.sfunc = set_procfs_trace_cmd;
+  deprecated_add_show_from_set (c, &showlist);
+  set_cmd_sfunc (c, set_procfs_trace_cmd);
+  set_cmd_completer (c, filename_completer);
 
   c = add_set_cmd ("procfs-file", no_class, var_filename,
 		   (char *) &procfs_filename, 
 		   "Set filename for /proc tracefile.\n", &setlist);
 
-  add_show_from_set (c, &showlist);
-  c->function.sfunc = set_procfs_file_cmd;
-
-#ifdef TRACE_PROCFS
-  if (procfs_file == NULL && procfs_filename != NULL)
-    procfs_file = fopen (procfs_filename, "a");
-#endif
+  deprecated_add_show_from_set (c, &showlist);
+  set_cmd_sfunc (c, set_procfs_file_cmd);
 }

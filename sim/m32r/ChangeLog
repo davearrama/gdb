@@ -1,3 +1,162 @@
+2004-05-18  Daniel Jacobowitz  <dan@debian.org>
+
+	* Makefile.in (stamp-xmloop, stamp-2mloop): Use -outfile-suffix.
+
+2004-02-04  Andrew Cagney  <cagney@redhat.com>
+
+	Committed by Andrew Cagney.
+	* mloopx.in: Update copyright.
+	(xextract-pbb): Fixed trap for system calls operation in parallel.
+	* mloop2.in (xextract-pbb): Ditto.
+
+2003-12-19  Kazuhiro Inaoka  <inaoka.kazuhiro@renesas.com>
+
+        * configure.in: Changed for dummy simulator of m32r-linux.
+	* configure: Regenerate.
+        * Makefile.in: Added traps-linux.o for dummy simulator of m32r-linux.
+        * traps-linux.c: Added for dummy simulator of m32r-linux.
+        * syscall.h: Ditto.
+        * sim-if.c (sim_create_inferior): Changed to setup SP for dummy
+        simulator for m32r-linux.
+        * sim-main.h (M32R_DEFAULT_MEM_SIZE): Changed for dummy simulator of
+        m32r-linux.
+
+2003-12-11  Kazuhiro Inaoka  <inaoka.kazuhiro@renesas.com>
+
+	* Makefile.in: Add support for new machine m32r2.
+	* cpu2.c: New file for m32r2 support.
+	* cpu2.h: Likewise.
+	* decode2.c: Likewise.
+	* decode2.h: Likewise.
+	* m32r2.c: Likewise.
+	* mloop2.in: Likewise.
+	* model2.c: Likewise.
+	* sem2-switch.c: Likewise.
+	* arch.c: Regenerate.
+	* arch.h: Regenerate.
+	* cpu.c: Regenerate.
+	* arch.c: Regenerate.
+	* cpuall.c: Regenerate.
+	* cpux.c: Regenerate.
+	* cpux.h: Regenerate.
+	* decode.c: Regenerate.
+	* decode.h: Regenerate.
+	* decodex.c: Regenerate.
+	* decodex.h: Regenerate.
+	* model.c: Regenerate.
+	* modelx.c: Regenerate.
+	* sem-switch.c: Regenerate.
+	* sem.c: Regenerate.
+	* semx-switch.c: Regenerate.
+	* m32r-sim.h: Add EVB register support.
+	* sim-if.c: Likewise.
+	* sim-main.h: Likewise.
+	* traps.c: Likewise.
+
+2003-09-08  Dave Brolley  <brolley@redhat.com>
+
+	On behalf of Doug Evans <dje@sebabeach.org>
+	* Makefile.in (stamp-arch,stamp-cpu,stamp-xcpu): Pass archfile to cgen.
+
+2003-02-27  Andrew Cagney  <cagney@redhat.com>
+
+	* sim-if.c (sim_open, sim_create_inferior): Rename _bfd to bfd.
+
+2002-12-19  Doug Evans  <dje@sebabeach.org>
+
+	* arch.c,arch.h,cpuall.h: Regenerate.
+	* cpu.c,cpu.h,decode.c,decode.h,model.c,sem-switch.c,sem.c: Regenerate.
+	* cpux.c,cpux.h,decodex.c,decodex.h,modelx.c,semx-switch.c: Regenerate.
+
+2002-06-16  Andrew Cagney  <ac131313@redhat.com>
+
+	* configure: Regenerated to track ../common/aclocal.m4 changes.
+
+2001-11-14  Dave Brolley  <brolley@redhat.com>
+
+	* arch.c: Regenerate.
+	* arch.h: Regenerate.
+	* cpu.c: Regenerate.
+	* cpu.h: Regenerate.
+	* cpuall.h: Regenerate.
+	* cpux.c: Regenerate.
+	* cpux.h: Regenerate.
+	* decode.c: Regenerate.
+	* decode.h: Regenerate.
+	* decodex.c: Regenerate.
+	* decodex.h: Regenerate.
+	* model.c: Regenerate.
+	* modelx.c: Regenerate.
+	* sem-switch.c: Regenerate.
+	* sem.c: Regenerate.
+	* semx-switch.c: Regenerate.
+
+2001-07-05  Ben Elliston  <bje@redhat.com>
+
+	* Makefile.in (stamp-arch): Use $(CGEN_CPU_DIR).
+	(stamp-cpu): Likewise.
+	(stamp-xcpu): Likewise.
+
+2001-03-05  Dave Brolley  <brolley@redhat.com>
+
+	* arch.c: Regenerate.
+	* arch.h: Regenerate.
+	* cpu.c: Regenerate.
+	* cpu.h: Regenerate.
+	* cpuall.h: Regenerate.
+	* cpux.c: Regenerate.
+	* cpux.h: Regenerate.
+	* decode.c: Regenerate.
+	* decode.h: Regenerate.
+	* decodex.c: Regenerate.
+	* decodex.h: Regenerate.
+	* model.c: Regenerate.
+	* modelx.c: Regenerate.
+	* sem-switch.c: Regenerate.
+	* sem.c: Regenerate.
+	* semx-switch.c: Regenerate.
+
+2001-01-12  Frank Ch. Eigler  <fche@redhat.com>
+
+	* configure: Regenerated with sim_scache fix.
+
+2000-11-18  Greg McGary  <greg@mcgary.org>
+
+	* Makefile.in: remove `@true' commands for rules that have
+	$(CGEN_MAINT) as a prerequisite.
+
+2000-10-06  Dave Brolley  <brolley@redhat.com>
+
+	* sem.c: Regenerated.
+	* sem-switch.c: Regenerated.
+	* semx-switch.c: Regenerated.
+
+2000-08-28  Dave Brolley  <brolley@redhat.com>
+
+	* Makefile.in: Use of @true confuses VPATH. Remove it.
+	* cpu.h: Regenerated.
+	* cpux.h: Regenerated.
+	* decode.c: Regenerated.
+	* decodex.c: Regenerated.
+	* model.c: Regenerated.
+	* modelx.c: Regenerated.
+	* sem-switch.c: Regenerated.
+	* sem.c: Regenerated.
+	* semx-switch.c: Regenerated.
+
+2000-08-21  Frank Ch. Eigler  <fche@redhat.com>
+
+	* Makefile.in (m32r-clean): Add stamp-arch, stamp-cpu.
+	(stamp-arch, stamp-cpu): New targets.
+
+Tue May 23 21:39:23 2000  Andrew Cagney  <cagney@b1.cygnus.com>
+
+	* configure: Regenerated to track ../common/aclocal.m4 changes.
+
+2000-03-30  Dave Brolley  <brolley@redhat.com>
+
+	* configure: Regenerated.
+
 1999-10-04  Doug Evans  <devans@casey.cygnus.com>
 
 	* arch.c,arch.h,cpuall.h: Rebuild.

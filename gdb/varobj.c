@@ -1,5 +1,5 @@
 /* Implementation of the GDB variable objects API.
-   Copyright 1999, 2000 Free Software Foundation, Inc.
+   Copyright 1999, 2000, 2001 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,10 +20,10 @@
 #include "value.h"
 #include "expression.h"
 #include "frame.h"
-#include "valprint.h"
 #include "language.h"
 #include "wrapper.h"
 #include "gdbcmd.h"
+#include "gdb_string.h"
 #include <math.h>
 
 #include "varobj.h"
@@ -34,345 +34,347 @@ int varobjdebug = 0;
 
 /* String representations of gdb's format codes */
 char *varobj_format_string[] =
-{"natural", "binary", "decimal", "hexadecimal", "octal"};
+  { "natural", "binary", "decimal", "hexadecimal", "octal" };
 
 /* String representations of gdb's known languages */
-char *varobj_language_string[] =
-{"unknown", "C", "C++", "Java"};
+char *varobj_language_string[] = { "unknown", "C", "C++", "Java" };
 
 /* Data structures */
 
 /* Every root variable has one of these structures saved in its
    varobj. Members which must be free'd are noted. */
 struct varobj_root
-  {
+{
 
-    /* Alloc'd expression for this parent. */
-    struct expression *exp;
+  /* Alloc'd expression for this parent. */
+  struct expression *exp;
 
-    /* Block for which this expression is valid */
-    struct block *valid_block;
+  /* Block for which this expression is valid */
+  struct block *valid_block;
 
-    /* The frame for this expression */
-    CORE_ADDR frame;
+  /* The frame for this expression */
+  struct frame_id frame;
 
-    /* Language info for this variable and its children */
-    struct language_specific *lang;
+  /* If 1, "update" always recomputes the frame & valid block
+     using the currently selected frame. */
+  int use_selected_frame;
 
-    /* The varobj for this root node. */
-    struct varobj *rootvar;
+  /* Language info for this variable and its children */
+  struct language_specific *lang;
 
-    /* Next root variable */
-    struct varobj_root *next;
-  };
+  /* The varobj for this root node. */
+  struct varobj *rootvar;
+
+  /* Next root variable */
+  struct varobj_root *next;
+};
 
 /* Every variable in the system has a structure of this type defined
    for it. This structure holds all information necessary to manipulate
    a particular object variable. Members which must be freed are noted. */
 struct varobj
-  {
+{
 
-    /* Alloc'd name of the variable for this object.. If this variable is a
-       child, then this name will be the child's source name.
-       (bar, not foo.bar) */
-    /* NOTE: This is the "expression" */
-    char *name;
+  /* Alloc'd name of the variable for this object.. If this variable is a
+     child, then this name will be the child's source name.
+     (bar, not foo.bar) */
+  /* NOTE: This is the "expression" */
+  char *name;
 
-    /* The alloc'd name for this variable's object. This is here for
-       convenience when constructing this object's children. */
-    char *obj_name;
+  /* The alloc'd name for this variable's object. This is here for
+     convenience when constructing this object's children. */
+  char *obj_name;
 
-    /* Index of this variable in its parent or -1 */
-    int index;
+  /* Index of this variable in its parent or -1 */
+  int index;
 
-    /* The type of this variable. This may NEVER be NULL. */
-    struct type *type;
+  /* The type of this variable. This may NEVER be NULL. */
+  struct type *type;
 
-    /* The value of this expression or subexpression.  This may be NULL. */
-    value_ptr value;
+  /* The value of this expression or subexpression.  This may be NULL. */
+  struct value *value;
 
-    /* Did an error occur evaluating the expression or getting its value? */
-    int error;
+  /* Did an error occur evaluating the expression or getting its value? */
+  int error;
 
-    /* The number of (immediate) children this variable has */
-    int num_children;
+  /* The number of (immediate) children this variable has */
+  int num_children;
 
-    /* If this object is a child, this points to its immediate parent. */
-    struct varobj *parent;
+  /* If this object is a child, this points to its immediate parent. */
+  struct varobj *parent;
 
-    /* A list of this object's children */
-    struct varobj_child *children;
+  /* A list of this object's children */
+  struct varobj_child *children;
 
-    /* Description of the root variable. Points to root variable for children. */
-    struct varobj_root *root;
+  /* Description of the root variable. Points to root variable for children. */
+  struct varobj_root *root;
 
-    /* The format of the output for this object */
-    enum varobj_display_formats format;
-  };
+  /* The format of the output for this object */
+  enum varobj_display_formats format;
+
+  /* Was this variable updated via a varobj_set_value operation */
+  int updated;
+};
 
 /* Every variable keeps a linked list of its children, described
    by the following structure. */
 /* FIXME: Deprecated.  All should use vlist instead */
 
 struct varobj_child
-  {
+{
 
-    /* Pointer to the child's data */
-    struct varobj *child;
+  /* Pointer to the child's data */
+  struct varobj *child;
 
-    /* Pointer to the next child */
-    struct varobj_child *next;
-  };
+  /* Pointer to the next child */
+  struct varobj_child *next;
+};
 
 /* A stack of varobjs */
 /* FIXME: Deprecated.  All should use vlist instead */
 
 struct vstack
-  {
-    struct varobj *var;
-    struct vstack *next;
-  };
+{
+  struct varobj *var;
+  struct vstack *next;
+};
 
 struct cpstack
-  {
-    char *name;
-    struct cpstack *next;
-  };
+{
+  char *name;
+  struct cpstack *next;
+};
 
 /* A list of varobjs */
 
 struct vlist
-  {
-    struct varobj *var;
-    struct vlist *next;
-  };
+{
+  struct varobj *var;
+  struct vlist *next;
+};
 
 /* Private function prototypes */
 
 /* Helper functions for the above subcommands. */
 
-static int delete_variable PARAMS ((struct cpstack **, struct varobj *, int));
+static int delete_variable (struct cpstack **, struct varobj *, int);
 
-static void delete_variable_1 PARAMS ((struct cpstack **, int *,
-				       struct varobj *, int, int));
+static void delete_variable_1 (struct cpstack **, int *,
+			       struct varobj *, int, int);
 
-static int install_variable PARAMS ((struct varobj *));
+static int install_variable (struct varobj *);
 
-static void uninstall_variable PARAMS ((struct varobj *));
+static void uninstall_variable (struct varobj *);
 
-static struct varobj *child_exists PARAMS ((struct varobj *, char *));
+static struct varobj *child_exists (struct varobj *, char *);
 
-static struct varobj *create_child PARAMS ((struct varobj *, int, char *));
+static struct varobj *create_child (struct varobj *, int, char *);
 
-static void save_child_in_parent PARAMS ((struct varobj *, struct varobj *));
+static void save_child_in_parent (struct varobj *, struct varobj *);
 
-static void remove_child_from_parent PARAMS ((struct varobj *, struct varobj *));
+static void remove_child_from_parent (struct varobj *, struct varobj *);
 
 /* Utility routines */
 
-static struct varobj *new_variable PARAMS ((void));
+static struct varobj *new_variable (void);
 
-static struct varobj *new_root_variable PARAMS ((void));
+static struct varobj *new_root_variable (void);
 
-static void free_variable PARAMS ((struct varobj * var));
+static void free_variable (struct varobj *var);
 
-static struct type *get_type PARAMS ((struct varobj * var));
+static struct cleanup *make_cleanup_free_variable (struct varobj *var);
 
-static struct type *get_type_deref PARAMS ((struct varobj * var));
+static struct type *get_type (struct varobj *var);
 
-static struct type *get_target_type PARAMS ((struct type *));
+static struct type *get_type_deref (struct varobj *var);
 
-static enum varobj_display_formats variable_default_display PARAMS ((struct varobj *));
+static struct type *get_target_type (struct type *);
 
-static int my_value_equal PARAMS ((value_ptr, value_ptr, int *));
+static enum varobj_display_formats variable_default_display (struct varobj *);
 
-static void vpush PARAMS ((struct vstack ** pstack, struct varobj * var));
+static int my_value_equal (struct value *, struct value *, int *);
 
-static struct varobj *vpop PARAMS ((struct vstack ** pstack));
+static void vpush (struct vstack **pstack, struct varobj *var);
 
-static void cppush PARAMS ((struct cpstack ** pstack, char *name));
+static struct varobj *vpop (struct vstack **pstack);
 
-static char *cppop PARAMS ((struct cpstack ** pstack));
+static void cppush (struct cpstack **pstack, char *name);
+
+static char *cppop (struct cpstack **pstack);
 
 /* Language-specific routines. */
 
-static enum varobj_languages variable_language PARAMS ((struct varobj * var));
+static enum varobj_languages variable_language (struct varobj *var);
 
-static int number_of_children PARAMS ((struct varobj *));
+static int number_of_children (struct varobj *);
 
-static char *name_of_variable PARAMS ((struct varobj *));
+static char *name_of_variable (struct varobj *);
 
-static char *name_of_child PARAMS ((struct varobj *, int));
+static char *name_of_child (struct varobj *, int);
 
-static value_ptr value_of_root PARAMS ((struct varobj * var));
+static struct value *value_of_root (struct varobj **var_handle, int *);
 
-static value_ptr value_of_child PARAMS ((struct varobj * parent, int index));
+static struct value *value_of_child (struct varobj *parent, int index);
 
-static struct type *type_of_child PARAMS ((struct varobj * var));
+static struct type *type_of_child (struct varobj *var);
 
-static int variable_editable PARAMS ((struct varobj * var));
+static int variable_editable (struct varobj *var);
 
-static char *my_value_of_variable PARAMS ((struct varobj * var));
+static char *my_value_of_variable (struct varobj *var);
 
-static int type_changeable PARAMS ((struct varobj * var));
+static int type_changeable (struct varobj *var);
 
 /* C implementation */
 
-static int c_number_of_children PARAMS ((struct varobj * var));
+static int c_number_of_children (struct varobj *var);
 
-static char *c_name_of_variable PARAMS ((struct varobj * parent));
+static char *c_name_of_variable (struct varobj *parent);
 
-static char *c_name_of_child PARAMS ((struct varobj * parent, int index));
+static char *c_name_of_child (struct varobj *parent, int index);
 
-static value_ptr c_value_of_root PARAMS ((struct varobj * var));
+static struct value *c_value_of_root (struct varobj **var_handle);
 
-static value_ptr c_value_of_child PARAMS ((struct varobj * parent, int index));
+static struct value *c_value_of_child (struct varobj *parent, int index);
 
-static struct type *c_type_of_child PARAMS ((struct varobj * parent, int index));
+static struct type *c_type_of_child (struct varobj *parent, int index);
 
-static int c_variable_editable PARAMS ((struct varobj * var));
+static int c_variable_editable (struct varobj *var);
 
-static char *c_value_of_variable PARAMS ((struct varobj * var));
+static char *c_value_of_variable (struct varobj *var);
 
 /* C++ implementation */
 
-static int cplus_number_of_children PARAMS ((struct varobj * var));
+static int cplus_number_of_children (struct varobj *var);
 
-static void cplus_class_num_children PARAMS ((struct type * type, int children[3]));
+static void cplus_class_num_children (struct type *type, int children[3]);
 
-static char *cplus_name_of_variable PARAMS ((struct varobj * parent));
+static char *cplus_name_of_variable (struct varobj *parent);
 
-static char *cplus_name_of_child PARAMS ((struct varobj * parent, int index));
+static char *cplus_name_of_child (struct varobj *parent, int index);
 
-static value_ptr cplus_value_of_root PARAMS ((struct varobj * var));
+static struct value *cplus_value_of_root (struct varobj **var_handle);
 
-static value_ptr cplus_value_of_child PARAMS ((struct varobj * parent, int index));
+static struct value *cplus_value_of_child (struct varobj *parent, int index);
 
-static struct type *cplus_type_of_child PARAMS ((struct varobj * parent, int index));
+static struct type *cplus_type_of_child (struct varobj *parent, int index);
 
-static int cplus_variable_editable PARAMS ((struct varobj * var));
+static int cplus_variable_editable (struct varobj *var);
 
-static char *cplus_value_of_variable PARAMS ((struct varobj * var));
+static char *cplus_value_of_variable (struct varobj *var);
 
 /* Java implementation */
 
-static int java_number_of_children PARAMS ((struct varobj * var));
+static int java_number_of_children (struct varobj *var);
 
-static char *java_name_of_variable PARAMS ((struct varobj * parent));
+static char *java_name_of_variable (struct varobj *parent);
 
-static char *java_name_of_child PARAMS ((struct varobj * parent, int index));
+static char *java_name_of_child (struct varobj *parent, int index);
 
-static value_ptr java_value_of_root PARAMS ((struct varobj * var));
+static struct value *java_value_of_root (struct varobj **var_handle);
 
-static value_ptr java_value_of_child PARAMS ((struct varobj * parent, int index));
+static struct value *java_value_of_child (struct varobj *parent, int index);
 
-static struct type *java_type_of_child PARAMS ((struct varobj * parent, int index));
+static struct type *java_type_of_child (struct varobj *parent, int index);
 
-static int java_variable_editable PARAMS ((struct varobj * var));
+static int java_variable_editable (struct varobj *var);
 
-static char *java_value_of_variable PARAMS ((struct varobj * var));
+static char *java_value_of_variable (struct varobj *var);
 
 /* The language specific vector */
 
 struct language_specific
-  {
+{
 
-    /* The language of this variable */
-    enum varobj_languages language;
+  /* The language of this variable */
+  enum varobj_languages language;
 
-    /* The number of children of PARENT. */
-    int (*number_of_children) PARAMS ((struct varobj * parent));
+  /* The number of children of PARENT. */
+  int (*number_of_children) (struct varobj * parent);
 
-    /* The name (expression) of a root varobj. */
-    char *(*name_of_variable) PARAMS ((struct varobj * parent));
+  /* The name (expression) of a root varobj. */
+  char *(*name_of_variable) (struct varobj * parent);
 
-    /* The name of the INDEX'th child of PARENT. */
-    char *(*name_of_child) PARAMS ((struct varobj * parent, int index));
+  /* The name of the INDEX'th child of PARENT. */
+  char *(*name_of_child) (struct varobj * parent, int index);
 
-    /* The value_ptr of the root variable ROOT. */
-      value_ptr (*value_of_root) PARAMS ((struct varobj * root));
+  /* The ``struct value *'' of the root variable ROOT. */
+  struct value *(*value_of_root) (struct varobj ** root_handle);
 
-    /* The value_ptr of the INDEX'th child of PARENT. */
-      value_ptr (*value_of_child) PARAMS ((struct varobj * parent, int index));
+  /* The ``struct value *'' of the INDEX'th child of PARENT. */
+  struct value *(*value_of_child) (struct varobj * parent, int index);
 
-    /* The type of the INDEX'th child of PARENT. */
-    struct type *(*type_of_child) PARAMS ((struct varobj * parent, int index));
+  /* The type of the INDEX'th child of PARENT. */
+  struct type *(*type_of_child) (struct varobj * parent, int index);
 
-    /* Is VAR editable? */
-    int (*variable_editable) PARAMS ((struct varobj * var));
+  /* Is VAR editable? */
+  int (*variable_editable) (struct varobj * var);
 
-    /* The current value of VAR. */
-    char *(*value_of_variable) PARAMS ((struct varobj * var));
-  };
+  /* The current value of VAR. */
+  char *(*value_of_variable) (struct varobj * var);
+};
 
 /* Array of known source language routines. */
 static struct language_specific
-  languages[vlang_end][sizeof (struct language_specific)] =
-{
+  languages[vlang_end][sizeof (struct language_specific)] = {
   /* Unknown (try treating as C */
   {
-    vlang_unknown,
-      c_number_of_children,
-      c_name_of_variable,
-      c_name_of_child,
-      c_value_of_root,
-      c_value_of_child,
-      c_type_of_child,
-      c_variable_editable,
-      c_value_of_variable
-  }
+   vlang_unknown,
+   c_number_of_children,
+   c_name_of_variable,
+   c_name_of_child,
+   c_value_of_root,
+   c_value_of_child,
+   c_type_of_child,
+   c_variable_editable,
+   c_value_of_variable}
   ,
   /* C */
   {
-    vlang_c,
-      c_number_of_children,
-      c_name_of_variable,
-      c_name_of_child,
-      c_value_of_root,
-      c_value_of_child,
-      c_type_of_child,
-      c_variable_editable,
-      c_value_of_variable
-  }
+   vlang_c,
+   c_number_of_children,
+   c_name_of_variable,
+   c_name_of_child,
+   c_value_of_root,
+   c_value_of_child,
+   c_type_of_child,
+   c_variable_editable,
+   c_value_of_variable}
   ,
   /* C++ */
   {
-    vlang_cplus,
-      cplus_number_of_children,
-      cplus_name_of_variable,
-      cplus_name_of_child,
-      cplus_value_of_root,
-      cplus_value_of_child,
-      cplus_type_of_child,
-      cplus_variable_editable,
-      cplus_value_of_variable
-  }
+   vlang_cplus,
+   cplus_number_of_children,
+   cplus_name_of_variable,
+   cplus_name_of_child,
+   cplus_value_of_root,
+   cplus_value_of_child,
+   cplus_type_of_child,
+   cplus_variable_editable,
+   cplus_value_of_variable}
   ,
   /* Java */
   {
-    vlang_java,
-      java_number_of_children,
-      java_name_of_variable,
-      java_name_of_child,
-      java_value_of_root,
-      java_value_of_child,
-      java_type_of_child,
-      java_variable_editable,
-      java_value_of_variable
-  }
+   vlang_java,
+   java_number_of_children,
+   java_name_of_variable,
+   java_name_of_child,
+   java_value_of_root,
+   java_value_of_child,
+   java_type_of_child,
+   java_variable_editable,
+   java_value_of_variable}
 };
 
 /* A little convenience enum for dealing with C++/Java */
 enum vsections
-  {
-    v_public = 0, v_private, v_protected
-  };
+{
+  v_public = 0, v_private, v_protected
+};
 
 /* Private data */
 
 /* Mappings of varobj_display_formats enums to gdb's format codes */
-static int format_code[] =
-{0, 't', 'd', 'x', 'o'};
+static int format_code[] = { 0, 't', 'd', 'x', 'o' };
 
 /* Header of the list of root variable objects */
 static struct varobj_root *rootlist;
@@ -385,11 +387,6 @@ static int rootcount = 0;	/* number of root varobjs in the list */
 /* Pointer to the varobj hash table (built at run time) */
 static struct vlist **varobj_table;
 
-#if defined(FREEIF)
-#undef FREEIF
-#endif
-#define FREEIF(x) if (x != NULL) free((char *) (x))
-
 /* Is the variable X one of our "fake" children? */
 #define CPLUS_FAKE_CHILD(x) \
 ((x) != NULL && (x)->type == NULL && (x)->value == NULL)
@@ -399,18 +396,40 @@ static struct vlist **varobj_table;
 
 /* Creates a varobj (not its children) */
 
+/* Return the full FRAME which corresponds to the given CORE_ADDR
+   or NULL if no FRAME on the chain corresponds to CORE_ADDR.  */
+
+static struct frame_info *
+find_frame_addr_in_frame_chain (CORE_ADDR frame_addr)
+{
+  struct frame_info *frame = NULL;
+
+  if (frame_addr == (CORE_ADDR) 0)
+    return NULL;
+
+  while (1)
+    {
+      frame = get_prev_frame (frame);
+      if (frame == NULL)
+	return NULL;
+      if (get_frame_base_address (frame) == frame_addr)
+	return frame;
+    }
+}
+
 struct varobj *
 varobj_create (char *objname,
-	       char *expression, CORE_ADDR frame)
+	       char *expression, CORE_ADDR frame, enum varobj_type type)
 {
   struct varobj *var;
-  struct frame_info *fi, *old_fi;
+  struct frame_info *fi;
+  struct frame_info *old_fi = NULL;
   struct block *block;
   struct cleanup *old_chain;
 
   /* Fill out a varobj structure for the (root) variable being constructed. */
   var = new_root_variable ();
-  old_chain = make_cleanup ((make_cleanup_func) free_variable, var);
+  old_chain = make_cleanup_free_variable (var);
 
   if (expression != NULL)
     {
@@ -421,26 +440,40 @@ varobj_create (char *objname,
          of the variable's data as possible */
 
       /* Allow creator to specify context of variable */
-      if (frame == (CORE_ADDR) -1)
-	fi = selected_frame;
+      if ((type == USE_CURRENT_FRAME) || (type == USE_SELECTED_FRAME))
+	fi = deprecated_selected_frame;
       else
+	/* FIXME: cagney/2002-11-23: This code should be doing a
+	   lookup using the frame ID and not just the frame's
+	   ``address''.  This, of course, means an interface change.
+	   However, with out that interface change ISAs, such as the
+	   ia64 with its two stacks, won't work.  Similar goes for the
+	   case where there is a frameless function.  */
 	fi = find_frame_addr_in_frame_chain (frame);
+
+      /* frame = -2 means always use selected frame */
+      if (type == USE_SELECTED_FRAME)
+	var->root->use_selected_frame = 1;
 
       block = NULL;
       if (fi != NULL)
-	block = get_frame_block (fi);
+	block = get_frame_block (fi, 0);
 
       p = expression;
       innermost_block = NULL;
-      /* Callee may longjump */
-      var->root->exp = parse_exp_1 (&p, block, 0);
+      /* Wrap the call to parse expression, so we can 
+         return a sensible error. */
+      if (!gdb_parse_exp_1 (&p, block, 0, &var->root->exp))
+	{
+	  return NULL;
+	}
 
       /* Don't allow variables to be created for types. */
       if (var->root->exp->elts[0].opcode == OP_TYPE)
 	{
 	  do_cleanups (old_chain);
 	  fprintf_unfiltered (gdb_stderr,
-			    "Attempt to use a type name as an expression.");
+			      "Attempt to use a type name as an expression.");
 	  return NULL;
 	}
 
@@ -454,9 +487,9 @@ varobj_create (char *objname,
          Since select_frame is so benign, just call it for all cases. */
       if (fi != NULL)
 	{
-	  var->root->frame = FRAME_FP (fi);
-	  old_fi = selected_frame;
-	  select_frame (fi, -1);
+	  var->root->frame = get_frame_id (fi);
+	  old_fi = deprecated_selected_frame;
+	  select_frame (fi);
 	}
 
       /* We definitively need to catch errors here.
@@ -483,10 +516,13 @@ varobj_create (char *objname,
 
       /* Reset the selected frame */
       if (fi != NULL)
-	select_frame (old_fi, -1);
+	select_frame (old_fi);
     }
 
-  if (var != NULL)
+  /* If the variable object name is null, that means this
+     is a temporary variable, so don't install it. */
+
+  if ((var != NULL) && (objname != NULL))
     {
       var->obj_name = savestring (objname, strlen (objname));
 
@@ -509,13 +545,13 @@ char *
 varobj_gen_name (void)
 {
   static int id = 0;
-  char obj_name[31];
+  char *obj_name;
 
   /* generate a name for this object */
   id++;
-  sprintf (obj_name, "var%d", id);
+  obj_name = xstrprintf ("var%d", id);
 
-  return xstrdup (obj_name);
+  return obj_name;
 }
 
 /* Given an "objname", returns the pointer to the corresponding varobj
@@ -598,7 +634,8 @@ varobj_delete (struct varobj *var, char ***dellist, int only_children)
 	}
 
       if (mycount || (*cp != NULL))
-	warning ("varobj_delete: assertion failed - mycount(=%d) <> 0", mycount);
+	warning ("varobj_delete: assertion failed - mycount(=%d) <> 0",
+		 mycount);
     }
 
   return delcount;
@@ -690,7 +727,7 @@ varobj_list_children (struct varobj *var, struct varobj ***childlist)
 char *
 varobj_get_type (struct varobj *var)
 {
-  value_ptr val;
+  struct value *val;
   struct cleanup *old_chain;
   struct ui_file *stb;
   char *thetype;
@@ -704,7 +741,7 @@ varobj_get_type (struct varobj *var)
   stb = mem_fileopen ();
   old_chain = make_cleanup_ui_file_delete (stb);
 
-  /* To print the type, we simply create a zero value_ptr and
+  /* To print the type, we simply create a zero ``struct value *'' and
      cast it to our type. We then typeprint this variable. */
   val = value_zero (var->type, not_lval);
   type_print (VALUE_TYPE (val), "", stb, -1);
@@ -745,61 +782,37 @@ varobj_get_value (struct varobj *var)
 int
 varobj_set_value (struct varobj *var, char *expression)
 {
-  value_ptr val;
+  struct value *val;
+  int error;
   int offset = 0;
 
   /* The argument "expression" contains the variable's new value.
      We need to first construct a legal expression for this -- ugh! */
   /* Does this cover all the bases? */
   struct expression *exp;
-  value_ptr value;
+  struct value *value;
   int saved_input_radix = input_radix;
 
-  if (variable_editable (var) && !var->error)
+  if (var->value != NULL && variable_editable (var) && !var->error)
     {
       char *s = expression;
       int i;
-      value_ptr temp;
 
       input_radix = 10;		/* ALWAYS reset to decimal temporarily */
-      /* FIXME: Callee may longjump */
-      exp = parse_exp_1 (&s, 0, 0);
+      if (!gdb_parse_exp_1 (&s, 0, 0, &exp))
+	/* We cannot proceed without a well-formed expression. */
+	return 0;
       if (!gdb_evaluate_expression (exp, &value))
 	{
 	  /* We cannot proceed without a valid expression. */
-	  FREEIF (exp);
+	  xfree (exp);
 	  return 0;
 	}
 
-      /* If our parent is "public", "private", or "protected", we could
-         be asking to modify the value of a baseclass. If so, we need to
-         adjust our address by the offset of our baseclass in the subclass,
-         since VALUE_ADDRESS (var->value) points at the start of the subclass.
-         For some reason, value_cast doesn't take care of this properly. */
-      temp = var->value;
-      if (var->parent != NULL && CPLUS_FAKE_CHILD (var->parent))
-	{
-	  struct varobj *super, *sub;
-	  struct type *type;
-	  super = var->parent->parent;
-	  sub = super->parent;
-	  if (sub != NULL)
-	    {
-	      /* Yes, it is a baseclass */
-	      type = get_type_deref (sub);
-
-	      if (super->index < TYPE_N_BASECLASSES (type))
-	        {
-	          temp = value_copy (var->value);
-	          for (i = 0; i < super->index; i++)
-		    offset += TYPE_LENGTH (TYPE_FIELD_TYPE (type, i));
-	        }
-	    }
-	}
-
-      VALUE_ADDRESS (temp) += offset;
-      val = value_assign (temp, value);
-      VALUE_ADDRESS (val) -= offset;
+      if (!my_value_equal (var->value, value, &error))
+        var->updated = 1;
+      if (!gdb_value_assign (var->value, value, &val))
+	return 0;
       value_free (var->value);
       release_value (val);
       var->value = val;
@@ -834,8 +847,9 @@ varobj_list (struct varobj ***varlist)
   *cv = NULL;
 
   if (mycount || (croot != NULL))
-    warning ("varobj_list: assertion failed - wrong tally of root vars (%d:%d)",
-	     rootcount, mycount);
+    warning
+      ("varobj_list: assertion failed - wrong tally of root vars (%d:%d)",
+       rootcount, mycount);
 
   return rootcount;
 }
@@ -845,74 +859,97 @@ varobj_list (struct varobj ***varlist)
    expression to see if it's changed.  Then go all the way
    through its children, reconstructing them and noting if they've
    changed.
+   Return value:
+    -1 if there was an error updating the varobj
+    -2 if the type changed
+    Otherwise it is the number of children + parent changed
 
-   Only root variables can be updated... */
+   Only root variables can be updated... 
+
+   NOTE: This function may delete the caller's varobj. If it
+   returns -2, then it has done this and VARP will be modified
+   to point to the new varobj. */
 
 int
-varobj_update (struct varobj *var, struct varobj ***changelist)
+varobj_update (struct varobj **varp, struct varobj ***changelist)
 {
   int changed = 0;
+  int type_changed;
   int i;
   int vleft;
   int error2;
   struct varobj *v;
   struct varobj **cv;
-  struct varobj **templist;
-  value_ptr new;
+  struct varobj **templist = NULL;
+  struct value *new;
   struct vstack *stack = NULL;
   struct vstack *result = NULL;
-  struct frame_info *old_fi;
+  struct frame_id old_fid;
+  struct frame_info *fi;
 
   /* sanity check: have we been passed a pointer? */
   if (changelist == NULL)
     return -1;
 
   /*  Only root variables can be updated... */
-  if (var->root->rootvar != var)
+  if ((*varp)->root->rootvar != *varp)
     /* Not a root var */
     return -1;
 
   /* Save the selected stack frame, since we will need to change it
      in order to evaluate expressions. */
-  old_fi = selected_frame;
+  old_fid = get_frame_id (deprecated_selected_frame);
 
   /* Update the root variable. value_of_root can return NULL
      if the variable is no longer around, i.e. we stepped out of
-     the frame in which a local existed. */
-  new = value_of_root (var);
+     the frame in which a local existed. We are letting the 
+     value_of_root variable dispose of the varobj if the type
+     has changed. */
+  type_changed = 1;
+  new = value_of_root (varp, &type_changed);
   if (new == NULL)
-    return -1;
+    {
+      (*varp)->error = 1;
+      return -1;
+    }
 
   /* Initialize a stack for temporary results */
   vpush (&result, NULL);
 
-  if (!my_value_equal (var->value, new, &error2))
+  /* If this is a "use_selected_frame" varobj, and its type has changed,
+     them note that it's changed. */
+  if (type_changed)
     {
-      /* Note that it's changed   There a couple of exceptions here,
-         though. We don't want some types to be reported as "changed". */
-      if (type_changeable (var))
-	{
-	  vpush (&result, var);
-	  changed++;
-	}
+      vpush (&result, *varp);
+      changed++;
     }
-  /* error2 replaces var->error since this new value
-     WILL replace the old one. */
-  var->error = error2;
+  /* If values are not equal, note that it's changed.
+     There a couple of exceptions here, though.
+     We don't want some types to be reported as "changed". */
+  else if (type_changeable (*varp) &&
+	   ((*varp)->updated || !my_value_equal ((*varp)->value, new, &error2)))
+    {
+      vpush (&result, *varp);
+      (*varp)->updated = 0;
+      changed++;
+      /* error2 replaces var->error since this new value
+         WILL replace the old one. */
+      (*varp)->error = error2;
+    }
 
   /* We must always keep around the new value for this root
      variable expression, or we lose the updated children! */
-  value_free (var->value);
-  var->value = new;
+  value_free ((*varp)->value);
+  (*varp)->value = new;
 
   /* Initialize a stack */
   vpush (&stack, NULL);
 
   /* Push the root's children */
-  if (var->children != NULL)
+  if ((*varp)->children != NULL)
     {
       struct varobj_child *c;
-      for (c = var->children; c != NULL; c = c->next)
+      for (c = (*varp)->children; c != NULL; c = c->next)
 	vpush (&stack, c->child);
     }
 
@@ -930,10 +967,12 @@ varobj_update (struct varobj *var, struct varobj ***changelist)
 
       /* Update this variable */
       new = value_of_child (v->parent, v->index);
-      if (type_changeable (v) && !my_value_equal (v->value, new, &error2))
+      if (type_changeable (v) && 
+          (v->updated || !my_value_equal (v->value, new, &error2)))
 	{
 	  /* Note that it's changed */
 	  vpush (&result, v);
+	  v->updated = 0;
 	  changed++;
 	}
       /* error2 replaces v->error since this new value
@@ -976,15 +1015,20 @@ varobj_update (struct varobj *var, struct varobj ***changelist)
   if (changed > 1)
     {
       /* Now we revert the order. */
-      for (i=0; i < changed; i++)
-        *(*changelist + i) = *(templist + changed -1 - i);
+      for (i = 0; i < changed; i++)
+	*(*changelist + i) = *(templist + changed - 1 - i);
       *(*changelist + changed) = NULL;
     }
 
   /* Restore selected frame */
-  select_frame (old_fi, -1);
+  fi = frame_find_by_id (old_fid);
+  if (fi)
+    select_frame (fi);
 
-  return changed;
+  if (type_changed)
+    return -2;
+  else
+    return changed;
 }
 
 
@@ -995,10 +1039,8 @@ varobj_update (struct varobj *var, struct varobj ***changelist)
  */
 
 static int
-delete_variable (resultp, var, only_children_p)
-     struct cpstack **resultp;
-     struct varobj *var;
-     int only_children_p;
+delete_variable (struct cpstack **resultp, struct varobj *var,
+		 int only_children_p)
 {
   int delcount = 0;
 
@@ -1013,13 +1055,9 @@ delete_variable (resultp, var, only_children_p)
    and the parent is not removed we dump core.  It must be always
    initially called with remove_from_parent_p set */
 static void
-delete_variable_1 (resultp, delcountp, var,
-		   only_children_p, remove_from_parent_p)
-     struct cpstack **resultp;
-     int *delcountp;
-     struct varobj *var;
-     int only_children_p;
-     int remove_from_parent_p;
+delete_variable_1 (struct cpstack **resultp, int *delcountp,
+		   struct varobj *var, int only_children_p,
+		   int remove_from_parent_p)
 {
   struct varobj_child *vc;
   struct varobj_child *next;
@@ -1031,7 +1069,7 @@ delete_variable_1 (resultp, delcountp, var,
 	vc->child->parent = NULL;
       delete_variable_1 (resultp, delcountp, vc->child, 0, only_children_p);
       next = vc->next;
-      free (vc);
+      xfree (vc);
     }
 
   /* if we were called to delete only the children we are done here */
@@ -1039,11 +1077,11 @@ delete_variable_1 (resultp, delcountp, var,
     return;
 
   /* Otherwise, add it to the list of deleted ones and proceed to do so */
-  if (var->obj_name == NULL)
-    warning ("Assertion failed: NULL var->obj_name unexpectdly found");
-  else
+  /* If the name is null, this is a temporary variable, that has not
+     yet been installed, don't report it, it belongs to the caller... */
+  if (var->obj_name != NULL)
     {
-      cppush (resultp, strdup (var->obj_name));
+      cppush (resultp, xstrdup (var->obj_name));
       *delcountp = *delcountp + 1;
     }
 
@@ -1052,13 +1090,13 @@ delete_variable_1 (resultp, delcountp, var,
      (as indicated by remove_from_parent_p) we don't bother doing an
      expensive list search to find the element to remove when we are
      discarding the list afterwards */
-  if ((remove_from_parent_p) &&
-      (var->parent != NULL))
+  if ((remove_from_parent_p) && (var->parent != NULL))
     {
       remove_child_from_parent (var->parent, var);
     }
 
-  uninstall_variable (var);
+  if (var->obj_name != NULL)
+    uninstall_variable (var);
 
   /* Free memory associated with this variable */
   free_variable (var);
@@ -1066,8 +1104,7 @@ delete_variable_1 (resultp, delcountp, var,
 
 /* Install the given variable VAR with the object name VAR->OBJ_NAME. */
 static int
-install_variable (var)
-     struct varobj *var;
+install_variable (struct varobj *var)
 {
   struct vlist *cv;
   struct vlist *newvl;
@@ -1110,8 +1147,7 @@ install_variable (var)
 
 /* Unistall the object VAR. */
 static void
-uninstall_variable (var)
-     struct varobj *var;
+uninstall_variable (struct varobj *var)
 {
   struct vlist *cv;
   struct vlist *prev;
@@ -1140,7 +1176,9 @@ uninstall_variable (var)
 
   if (cv == NULL)
     {
-      warning ("Assertion failed: Could not find variable object \"%s\" to delete", var->obj_name);
+      warning
+	("Assertion failed: Could not find variable object \"%s\" to delete",
+	 var->obj_name);
       return;
     }
 
@@ -1149,7 +1187,7 @@ uninstall_variable (var)
   else
     prev->next = cv->next;
 
-  free (cv);
+  xfree (cv);
 
   /* If root, remove varobj from root list */
   if (var->root->rootvar == var)
@@ -1168,7 +1206,9 @@ uninstall_variable (var)
 	    }
 	  if (cr == NULL)
 	    {
-	      warning ("Assertion failed: Could not find varobj \"%s\" in root list", var->obj_name);
+	      warning
+		("Assertion failed: Could not find varobj \"%s\" in root list",
+		 var->obj_name);
 	      return;
 	    }
 	  if (prer == NULL)
@@ -1184,15 +1224,13 @@ uninstall_variable (var)
 /* Does a child with the name NAME exist in VAR? If so, return its data.
    If not, return NULL. */
 static struct varobj *
-child_exists (var, name)
-     struct varobj *var;	/* Parent */
-     char *name;		/* name of child */
+child_exists (struct varobj *var, char *name)
 {
   struct varobj_child *vc;
 
   for (vc = var->children; vc != NULL; vc = vc->next)
     {
-      if (STREQ (vc->child->name, name))
+      if (strcmp (vc->child->name, name) == 0)
 	return vc->child;
     }
 
@@ -1201,10 +1239,7 @@ child_exists (var, name)
 
 /* Create and install a child of the parent of the given name */
 static struct varobj *
-create_child (parent, index, name)
-     struct varobj *parent;
-     int index;
-     char *name;
+create_child (struct varobj *parent, int index, char *name)
 {
   struct varobj *child;
   char *childs_name;
@@ -1215,13 +1250,11 @@ create_child (parent, index, name)
   child->name = name;
   child->index = index;
   child->value = value_of_child (parent, index);
-  if (child->value == NULL || parent->error)
+  if ((!CPLUS_FAKE_CHILD (child) && child->value == NULL) || parent->error)
     child->error = 1;
   child->parent = parent;
   child->root = parent->root;
-  childs_name = (char *) xmalloc ((strlen (parent->obj_name) + strlen (name) + 2)
-				  * sizeof (char));
-  sprintf (childs_name, "%s.%s", parent->obj_name, name);
+  childs_name = xstrprintf ("%s.%s", parent->obj_name, name);
   child->obj_name = childs_name;
   install_variable (child);
 
@@ -1237,9 +1270,7 @@ create_child (parent, index, name)
 /* FIXME: This should be a generic add to list */
 /* Save CHILD in the PARENT's data. */
 static void
-save_child_in_parent (parent, child)
-     struct varobj *parent;
-     struct varobj *child;
+save_child_in_parent (struct varobj *parent, struct varobj *child)
 {
   struct varobj_child *vc;
 
@@ -1255,9 +1286,7 @@ save_child_in_parent (parent, child)
 /* FIXME: This should be a generic remove from list */
 /* Remove the CHILD from the PARENT's list of children. */
 static void
-remove_child_from_parent (parent, child)
-     struct varobj *parent;
-     struct varobj *child;
+remove_child_from_parent (struct varobj *parent, struct varobj *child)
 {
   struct varobj_child *vc, *prev;
 
@@ -1301,6 +1330,7 @@ new_variable (void)
   var->children = NULL;
   var->format = 0;
   var->root = NULL;
+  var->updated = 0;
 
   return var;
 }
@@ -1314,7 +1344,8 @@ new_root_variable (void)
   var->root->lang = NULL;
   var->root->exp = NULL;
   var->root->valid_block = NULL;
-  var->root->frame = (CORE_ADDR) -1;
+  var->root->frame = null_frame_id;
+  var->root->use_selected_frame = 0;
   var->root->rootvar = NULL;
 
   return var;
@@ -1322,41 +1353,52 @@ new_root_variable (void)
 
 /* Free any allocated memory associated with VAR. */
 static void
-free_variable (var)
-     struct varobj *var;
+free_variable (struct varobj *var)
 {
   /* Free the expression if this is a root variable. */
   if (var->root->rootvar == var)
     {
       free_current_contents ((char **) &var->root->exp);
-      FREEIF (var->root);
+      xfree (var->root);
     }
 
-  FREEIF (var->name);
-  FREEIF (var->obj_name);
-  FREEIF (var);
+  xfree (var->name);
+  xfree (var->obj_name);
+  xfree (var);
 }
 
-/* This returns the type of the variable. This skips past typedefs
-   and returns the real type of the variable. It also dereferences
-   pointers and references. */
+static void
+do_free_variable_cleanup (void *var)
+{
+  free_variable (var);
+}
+
+static struct cleanup *
+make_cleanup_free_variable (struct varobj *var)
+{
+  return make_cleanup (do_free_variable_cleanup, var);
+}
+
+/* This returns the type of the variable. It also skips past typedefs
+   to return the real type of the variable.
+
+   NOTE: TYPE_TARGET_TYPE should NOT be used anywhere in this file
+   except within get_target_type and get_type. */
 static struct type *
-get_type (var)
-     struct varobj *var;
+get_type (struct varobj *var)
 {
   struct type *type;
   type = var->type;
 
-  while (type != NULL && TYPE_CODE (type) == TYPE_CODE_TYPEDEF)
-    type = TYPE_TARGET_TYPE (type);
+  if (type != NULL)
+    type = check_typedef (type);
 
   return type;
 }
 
 /* This returns the type of the variable, dereferencing pointers, too. */
 static struct type *
-get_type_deref (var)
-     struct varobj *var;
+get_type_deref (struct varobj *var)
 {
   struct type *type;
 
@@ -1370,16 +1412,18 @@ get_type_deref (var)
 }
 
 /* This returns the target type (or NULL) of TYPE, also skipping
-   past typedefs, just like get_type (). */
+   past typedefs, just like get_type ().
+
+   NOTE: TYPE_TARGET_TYPE should NOT be used anywhere in this file
+   except within get_target_type and get_type. */
 static struct type *
-get_target_type (type)
-     struct type *type;
+get_target_type (struct type *type)
 {
   if (type != NULL)
     {
       type = TYPE_TARGET_TYPE (type);
-      while (type != NULL && TYPE_CODE (type) == TYPE_CODE_TYPEDEF)
-	type = TYPE_TARGET_TYPE (type);
+      if (type != NULL)
+	type = check_typedef (type);
     }
 
   return type;
@@ -1388,8 +1432,7 @@ get_target_type (type)
 /* What is the default display for this variable? We assume that
    everything is "natural". Any exceptions? */
 static enum varobj_display_formats
-variable_default_display (var)
-     struct varobj *var;
+variable_default_display (struct varobj *var)
 {
   return FORMAT_NATURAL;
 }
@@ -1398,10 +1441,7 @@ variable_default_display (var)
    one is "safe" -- it NEVER longjmps. It determines if the VAR's
    value is the same as VAL2. */
 static int
-my_value_equal (val1, val2, error2)
-     value_ptr val1;
-     value_ptr val2;
-     int *error2;
+my_value_equal (struct value *val1, struct value *val2, int *error2)
 {
   int r, err1, err2;
 
@@ -1455,9 +1495,7 @@ my_value_equal (val1, val2, error2)
 
 /* FIXME: The following should be generic for any pointer */
 static void
-vpush (pstack, var)
-     struct vstack **pstack;
-     struct varobj *var;
+vpush (struct vstack **pstack, struct varobj *var)
 {
   struct vstack *s;
 
@@ -1469,8 +1507,7 @@ vpush (pstack, var)
 
 /* FIXME: The following should be generic for any pointer */
 static struct varobj *
-vpop (pstack)
-     struct vstack **pstack;
+vpop (struct vstack **pstack)
 {
   struct vstack *s;
   struct varobj *v;
@@ -1481,16 +1518,14 @@ vpop (pstack)
   s = *pstack;
   v = s->var;
   *pstack = (*pstack)->next;
-  free (s);
+  xfree (s);
 
   return v;
 }
 
 /* FIXME: The following should be generic for any pointer */
 static void
-cppush (pstack, name)
-     struct cpstack **pstack;
-     char *name;
+cppush (struct cpstack **pstack, char *name)
 {
   struct cpstack *s;
 
@@ -1502,8 +1537,7 @@ cppush (pstack, name)
 
 /* FIXME: The following should be generic for any pointer */
 static char *
-cppop (pstack)
-     struct cpstack **pstack;
+cppop (struct cpstack **pstack)
 {
   struct cpstack *s;
   char *v;
@@ -1514,7 +1548,7 @@ cppop (pstack)
   s = *pstack;
   v = s->name;
   *pstack = (*pstack)->next;
-  free (s);
+  xfree (s);
 
   return v;
 }
@@ -1527,8 +1561,7 @@ cppop (pstack)
 
 /* Get the language of variable VAR. */
 static enum varobj_languages
-variable_language (var)
-     struct varobj *var;
+variable_language (struct varobj *var)
 {
   enum varobj_languages lang;
 
@@ -1555,58 +1588,118 @@ variable_language (var)
    is the number of children that the user will see in the variable
    display. */
 static int
-number_of_children (var)
-     struct varobj *var;
+number_of_children (struct varobj *var)
 {
   return (*var->root->lang->number_of_children) (var);;
 }
 
 /* What is the expression for the root varobj VAR? Returns a malloc'd string. */
 static char *
-name_of_variable (var)
-     struct varobj *var;
+name_of_variable (struct varobj *var)
 {
   return (*var->root->lang->name_of_variable) (var);
 }
 
 /* What is the name of the INDEX'th child of VAR? Returns a malloc'd string. */
 static char *
-name_of_child (var, index)
-     struct varobj *var;
-     int index;
+name_of_child (struct varobj *var, int index)
 {
   return (*var->root->lang->name_of_child) (var, index);
 }
 
-/* What is the value_ptr of the root variable VAR? */
-static value_ptr
-value_of_root (var)
-     struct varobj *var;
+/* What is the ``struct value *'' of the root variable VAR? 
+   TYPE_CHANGED controls what to do if the type of a
+   use_selected_frame = 1 variable changes.  On input,
+   TYPE_CHANGED = 1 means discard the old varobj, and replace
+   it with this one.  TYPE_CHANGED = 0 means leave it around.
+   NB: In both cases, var_handle will point to the new varobj,
+   so if you use TYPE_CHANGED = 0, you will have to stash the
+   old varobj pointer away somewhere before calling this.
+   On return, TYPE_CHANGED will be 1 if the type has changed, and 
+   0 otherwise. */
+static struct value *
+value_of_root (struct varobj **var_handle, int *type_changed)
 {
-  return (*var->root->lang->value_of_root) (var);
+  struct varobj *var;
+
+  if (var_handle == NULL)
+    return NULL;
+
+  var = *var_handle;
+
+  /* This should really be an exception, since this should
+     only get called with a root variable. */
+
+  if (var->root->rootvar != var)
+    return NULL;
+
+  if (var->root->use_selected_frame)
+    {
+      struct varobj *tmp_var;
+      char *old_type, *new_type;
+      old_type = varobj_get_type (var);
+      tmp_var = varobj_create (NULL, var->name, (CORE_ADDR) 0,
+			       USE_SELECTED_FRAME);
+      if (tmp_var == NULL)
+	{
+	  return NULL;
+	}
+      new_type = varobj_get_type (tmp_var);
+      if (strcmp (old_type, new_type) == 0)
+	{
+	  varobj_delete (tmp_var, NULL, 0);
+	  *type_changed = 0;
+	}
+      else
+	{
+	  if (*type_changed)
+	    {
+	      tmp_var->obj_name =
+		savestring (var->obj_name, strlen (var->obj_name));
+	      varobj_delete (var, NULL, 0);
+	    }
+	  else
+	    {
+	      tmp_var->obj_name = varobj_gen_name ();
+	    }
+	  install_variable (tmp_var);
+	  *var_handle = tmp_var;
+	  var = *var_handle;
+	  *type_changed = 1;
+	}
+    }
+  else
+    {
+      *type_changed = 0;
+    }
+
+  return (*var->root->lang->value_of_root) (var_handle);
 }
 
-/* What is the value_ptr for the INDEX'th child of PARENT? */
-static value_ptr
-value_of_child (parent, index)
-     struct varobj *parent;
-     int index;
+/* What is the ``struct value *'' for the INDEX'th child of PARENT? */
+static struct value *
+value_of_child (struct varobj *parent, int index)
 {
-  value_ptr value;
+  struct value *value;
 
   value = (*parent->root->lang->value_of_child) (parent, index);
 
   /* If we're being lazy, fetch the real value of the variable. */
   if (value != NULL && VALUE_LAZY (value))
-    gdb_value_fetch_lazy (value);
+    {
+      /* If we fail to fetch the value of the child, return
+         NULL so that callers notice that we're leaving an
+         error message. */
+      if (!gdb_value_fetch_lazy (value))
+	value = NULL;
+    }
 
   return value;
 }
 
 /* What is the type of VAR? */
 static struct type *
-type_of_child (var)
-     struct varobj *var;
+type_of_child (struct varobj *var)
 {
 
   /* If the child had no evaluation errors, var->value
@@ -1621,16 +1714,14 @@ type_of_child (var)
 /* Is this variable editable? Use the variable's type to make
    this determination. */
 static int
-variable_editable (var)
-     struct varobj *var;
+variable_editable (struct varobj *var)
 {
   return (*var->root->lang->variable_editable) (var);
 }
 
 /* GDB already has a command called "value_of_variable". Sigh. */
 static char *
-my_value_of_variable (var)
-     struct varobj *var;
+my_value_of_variable (struct varobj *var)
 {
   return (*var->root->lang->value_of_variable) (var);
 }
@@ -1639,8 +1730,7 @@ my_value_of_variable (var)
    some variable's values never change. For example,
    struct and unions never change values. */
 static int
-type_changeable (var)
-     struct varobj *var;
+type_changeable (struct varobj *var)
 {
   int r;
   struct type *type;
@@ -1652,13 +1742,14 @@ type_changeable (var)
 
   switch (TYPE_CODE (type))
     {
-      case TYPE_CODE_STRUCT:
-      case TYPE_CODE_UNION:
-	r = 0;
-	break;
+    case TYPE_CODE_STRUCT:
+    case TYPE_CODE_UNION:
+    case TYPE_CODE_ARRAY:
+      r = 0;
+      break;
 
-      default:
-	r = 1;
+    default:
+      r = 1;
     }
 
   return r;
@@ -1666,8 +1757,7 @@ type_changeable (var)
 
 /* C */
 static int
-c_number_of_children (var)
-     struct varobj *var;
+c_number_of_children (struct varobj *var)
 {
   struct type *type;
   struct type *target;
@@ -1681,7 +1771,7 @@ c_number_of_children (var)
     {
     case TYPE_CODE_ARRAY:
       if (TYPE_LENGTH (type) > 0 && TYPE_LENGTH (target) > 0
-	&& TYPE_ARRAY_UPPER_BOUND_TYPE (type) != BOUND_CANNOT_BE_DETERMINED)
+	  && TYPE_ARRAY_UPPER_BOUND_TYPE (type) != BOUND_CANNOT_BE_DETERMINED)
 	children = TYPE_LENGTH (type) / TYPE_LENGTH (target);
       else
 	children = -1;
@@ -1695,7 +1785,13 @@ c_number_of_children (var)
     case TYPE_CODE_PTR:
       /* This is where things get compilcated. All pointers have one child.
          Except, of course, for struct and union ptr, which we automagically
-         dereference for the user and function ptrs, which have no children. */
+         dereference for the user and function ptrs, which have no children.
+         We also don't dereference void* as we don't know what to show.
+         We can show char* so we allow it to be dereferenced.  If you decide
+         to test for it, please mind that a little magic is necessary to
+         properly identify it: char* has TYPE_CODE == TYPE_CODE_INT and 
+         TYPE_NAME == "char" */
+
       switch (TYPE_CODE (target))
 	{
 	case TYPE_CODE_STRUCT:
@@ -1704,17 +1800,12 @@ c_number_of_children (var)
 	  break;
 
 	case TYPE_CODE_FUNC:
+	case TYPE_CODE_VOID:
 	  children = 0;
 	  break;
 
 	default:
-	  /* Don't dereference char* or void*. */
-	  if (TYPE_NAME (target) != NULL
-	      && (STREQ (TYPE_NAME (target), "char")
-		  || STREQ (TYPE_NAME (target), "void")))
-	    children = 0;
-	  else
-	    children = 1;
+	  children = 1;
 	}
       break;
 
@@ -1727,16 +1818,13 @@ c_number_of_children (var)
 }
 
 static char *
-c_name_of_variable (parent)
-     struct varobj *parent;
+c_name_of_variable (struct varobj *parent)
 {
   return savestring (parent->name, strlen (parent->name));
 }
 
 static char *
-c_name_of_child (parent, index)
-     struct varobj *parent;
-     int index;
+c_name_of_child (struct varobj *parent, int index)
 {
   struct type *type;
   struct type *target;
@@ -1749,14 +1837,7 @@ c_name_of_child (parent, index)
   switch (TYPE_CODE (type))
     {
     case TYPE_CODE_ARRAY:
-      {
-	/* We never get here unless parent->num_children is greater than 0... */
-	int len = 1;
-	while ((int) pow ((double) 10, (double) len) < index)
-	  len++;
-	name = (char *) xmalloc (1 + len * sizeof (char));
-	sprintf (name, "%d", index);
-      }
+      name = xstrprintf ("%d", index);
       break;
 
     case TYPE_CODE_STRUCT:
@@ -1775,8 +1856,7 @@ c_name_of_child (parent, index)
 	  break;
 
 	default:
-	  name = (char *) xmalloc ((strlen (parent->name) + 2) * sizeof (char));
-	  sprintf (name, "*%s", parent->name);
+	  name = xstrprintf ("*%s", parent->name);
 	  break;
 	}
       break;
@@ -1789,13 +1869,19 @@ c_name_of_child (parent, index)
   return name;
 }
 
-static value_ptr
-c_value_of_root (var)
-     struct varobj *var;
+static struct value *
+c_value_of_root (struct varobj **var_handle)
 {
-  value_ptr new_val;
+  struct value *new_val;
+  struct varobj *var = *var_handle;
   struct frame_info *fi;
   int within_scope;
+
+  /*  Only root variables can be updated... */
+  if (var->root->rootvar != var)
+    /* Not a root var */
+    return NULL;
+
 
   /* Determine whether the variable is still around. */
   if (var->root->valid_block == NULL)
@@ -1803,25 +1889,28 @@ c_value_of_root (var)
   else
     {
       reinit_frame_cache ();
-      fi = find_frame_addr_in_frame_chain (var->root->frame);
+      fi = frame_find_by_id (var->root->frame);
       within_scope = fi != NULL;
       /* FIXME: select_frame could fail */
       if (within_scope)
-	select_frame (fi, -1);
+	select_frame (fi);
     }
 
   if (within_scope)
     {
-      /* We need to catch errors here, because if evaluate expression fails
-         we just want to make val->error = 1 and go on */
+      /* We need to catch errors here, because if evaluate
+         expression fails we just want to make val->error = 1 and
+         go on */
       if (gdb_evaluate_expression (var->root->exp, &new_val))
 	{
 	  if (VALUE_LAZY (new_val))
 	    {
-	      /* We need to catch errors because if value_fetch_lazy fails we
-	         still want to continue (after making val->error = 1) */
-	      /* FIXME: Shouldn't be using VALUE_CONTENTS?  The comment on
-	         value_fetch_lazy() says it is only called from the macro... */
+	      /* We need to catch errors because if
+	         value_fetch_lazy fails we still want to continue
+	         (after making val->error = 1) */
+	      /* FIXME: Shouldn't be using VALUE_CONTENTS?  The
+	         comment on value_fetch_lazy() says it is only
+	         called from the macro... */
 	      if (!gdb_value_fetch_lazy (new_val))
 		var->error = 1;
 	      else
@@ -1838,12 +1927,12 @@ c_value_of_root (var)
   return NULL;
 }
 
-static value_ptr
-c_value_of_child (parent, index)
-     struct varobj *parent;
-     int index;
+static struct value *
+c_value_of_child (struct varobj *parent, int index)
 {
-  value_ptr value, temp;
+  struct value *value;
+  struct value *temp;
+  struct value *indval;
   struct type *type, *target;
   char *name;
 
@@ -1858,14 +1947,21 @@ c_value_of_child (parent, index)
       switch (TYPE_CODE (type))
 	{
 	case TYPE_CODE_ARRAY:
+#if 0
+	  /* This breaks if the array lives in a (vector) register. */
 	  value = value_slice (temp, index, 1);
 	  temp = value_coerce_array (value);
 	  gdb_value_ind (temp, &value);
+#else
+	  indval = value_from_longest (builtin_type_int, (LONGEST) index);
+	  gdb_value_subscript (temp, indval, &value);
+#endif
 	  break;
 
 	case TYPE_CODE_STRUCT:
 	case TYPE_CODE_UNION:
-	  value = value_struct_elt (&temp, NULL, name, NULL, "vstructure");
+	  gdb_value_struct_elt (NULL, &value, &temp, NULL, name, NULL,
+				"vstructure");
 	  break;
 
 	case TYPE_CODE_PTR:
@@ -1873,7 +1969,8 @@ c_value_of_child (parent, index)
 	    {
 	    case TYPE_CODE_STRUCT:
 	    case TYPE_CODE_UNION:
-	      value = value_struct_elt (&temp, NULL, name, NULL, "vstructure");
+	      gdb_value_struct_elt (NULL, &value, &temp, NULL, name, NULL,
+				    "vstructure");
 	      break;
 
 	    default:
@@ -1890,13 +1987,12 @@ c_value_of_child (parent, index)
   if (value != NULL)
     release_value (value);
 
+  xfree (name);
   return value;
 }
 
 static struct type *
-c_type_of_child (parent, index)
-     struct varobj *parent;
-     int index;
+c_type_of_child (struct varobj *parent, int index)
 {
   struct type *type;
   char *name = name_of_child (parent, index);
@@ -1904,7 +2000,7 @@ c_type_of_child (parent, index)
   switch (TYPE_CODE (parent->type))
     {
     case TYPE_CODE_ARRAY:
-      type = TYPE_TARGET_TYPE (parent->type);
+      type = get_target_type (parent->type);
       break;
 
     case TYPE_CODE_STRUCT:
@@ -1913,7 +2009,7 @@ c_type_of_child (parent, index)
       break;
 
     case TYPE_CODE_PTR:
-      switch (TYPE_CODE (TYPE_TARGET_TYPE (parent->type)))
+      switch (TYPE_CODE (get_target_type (parent->type)))
 	{
 	case TYPE_CODE_STRUCT:
 	case TYPE_CODE_UNION:
@@ -1921,7 +2017,7 @@ c_type_of_child (parent, index)
 	  break;
 
 	default:
-	  type = TYPE_TARGET_TYPE (parent->type);
+	  type = get_target_type (parent->type);
 	  break;
 	}
       break;
@@ -1934,12 +2030,12 @@ c_type_of_child (parent, index)
       break;
     }
 
+  xfree (name);
   return type;
 }
 
 static int
-c_variable_editable (var)
-     struct varobj *var;
+c_variable_editable (struct varobj *var)
 {
   switch (TYPE_CODE (get_type (var)))
     {
@@ -1959,25 +2055,12 @@ c_variable_editable (var)
 }
 
 static char *
-c_value_of_variable (var)
-     struct varobj *var;
+c_value_of_variable (struct varobj *var)
 {
-  struct type *type;
-  value_ptr val;
-
-  if (var->value != NULL)
-    val = var->value;
-  else
-    {
-      /* This can happen if we attempt to get the value of a struct
-         member when the parent is an invalid pointer. */
-      return xstrdup ("???");
-    }
-
   /* BOGUS: if val_print sees a struct/class, it will print out its
      children instead of "{...}" */
-  type = get_type (var);
-  switch (TYPE_CODE (type))
+
+  switch (TYPE_CODE (get_type (var)))
     {
     case TYPE_CODE_STRUCT:
     case TYPE_CODE_UNION:
@@ -1986,29 +2069,39 @@ c_value_of_variable (var)
 
     case TYPE_CODE_ARRAY:
       {
-	char number[18];
-	sprintf (number, "[%d]", var->num_children);
-	return xstrdup (number);
+	char *number;
+	number = xstrprintf ("[%d]", var->num_children);
+	return (number);
       }
       /* break; */
 
     default:
       {
-	long dummy;
-	struct ui_file *stb = mem_fileopen ();
-	struct cleanup *old_chain = make_cleanup_ui_file_delete (stb);
-	char *thevalue;
+	if (var->value == NULL)
+	  {
+	    /* This can happen if we attempt to get the value of a struct
+	       member when the parent is an invalid pointer. This is an
+	       error condition, so we should tell the caller. */
+	    return NULL;
+	  }
+	else
+	  {
+	    long dummy;
+	    struct ui_file *stb = mem_fileopen ();
+	    struct cleanup *old_chain = make_cleanup_ui_file_delete (stb);
+	    char *thevalue;
 
-	if (VALUE_LAZY (val))
-	  gdb_value_fetch_lazy (val);
-	val_print (VALUE_TYPE (val), VALUE_CONTENTS_RAW (val), 0,
-		   VALUE_ADDRESS (val),
-		   stb, format_code[(int) var->format], 1, 0, 0);
-	thevalue = ui_file_xstrdup (stb, &dummy);
-	do_cleanups (old_chain);
+	    if (VALUE_LAZY (var->value))
+	      gdb_value_fetch_lazy (var->value);
+	    val_print (VALUE_TYPE (var->value),
+		       VALUE_CONTENTS_RAW (var->value), 0,
+		       VALUE_ADDRESS (var->value), stb,
+		       format_code[(int) var->format], 1, 0, 0);
+	    thevalue = ui_file_xstrdup (stb, &dummy);
+	    do_cleanups (old_chain);
 	return thevalue;
       }
-      /* break; */
+      }
     }
 }
 
@@ -2016,8 +2109,7 @@ c_value_of_variable (var)
 /* C++ */
 
 static int
-cplus_number_of_children (var)
-     struct varobj *var;
+cplus_number_of_children (struct varobj *var)
 {
   struct type *type;
   int children, dont_know;
@@ -2030,7 +2122,7 @@ cplus_number_of_children (var)
       type = get_type_deref (var);
 
       if (((TYPE_CODE (type)) == TYPE_CODE_STRUCT) ||
-          ((TYPE_CODE (type)) == TYPE_CODE_UNION))
+	  ((TYPE_CODE (type)) == TYPE_CODE_UNION))
 	{
 	  int kids[3];
 
@@ -2056,9 +2148,9 @@ cplus_number_of_children (var)
       type = get_type_deref (var->parent);
 
       cplus_class_num_children (type, kids);
-      if (STREQ (var->name, "public"))
+      if (strcmp (var->name, "public") == 0)
 	children = kids[v_public];
-      else if (STREQ (var->name, "private"))
+      else if (strcmp (var->name, "private") == 0)
 	children = kids[v_private];
       else
 	children = kids[v_protected];
@@ -2075,9 +2167,7 @@ cplus_number_of_children (var)
    That means we need to descend into all baseclasses and find out
    how many are there, too. */
 static void
-cplus_class_num_children (type, children)
-     struct type *type;
-     int children[3];
+cplus_class_num_children (struct type *type, int children[3])
 {
   int i;
 
@@ -2088,8 +2178,7 @@ cplus_class_num_children (type, children)
   for (i = TYPE_N_BASECLASSES (type); i < TYPE_NFIELDS (type); i++)
     {
       /* If we have a virtual table pointer, omit it. */
-      if (TYPE_VPTR_BASETYPE (type) == type
-	  && TYPE_VPTR_FIELDNO (type) == i)
+      if (TYPE_VPTR_BASETYPE (type) == type && TYPE_VPTR_FIELDNO (type) == i)
 	continue;
 
       if (TYPE_FIELD_PROTECTED (type, i))
@@ -2102,20 +2191,16 @@ cplus_class_num_children (type, children)
 }
 
 static char *
-cplus_name_of_variable (parent)
-     struct varobj *parent;
+cplus_name_of_variable (struct varobj *parent)
 {
   return c_name_of_variable (parent);
 }
 
 static char *
-cplus_name_of_child (parent, index)
-     struct varobj *parent;
-     int index;
+cplus_name_of_child (struct varobj *parent, int index)
 {
   char *name;
   struct type *type;
-  int children[3];
 
   if (CPLUS_FAKE_CHILD (parent))
     {
@@ -2130,47 +2215,97 @@ cplus_name_of_child (parent, index)
     {
     case TYPE_CODE_STRUCT:
     case TYPE_CODE_UNION:
-      cplus_class_num_children (type, children);
-
       if (CPLUS_FAKE_CHILD (parent))
 	{
-	  /* FIXME: This assumes that type orders
-	     inherited, public, private, protected */
-	  int i = index + TYPE_N_BASECLASSES (type);
-	  if (STREQ (parent->name, "private") || STREQ (parent->name, "protected"))
-	    i += children[v_public];
-	  if (STREQ (parent->name, "protected"))
-	    i += children[v_private];
+	  /* The fields of the class type are ordered as they
+	     appear in the class.  We are given an index for a
+	     particular access control type ("public","protected",
+	     or "private").  We must skip over fields that don't
+	     have the access control we are looking for to properly
+	     find the indexed field. */
+	  int type_index = TYPE_N_BASECLASSES (type);
+	  if (strcmp (parent->name, "private") == 0)
+	    {
+	      while (index >= 0)
+		{
+	  	  if (TYPE_VPTR_BASETYPE (type) == type
+	      	      && type_index == TYPE_VPTR_FIELDNO (type))
+		    ; /* ignore vptr */
+		  else if (TYPE_FIELD_PRIVATE (type, type_index))
+		    --index;
+		  ++type_index;
+		}
+	      --type_index;
+	    }
+	  else if (strcmp (parent->name, "protected") == 0)
+	    {
+	      while (index >= 0)
+		{
+	  	  if (TYPE_VPTR_BASETYPE (type) == type
+	      	      && type_index == TYPE_VPTR_FIELDNO (type))
+		    ; /* ignore vptr */
+		  else if (TYPE_FIELD_PROTECTED (type, type_index))
+		    --index;
+		  ++type_index;
+		}
+	      --type_index;
+	    }
+	  else
+	    {
+	      while (index >= 0)
+		{
+	  	  if (TYPE_VPTR_BASETYPE (type) == type
+	      	      && type_index == TYPE_VPTR_FIELDNO (type))
+		    ; /* ignore vptr */
+		  else if (!TYPE_FIELD_PRIVATE (type, type_index) &&
+		      !TYPE_FIELD_PROTECTED (type, type_index))
+		    --index;
+		  ++type_index;
+		}
+	      --type_index;
+	    }
 
-	  name = TYPE_FIELD_NAME (type, i);
+	  name = TYPE_FIELD_NAME (type, type_index);
 	}
       else if (index < TYPE_N_BASECLASSES (type))
+	/* We are looking up the name of a base class */
 	name = TYPE_FIELD_NAME (type, index);
       else
 	{
+	  int children[3];
+	  cplus_class_num_children(type, children);
+
 	  /* Everything beyond the baseclasses can
-	     only be "public", "private", or "protected" */
+	     only be "public", "private", or "protected"
+
+	     The special "fake" children are always output by varobj in
+	     this order. So if INDEX == 2, it MUST be "protected". */
 	  index -= TYPE_N_BASECLASSES (type);
 	  switch (index)
 	    {
 	    case 0:
-	      if (children[v_public] != 0)
-		{
-		  name = "public";
-		  break;
-		}
+	      if (children[v_public] > 0)
+	 	name = "public";
+	      else if (children[v_private] > 0)
+	 	name = "private";
+	      else 
+	 	name = "protected";
+	      break;
 	    case 1:
-	      if (children[v_private] != 0)
+	      if (children[v_public] > 0)
 		{
-		  name = "private";
-		  break;
+		  if (children[v_private] > 0)
+		    name = "private";
+		  else
+		    name = "protected";
 		}
+	      else if (children[v_private] > 0)
+	 	name = "protected";
+	      break;
 	    case 2:
-	      if (children[v_protected] != 0)
-		{
-		  name = "protected";
-		  break;
-		}
+	      /* Must be protected */
+	      name = "protected";
+	      break;
 	    default:
 	      /* error! */
 	      break;
@@ -2193,21 +2328,17 @@ cplus_name_of_child (parent, index)
   return name;
 }
 
-static value_ptr
-cplus_value_of_root (var)
-     struct varobj *var;
+static struct value *
+cplus_value_of_root (struct varobj **var_handle)
 {
-  return c_value_of_root (var);
+  return c_value_of_root (var_handle);
 }
 
-static value_ptr
-cplus_value_of_child (parent, index)
-     struct varobj *parent;
-     int index;
+static struct value *
+cplus_value_of_child (struct varobj *parent, int index)
 {
   struct type *type;
-  value_ptr value;
-  char *name;
+  struct value *value;
 
   if (CPLUS_FAKE_CHILD (parent))
     type = get_type_deref (parent->parent);
@@ -2215,17 +2346,25 @@ cplus_value_of_child (parent, index)
     type = get_type_deref (parent);
 
   value = NULL;
-  name = name_of_child (parent, index);
 
   if (((TYPE_CODE (type)) == TYPE_CODE_STRUCT) ||
       ((TYPE_CODE (type)) == TYPE_CODE_UNION))
     {
       if (CPLUS_FAKE_CHILD (parent))
 	{
-	  value_ptr temp = parent->parent->value;
-	  value = value_struct_elt (&temp, NULL, name,
-				    NULL, "cplus_structure");
-	  release_value (value);
+	  char *name;
+	  struct value *temp = parent->parent->value;
+
+	  if (temp == NULL)
+	    return NULL;
+
+	  name = name_of_child (parent, index);
+	  gdb_value_struct_elt (NULL, &value, &temp, NULL, name, NULL,
+				"cplus_structure");
+	  if (value != NULL)
+	    release_value (value);
+
+	  xfree (name);
 	}
       else if (index >= TYPE_N_BASECLASSES (type))
 	{
@@ -2237,16 +2376,28 @@ cplus_value_of_child (parent, index)
 	  /* Baseclass */
 	  if (parent->value != NULL)
 	    {
-	      value_ptr temp;
+	      struct value *temp = NULL;
 
 	      if (TYPE_CODE (VALUE_TYPE (parent->value)) == TYPE_CODE_PTR
 		  || TYPE_CODE (VALUE_TYPE (parent->value)) == TYPE_CODE_REF)
-		gdb_value_ind (parent->value, &temp);
+		{
+		  if (!gdb_value_ind (parent->value, &temp))
+		    return NULL;
+		}
 	      else
 		temp = parent->value;
 
-	      value = value_cast (TYPE_FIELD_TYPE (type, index), temp);
-	      release_value (value);
+	      if (temp != NULL)
+		{
+		  value = value_cast (TYPE_FIELD_TYPE (type, index), temp);
+		  release_value (value);
+		}
+	      else
+		{
+		  /* We failed to evaluate the parent's value, so don't even
+		     bother trying to evaluate this child. */
+		  return NULL;
+		}
 	    }
 	}
     }
@@ -2258,27 +2409,35 @@ cplus_value_of_child (parent, index)
 }
 
 static struct type *
-cplus_type_of_child (parent, index)
-     struct varobj *parent;
-     int index;
+cplus_type_of_child (struct varobj *parent, int index)
 {
   struct type *type, *t;
 
-  t = get_type_deref (parent);
+  if (CPLUS_FAKE_CHILD (parent))
+    {
+      /* Looking for the type of a child of public, private, or protected. */
+      t = get_type_deref (parent->parent);
+    }
+  else
+    t = get_type_deref (parent);
+
   type = NULL;
   switch (TYPE_CODE (t))
     {
     case TYPE_CODE_STRUCT:
     case TYPE_CODE_UNION:
-      if (index >= TYPE_N_BASECLASSES (t))
+      if (CPLUS_FAKE_CHILD (parent))
+	{
+	  char *name = cplus_name_of_child (parent, index);
+	  type = lookup_struct_elt_type (t, name, 0);
+	  xfree (name);
+	}
+      else if (index < TYPE_N_BASECLASSES (t))
+	type = TYPE_FIELD_TYPE (t, index);
+      else
 	{
 	  /* special */
 	  return NULL;
-	}
-      else
-	{
-	  /* Baseclass */
-	  type = TYPE_FIELD_TYPE (t, index);
 	}
       break;
 
@@ -2293,8 +2452,7 @@ cplus_type_of_child (parent, index)
 }
 
 static int
-cplus_variable_editable (var)
-     struct varobj *var;
+cplus_variable_editable (struct varobj *var)
 {
   if (CPLUS_FAKE_CHILD (var))
     return 0;
@@ -2303,8 +2461,7 @@ cplus_variable_editable (var)
 }
 
 static char *
-cplus_value_of_variable (var)
-     struct varobj *var;
+cplus_value_of_variable (struct varobj *var)
 {
 
   /* If we have one of our special types, don't print out
@@ -2318,15 +2475,13 @@ cplus_value_of_variable (var)
 /* Java */
 
 static int
-java_number_of_children (var)
-     struct varobj *var;
+java_number_of_children (struct varobj *var)
 {
   return cplus_number_of_children (var);
 }
 
 static char *
-java_name_of_variable (parent)
-     struct varobj *parent;
+java_name_of_variable (struct varobj *parent)
 {
   char *p, *name;
 
@@ -2346,9 +2501,7 @@ java_name_of_variable (parent)
 }
 
 static char *
-java_name_of_child (parent, index)
-     struct varobj *parent;
-     int index;
+java_name_of_child (struct varobj *parent, int index)
 {
   char *name, *p;
 
@@ -2366,39 +2519,32 @@ java_name_of_child (parent, index)
   return name;
 }
 
-static value_ptr
-java_value_of_root (var)
-     struct varobj *var;
+static struct value *
+java_value_of_root (struct varobj **var_handle)
 {
-  return cplus_value_of_root (var);
+  return cplus_value_of_root (var_handle);
 }
 
-static value_ptr
-java_value_of_child (parent, index)
-     struct varobj *parent;
-     int index;
+static struct value *
+java_value_of_child (struct varobj *parent, int index)
 {
   return cplus_value_of_child (parent, index);
 }
 
 static struct type *
-java_type_of_child (parent, index)
-     struct varobj *parent;
-     int index;
+java_type_of_child (struct varobj *parent, int index)
 {
   return cplus_type_of_child (parent, index);
 }
 
 static int
-java_variable_editable (var)
-     struct varobj *var;
+java_variable_editable (struct varobj *var)
 {
   return cplus_variable_editable (var);
 }
 
 static char *
-java_value_of_variable (var)
-     struct varobj *var;
+java_value_of_variable (struct varobj *var)
 {
   return cplus_value_of_variable (var);
 }
@@ -2412,10 +2558,7 @@ _initialize_varobj (void)
   varobj_table = xmalloc (sizeof_table);
   memset (varobj_table, 0, sizeof_table);
 
-  add_show_from_set (
-		add_set_cmd ("debugvarobj", class_maintenance, var_zinteger,
-			     (char *) &varobjdebug,
-			     "Set varobj debugging.\n\
+  deprecated_add_show_from_set (add_set_cmd ("debugvarobj", class_maintenance, var_zinteger, (char *) &varobjdebug, "Set varobj debugging.\n\
 When non-zero, varobj debugging is enabled.", &setlist),
-		      &showlist);
+		     &showlist);
 }

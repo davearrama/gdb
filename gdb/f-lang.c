@@ -1,5 +1,6 @@
 /* Fortran language support routines for GDB, the GNU debugger.
-   Copyright 1993, 1994, 1996, 2000 Free Software Foundation, Inc.
+   Copyright 1993, 1994, 1995, 1996, 1998, 1999, 2000, 2001, 2002, 2003, 2004
+   Free Software Foundation, Inc.
    Contributed by Motorola.  Adapted from the C parser by Farooq Butt
    (fmbutt@engage.sps.mot.com).
 
@@ -28,6 +29,8 @@
 #include "parser-defs.h"
 #include "language.h"
 #include "f-lang.h"
+#include "valprint.h"
+#include "value.h"
 
 /* The built-in types of F77.  FIXME: integer*4 is missing, plain
    logical is missing (builtin_type_logical is logical*4).  */
@@ -67,23 +70,23 @@ typedef struct saved_bf_symnum SAVED_BF, *SAVED_BF_PTR;
 
 /* Local functions */
 
-extern void _initialize_f_language PARAMS ((void));
+extern void _initialize_f_language (void);
 #if 0
-static void clear_function_list PARAMS ((void));
-static long get_bf_for_fcn PARAMS ((long));
-static void clear_bf_list PARAMS ((void));
-static void patch_all_commons_by_name PARAMS ((char *, CORE_ADDR, int));
-static SAVED_F77_COMMON_PTR find_first_common_named PARAMS ((char *));
-static void add_common_entry PARAMS ((struct symbol *));
-static void add_common_block PARAMS ((char *, CORE_ADDR, int, char *));
-static SAVED_FUNCTION *allocate_saved_function_node PARAMS ((void));
-static SAVED_BF_PTR allocate_saved_bf_node PARAMS ((void));
-static COMMON_ENTRY_PTR allocate_common_entry_node PARAMS ((void));
-static SAVED_F77_COMMON_PTR allocate_saved_f77_common_node PARAMS ((void));
-static void patch_common_entries PARAMS ((SAVED_F77_COMMON_PTR, CORE_ADDR, int));
+static void clear_function_list (void);
+static long get_bf_for_fcn (long);
+static void clear_bf_list (void);
+static void patch_all_commons_by_name (char *, CORE_ADDR, int);
+static SAVED_F77_COMMON_PTR find_first_common_named (char *);
+static void add_common_entry (struct symbol *);
+static void add_common_block (char *, CORE_ADDR, int, char *);
+static SAVED_FUNCTION *allocate_saved_function_node (void);
+static SAVED_BF_PTR allocate_saved_bf_node (void);
+static COMMON_ENTRY_PTR allocate_common_entry_node (void);
+static SAVED_F77_COMMON_PTR allocate_saved_f77_common_node (void);
+static void patch_common_entries (SAVED_F77_COMMON_PTR, CORE_ADDR, int);
 #endif
 
-static struct type *f_create_fundamental_type PARAMS ((struct objfile *, int));
+static struct type *f_create_fundamental_type (struct objfile *, int);
 static void f_printstr (struct ui_file * stream, char *string,
 			unsigned int length, int width,
 			int force_ellipses);
@@ -97,10 +100,7 @@ static void f_emit_char (int c, struct ui_file * stream, int quoter);
    be replaced with a true F77 version.  */
 
 static void
-f_emit_char (c, stream, quoter)
-     register int c;
-     struct ui_file *stream;
-     int quoter;
+f_emit_char (int c, struct ui_file *stream, int quoter)
 {
   c &= 0xFF;			/* Avoid sign bit follies */
 
@@ -146,9 +146,7 @@ f_emit_char (c, stream, quoter)
    be replaced with a true F77version. */
 
 static void
-f_printchar (c, stream)
-     int c;
-     struct ui_file *stream;
+f_printchar (int c, struct ui_file *stream)
 {
   fputs_filtered ("'", stream);
   LA_EMIT_CHAR (c, stream, '\'');
@@ -163,20 +161,13 @@ f_printchar (c, stream)
    be replaced with a true F77 version. */
 
 static void
-f_printstr (stream, string, length, width, force_ellipses)
-     struct ui_file *stream;
-     char *string;
-     unsigned int length;
-     int width;
-     int force_ellipses;
+f_printstr (struct ui_file *stream, char *string, unsigned int length,
+	    int width, int force_ellipses)
 {
-  register unsigned int i;
+  unsigned int i;
   unsigned int things_printed = 0;
   int in_quotes = 0;
   int need_comma = 0;
-  extern int inspect_it;
-  extern int repeat_count_threshold;
-  extern int print_max;
 
   if (length == 0)
     {
@@ -257,11 +248,9 @@ f_printstr (stream, string, length, width, force_ellipses)
    by an experienced F77 programmer. */
 
 static struct type *
-f_create_fundamental_type (objfile, typeid)
-     struct objfile *objfile;
-     int typeid;
+f_create_fundamental_type (struct objfile *objfile, int typeid)
 {
-  register struct type *type = NULL;
+  struct type *type = NULL;
 
   switch (typeid)
     {
@@ -440,7 +429,7 @@ static const struct op_print f_op_print_tab[] =
   {NULL, 0, 0, 0}
 };
 
-struct type **CONST_PTR (f_builtin_types[]) =
+struct type **const (f_builtin_types[]) =
 {
   &builtin_type_f_character,
     &builtin_type_f_logical,
@@ -472,9 +461,12 @@ const struct language_defn f_language_defn =
   f_builtin_types,
   range_check_on,
   type_check_on,
+  case_sensitive_off,
+  array_column_major,
+  &exp_descriptor_standard,
   f_parse,			/* parser */
   f_error,			/* parser error function */
-  evaluate_subexp_standard,
+  null_post_parser,
   f_printchar,			/* Print character constant */
   f_printstr,			/* function to print string constant */
   f_emit_char,			/* Function to print a single character */
@@ -482,19 +474,23 @@ const struct language_defn f_language_defn =
   f_print_type,			/* Print a type using appropriate syntax */
   f_val_print,			/* Print a value using appropriate syntax */
   c_value_print,		/* FIXME */
-  {"", "", "", ""},		/* Binary format info */
-  {"0%o", "0", "o", ""},	/* Octal format info */
-  {"%d", "", "d", ""},		/* Decimal format info */
-  {"0x%x", "0x", "x", ""},	/* Hex format info */
+  NULL,				/* Language specific skip_trampoline */
+  value_of_this,		/* value_of_this */
+  basic_lookup_symbol_nonlocal,	/* lookup_symbol_nonlocal */
+  basic_lookup_transparent_type,/* lookup_transparent_type */
+  NULL,				/* Language specific symbol demangler */
+  NULL,				/* Language specific class_name_from_physname */
   f_op_print_tab,		/* expression operators for printing */
   0,				/* arrays are first-class (not c-style) */
   1,				/* String lower bound */
   &builtin_type_f_character,	/* Type of string elements */
+  default_word_break_characters,
+  NULL, /* FIXME: la_language_arch_info.  */
   LANG_MAGIC
 };
 
-void
-_initialize_f_language ()
+static void
+build_fortran_types (void)
 {
   builtin_type_f_void =
     init_type (TYPE_CODE_VOID, 1,
@@ -566,6 +562,28 @@ _initialize_f_language ()
 	       0,
 	       "complex*32", (struct objfile *) NULL);
   TYPE_TARGET_TYPE (builtin_type_f_complex_s32) = builtin_type_f_real_s16;
+}
+
+void
+_initialize_f_language (void)
+{
+  build_fortran_types ();
+
+  DEPRECATED_REGISTER_GDBARCH_SWAP (builtin_type_f_character);
+  DEPRECATED_REGISTER_GDBARCH_SWAP (builtin_type_f_logical); 
+  DEPRECATED_REGISTER_GDBARCH_SWAP (builtin_type_f_logical_s1); 
+  DEPRECATED_REGISTER_GDBARCH_SWAP (builtin_type_f_logical_s2); 
+  DEPRECATED_REGISTER_GDBARCH_SWAP (builtin_type_f_integer); 
+  DEPRECATED_REGISTER_GDBARCH_SWAP (builtin_type_f_integer_s2); 
+  DEPRECATED_REGISTER_GDBARCH_SWAP (builtin_type_f_real); 
+  DEPRECATED_REGISTER_GDBARCH_SWAP (builtin_type_f_real_s8); 
+  DEPRECATED_REGISTER_GDBARCH_SWAP (builtin_type_f_real_s16); 
+  DEPRECATED_REGISTER_GDBARCH_SWAP (builtin_type_f_complex_s8); 
+  DEPRECATED_REGISTER_GDBARCH_SWAP (builtin_type_f_complex_s16); 
+  DEPRECATED_REGISTER_GDBARCH_SWAP (builtin_type_f_complex_s32); 
+  DEPRECATED_REGISTER_GDBARCH_SWAP (builtin_type_f_void); 
+  DEPRECATED_REGISTER_GDBARCH_SWAP (builtin_type_string); 
+  deprecated_register_gdbarch_swap (NULL, 0, build_fortran_types);
 
   builtin_type_string =
     init_type (TYPE_CODE_STRING, TARGET_CHAR_BIT / TARGET_CHAR_BIT,
@@ -577,7 +595,7 @@ _initialize_f_language ()
 
 #if 0
 static SAVED_BF_PTR
-allocate_saved_bf_node ()
+allocate_saved_bf_node (void)
 {
   SAVED_BF_PTR new;
 
@@ -586,7 +604,7 @@ allocate_saved_bf_node ()
 }
 
 static SAVED_FUNCTION *
-allocate_saved_function_node ()
+allocate_saved_function_node (void)
 {
   SAVED_FUNCTION *new;
 
@@ -595,7 +613,7 @@ allocate_saved_function_node ()
 }
 
 static SAVED_F77_COMMON_PTR
-allocate_saved_f77_common_node ()
+allocate_saved_f77_common_node (void)
 {
   SAVED_F77_COMMON_PTR new;
 
@@ -604,7 +622,7 @@ allocate_saved_f77_common_node ()
 }
 
 static COMMON_ENTRY_PTR
-allocate_common_entry_node ()
+allocate_common_entry_node (void)
 {
   COMMON_ENTRY_PTR new;
 
@@ -631,11 +649,7 @@ static SAVED_BF_PTR tmp_bf_ptr;	/* Generic temporary for use
    the global common block chain */
 
 static void
-add_common_block (name, offset, secnum, func_stab)
-     char *name;
-     CORE_ADDR offset;
-     int secnum;
-     char *func_stab;
+add_common_block (char *name, CORE_ADDR offset, int secnum, char *func_stab)
 {
   SAVED_F77_COMMON_PTR tmp;
   char *c, *local_copy_func_stab;
@@ -646,11 +660,11 @@ add_common_block (name, offset, secnum, func_stab)
      parser have fits. */
 
 
-  if (STREQ (name, BLANK_COMMON_NAME_ORIGINAL) ||
-      STREQ (name, BLANK_COMMON_NAME_MF77))
+  if (strcmp (name, BLANK_COMMON_NAME_ORIGINAL) == 0
+      || strcmp (name, BLANK_COMMON_NAME_MF77) == 0)
     {
 
-      free (name);
+      xfree (name);
       name = alloca (strlen (BLANK_COMMON_NAME_LOCAL) + 1);
       strcpy (name, BLANK_COMMON_NAME_LOCAL);
     }
@@ -704,8 +718,7 @@ add_common_block (name, offset, secnum, func_stab)
 
 #if 0
 static void
-add_common_entry (entry_sym_ptr)
-     struct symbol *entry_sym_ptr;
+add_common_entry (struct symbol *entry_sym_ptr)
 {
   COMMON_ENTRY_PTR tmp;
 
@@ -742,8 +755,7 @@ add_common_entry (entry_sym_ptr)
 
 #if 0
 static SAVED_F77_COMMON_PTR
-find_first_common_named (name)
-     char *name;
+find_first_common_named (char *name)
 {
 
   SAVED_F77_COMMON_PTR tmp;
@@ -752,7 +764,7 @@ find_first_common_named (name)
 
   while (tmp != NULL)
     {
-      if (STREQ (tmp->name, name))
+      if (strcmp (tmp->name, name) == 0)
 	return (tmp);
       else
 	tmp = tmp->next;
@@ -765,9 +777,7 @@ find_first_common_named (name)
    that belongs to function funcname */
 
 SAVED_F77_COMMON_PTR
-find_common_for_function (name, funcname)
-     char *name;
-     char *funcname;
+find_common_for_function (char *name, char *funcname)
 {
 
   SAVED_F77_COMMON_PTR tmp;
@@ -776,7 +786,8 @@ find_common_for_function (name, funcname)
 
   while (tmp != NULL)
     {
-      if (STREQ (tmp->name, name) && STREQ (tmp->owning_function, funcname))
+      if (DEPRECATED_STREQ (tmp->name, name)
+	  && DEPRECATED_STREQ (tmp->owning_function, funcname))
 	return (tmp);
       else
 	tmp = tmp->next;
@@ -792,10 +803,7 @@ find_common_for_function (name, funcname)
    "name."  */
 
 static void
-patch_common_entries (blk, offset, secnum)
-     SAVED_F77_COMMON_PTR blk;
-     CORE_ADDR offset;
-     int secnum;
+patch_common_entries (SAVED_F77_COMMON_PTR blk, CORE_ADDR offset, int secnum)
 {
   COMMON_ENTRY_PTR entry;
 
@@ -820,10 +828,7 @@ patch_common_entries (blk, offset, secnum)
    (which is where common data lives). */
 
 static void
-patch_all_commons_by_name (name, offset, secnum)
-     char *name;
-     CORE_ADDR offset;
-     int secnum;
+patch_all_commons_by_name (char *name, CORE_ADDR offset, int secnum)
 {
 
   SAVED_F77_COMMON_PTR tmp;
@@ -831,10 +836,10 @@ patch_all_commons_by_name (name, offset, secnum)
   /* For blank common blocks, change the canonical reprsentation 
      of a blank name */
 
-  if ((STREQ (name, BLANK_COMMON_NAME_ORIGINAL)) ||
-      (STREQ (name, BLANK_COMMON_NAME_MF77)))
+  if (strcmp (name, BLANK_COMMON_NAME_ORIGINAL) == 0
+      || strcmp (name, BLANK_COMMON_NAME_MF77) == 0)
     {
-      free (name);
+      xfree (name);
       name = alloca (strlen (BLANK_COMMON_NAME_LOCAL) + 1);
       strcpy (name, BLANK_COMMON_NAME_LOCAL);
     }
@@ -844,7 +849,7 @@ patch_all_commons_by_name (name, offset, secnum)
   while (tmp != NULL)
     {
       if (COMMON_NEEDS_PATCHING (tmp))
-	if (STREQ (tmp->name, name))
+	if (strcmp (tmp->name, name) == 0)
 	  patch_common_entries (tmp, offset, secnum);
 
       tmp = tmp->next;
@@ -891,7 +896,7 @@ else \
 
 #if 0
 static void
-clear_bf_list ()
+clear_bf_list (void)
 {
 
   SAVED_BF_PTR tmp = saved_bf_list;
@@ -900,7 +905,7 @@ clear_bf_list ()
   while (tmp != NULL)
     {
       next = tmp->next;
-      free (tmp);
+      xfree (tmp);
       tmp = next;
     }
   saved_bf_list = NULL;
@@ -912,8 +917,7 @@ int global_remote_debug;
 #if 0
 
 static long
-get_bf_for_fcn (the_function)
-     long the_function;
+get_bf_for_fcn (long the_function)
 {
   SAVED_BF_PTR tmp;
   int nprobes = 0;
@@ -922,13 +926,14 @@ get_bf_for_fcn (the_function)
      item at the head of the queue is the one you want)  */
 
   if (saved_bf_list == NULL)
-    internal_error ("cannot get .bf node off empty list");
+    internal_error (__FILE__, __LINE__,
+		    "cannot get .bf node off empty list");
 
   if (current_head_bf_list != NULL)
     if (current_head_bf_list->symnum_fcn == the_function)
       {
 	if (global_remote_debug)
-	  fprintf (stderr, "*");
+	  fprintf_unfiltered (gdb_stderr, "*");
 
 	tmp = current_head_bf_list;
 	current_head_bf_list = current_head_bf_list->next;
@@ -940,7 +945,7 @@ get_bf_for_fcn (the_function)
      the ugly linear scan */
 
   if (global_remote_debug)
-    fprintf (stderr, "\ndefaulting to linear scan\n");
+    fprintf_unfiltered (gdb_stderr, "\ndefaulting to linear scan\n");
 
   nprobes = 0;
   tmp = saved_bf_list;
@@ -950,7 +955,7 @@ get_bf_for_fcn (the_function)
       if (tmp->symnum_fcn == the_function)
 	{
 	  if (global_remote_debug)
-	    fprintf (stderr, "Found in %d probes\n", nprobes);
+	    fprintf_unfiltered (gdb_stderr, "Found in %d probes\n", nprobes);
 	  current_head_bf_list = tmp->next;
 	  return (tmp->symnum_bf);
 	}
@@ -964,7 +969,7 @@ static SAVED_FUNCTION_PTR saved_function_list = NULL;
 static SAVED_FUNCTION_PTR saved_function_list_end = NULL;
 
 static void
-clear_function_list ()
+clear_function_list (void)
 {
   SAVED_FUNCTION_PTR tmp = saved_function_list;
   SAVED_FUNCTION_PTR next = NULL;
@@ -972,7 +977,7 @@ clear_function_list ()
   while (tmp != NULL)
     {
       next = tmp->next;
-      free (tmp);
+      xfree (tmp);
       tmp = next;
     }
 

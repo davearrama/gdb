@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # User Interface Events.
-# Copyright 1999-2000 Free Software Foundation, Inc.
+# Copyright 1999, 2000, 2001, 2002, 2004 Free Software Foundation, Inc.
 #
 # Contributed by Cygnus Solutions.
 #
@@ -20,24 +20,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
-
-#
-# What happens next:
-#
-
-# The gdb-events.h/gdb-events.c files this script generates are commited
-# and published.
-
-# Any UI module that is installing events is changed so that the
-# events are installed using the ``set_gdb_events()'' and
-# ``gdb_event_hooks()'' interfaces.  There could prove to be an issue
-# here with respect to annotate.  We might need to accomodate a hook
-# stack that allows several ui blocks to install their own events.
-
-# Each of the variable events (as currently generated) is converteded
-# to either a straight function call or a function call with a
-# predicate.
-
 
 IFS=:
 
@@ -61,46 +43,10 @@ function_list ()
 f:void:breakpoint_create:int b:b
 f:void:breakpoint_delete:int b:b
 f:void:breakpoint_modify:int b:b
-#*:void:annotate_starting_hook:void
-#*:void:annotate_stopped_hook:void
-#*:void:annotate_signalled_hook:void
-#*:void:annotate_signal_hook:void
-#*:void:annotate_exited_hook:void
-##*:void:print_register_hook:int
-##*:CORE_ADDR:find_toc_address_hook:CORE_ADDR
-##*:void:sparc_print_register_hook:int regno:regno
-#*:void:target_resume_hook:void
-#*:void:target_wait_loop_hook:void
-#*:void:init_gdb_hook:char *argv0:argv0
-#*:void:command_loop_hook:void
-#*:void:fputs_unfiltered_hook:const char *linebuff,struct ui_file *stream:linebuff, stream
-#*:void:print_frame_info_listing_hook:struct symtab *s, int line, int stopline, int noerror:s, line, stopline, noerror
-#*:int:query_hook:const char *query, va_list args:query, args
-#*:void:warning_hook:const char *string, va_list args:string, args
-#*:void:target_output_hook:char *b:b
-#*:void:interactive_hook:void
-#*:void:registers_changed_hook:void
-#*:void:readline_begin_hook:char *format, ...:format
-#*:char *:readline_hook:char *prompt:prompt
-#*:void:readline_end_hook:void
-#*:void:register_changed_hook:int regno:regno
-#*:void:memory_changed_hook:CORE_ADDR addr, int len:addr, len
-#*:void:context_hook:int num:num
-#*:int:target_wait_hook:int pid, struct target_waitstatus *status:pid, status
-#*:void:call_command_hook:struct cmd_list_element *c, char *cmd, int from_tty:c, cmd, from_tty
-#*:NORETURN void:error_hook:void:: ATTR_NORETURN
-#*:void:error_begin_hook:void
-##*:int:target_architecture_hook:const struct bfd_arch_info *
-#*:void:exec_file_display_hook:char *filename:filename
-#*:void:file_changed_hook:char *filename:filename
-##*:void:specify_exec_file_hook:
-#*:int:gdb_load_progress_hook:char *section, unsigned long num:section, num
-#*:void:pre_add_symbol_hook:char *name:name
-#*:void:post_add_symbol_hook:void
-#*:void:selected_frame_level_changed_hook:int level:level
-#*:int:gdb_loop_hook:int signo:signo
-##*:void:solib_create_inferior_hook:void
-##*:void:xcoff_relocate_symtab_hook:unsigned int
+f:void:tracepoint_create:int number:number
+f:void:tracepoint_delete:int number:number
+f:void:tracepoint_modify:int number:number
+f:void:architecture_changed:void
 EOF
   grep -v '^#'
 }
@@ -109,25 +55,26 @@ copyright ()
 {
   cat <<EOF
 /* User Interface Events.
-   Copyright 1999 Free Software Foundation, Inc.
+
+   Copyright 1999, 2001, 2002, 2004 Free Software Foundation, Inc.
 
    Contributed by Cygnus Solutions.
 
-This file is part of GDB.
+   This file is part of GDB.
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
 
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 /* Work in progress */
 
@@ -156,10 +103,6 @@ cat <<EOF
 
 #ifndef GDB_EVENTS_H
 #define GDB_EVENTS_H
-
-#ifndef WITH_GDB_EVENTS
-#define WITH_GDB_EVENTS 1
-#endif
 EOF
 
 # pointer declarations
@@ -230,43 +173,17 @@ do
   esac
 done
 
-# function macros
-echo ""
-echo ""
-cat <<EOF
-/* When GDB_EVENTS are not being used, completly disable them. */
-EOF
-echo ""
-echo "#if !WITH_GDB_EVENTS"
-function_list | while eval read $read
-do
-  case "${class}" in
-    "*" ) continue ;;
-    "?" )
-	echo "#define ${function}_event_p() 0"
-	echo "#define ${function}_event(${actual}) 0"
-	;;
-    "f" )
-	echo "#define ${function}_event(${actual}) 0"
-	;;
-  esac
-done
-echo "#endif"
-
 # our set function
 cat <<EOF
 
 /* Install custom gdb-events hooks. */
-extern struct gdb_events *set_gdb_event_hooks (struct gdb_events *vector);
+extern struct gdb_events *deprecated_set_gdb_event_hooks (struct gdb_events *vector);
 
 /* Deliver any pending events. */
 extern void gdb_events_deliver (struct gdb_events *vector);
 
-#if !WITH_GDB_EVENTS
-#define set_gdb_events(x) 0
-#define set_gdb_event_hooks(x) 0
-#define gdb_events_deliver(x) 0
-#endif
+/* Clear event handlers */
+extern void clear_gdb_event_hooks (void);
 EOF
 
 # close it off
@@ -274,12 +191,15 @@ echo ""
 echo "#endif"
 exec 1>&2
 #../move-if-change new-gdb-events.h gdb-events.h
-if ! test -r gdb-events.h
+if test -r gdb-events.h
 then
+  diff -c gdb-events.h new-gdb-events.h
+  if [ $? = 1 ]
+  then
+    echo "gdb-events.h changed? cp new-gdb-events.h gdb-events.h" 1>&2
+  fi
+else
   echo "File missing? mv new-gdb-events.h gdb-events.h" 1>&2
-elif ! diff -c gdb-events.h new-gdb-events.h
-then
-  echo "gdb-events.h changed? cp new-gdb-events.h gdb-events.h" 1>&2
 fi
 
 
@@ -296,73 +216,56 @@ cat <<EOF
 #include "gdb-events.h"
 #include "gdbcmd.h"
 
-#undef XMALLOC
-#define XMALLOC(TYPE) ((TYPE*) xmalloc (sizeof (TYPE)))
-
-#if WITH_GDB_EVENTS
 static struct gdb_events null_event_hooks;
 static struct gdb_events queue_event_hooks;
 static struct gdb_events *current_event_hooks = &null_event_hooks;
-#endif
 
 int gdb_events_debug;
 EOF
 
-# global pointer variables - always have this
-#echo ""
-#function_list | while eval read $read
-#do
-#  case "${class}" in
-#    "*" )
-#	echo "${returntype} (*${function}_event) (${formal})${attrib} = 0;"
-#	;;
-#  esac
-#done
-
 # function bodies
-echo ""
-echo "#if WITH_GDB_EVENTS"
 function_list | while eval read $read
 do
   case "${class}" in
     "*" ) continue ;;
     "?" )
-	echo ""
-	echo "int"
-	echo "${function}_event_p (${formal})"
-	echo "{"
-	echo "  return current_event_hooks->${function};"
-	echo "}"
-	echo ""
-	echo "${returntype}"
-	echo "${function}_event (${formal})"
-	echo "{"
-	echo "  return current_events->${function} (${actual});"
-	echo "}"
+cat <<EOF
+
+int
+${function}_event_p (${formal})
+{
+  return current_event_hooks->${function};
+}
+
+${returntype}
+${function}_event (${formal})
+{
+  return current_events->${function} (${actual});
+}
+EOF
 	;;
      "f" )
-	echo ""
-	echo "void"
-	echo "${function}_event (${formal})"
-	echo "{"
-	echo "  if (gdb_events_debug)"
-	echo "    fprintf_unfiltered (gdb_stdlog, \"${function}_event\\n\");"
-	echo "  if (!current_event_hooks->${function})"
-	echo "    return;"
-	echo "  current_event_hooks->${function} (${actual});"
-	echo "}"
+cat <<EOF
+
+void
+${function}_event (${formal})
+{
+  if (gdb_events_debug)
+    fprintf_unfiltered (gdb_stdlog, "${function}_event\n");
+  if (!current_event_hooks->${function})
+    return;
+  current_event_hooks->${function} (${actual});
+}
+EOF
 	;;
   esac
 done
-echo ""
-echo "#endif"
 
 # Set hooks function
 echo ""
 cat <<EOF
-#if WITH_GDB_EVENTS
 struct gdb_events *
-set_gdb_event_hooks (struct gdb_events *vector)
+deprecated_set_gdb_event_hooks (struct gdb_events *vector)
 {
   struct gdb_events *old_events = current_event_hooks;
   if (vector == NULL)
@@ -381,26 +284,35 @@ do
 done
 cat <<EOF
 }
-#endif
+EOF
+
+# Clear hooks function
+echo ""
+cat <<EOF
+void
+clear_gdb_event_hooks (void)
+{
+  deprecated_set_gdb_event_hooks (&null_event_hooks);
+}
 EOF
 
 # event type
 echo ""
 cat <<EOF
 enum gdb_event
-  {
+{
 EOF
 function_list | while eval read $read
 do
   case "${class}" in
     "f" )
-      echo "    ${function},"
+      echo "  ${function},"
       ;;
   esac
 done
 cat <<EOF
-    nr_gdb_events
-  };
+  nr_gdb_events
+};
 EOF
 
 # event data
@@ -409,11 +321,14 @@ function_list | while eval read $read
 do
   case "${class}" in
     "f" )
-      echo "struct ${function}"
-      echo "  {"
-      echo "    `echo ${formal} | tr '[,]' '[;]'`;"
-      echo "  };"
-      echo ""
+      if test ${actual}
+      then
+        echo "struct ${function}"
+        echo "  {"
+        echo "    `echo ${formal} | tr '[,]' '[;]'`;"
+        echo "  };"
+        echo ""
+      fi
       ;;
   esac
 done
@@ -431,7 +346,10 @@ function_list | while eval read $read
 do
   case "${class}" in
     "f" )
-      echo "        struct ${function} ${function};"
+      if test ${actual}
+      then
+        echo "        struct ${function} ${function};"
+      fi
       ;;
   esac
 done
@@ -468,7 +386,7 @@ do
       echo "{"
       echo "  struct event *event = XMALLOC (struct event);"
       echo "  event->type = ${function};"
-      for arg in `echo ${actual} | tr '[,]' '[ ]'`; do
+      for arg in `echo ${actual} | tr '[,]' '[:]' | tr -d '[ ]'`; do
         echo "  event->data.${function}.${arg} = ${arg};"
       done
       echo "  append (event);"
@@ -488,7 +406,7 @@ gdb_events_deliver (struct gdb_events *vector)
     {
       struct event *event = delivering_events;
       delivering_events = event->next;
-      free (event);
+      xfree (event);
     }
   /* Process any pending events.  Because one of the deliveries could
      bail out we move everything off of the pending queue onto an
@@ -507,15 +425,20 @@ do
   case "${class}" in
     "f" )
       echo "        case ${function}:"
-      echo "          vector->${function}"
-      sep="            ("
-      ass=""
-      for arg in `echo ${actual} | tr '[,]' '[ ]'`; do
-        ass="${ass}${sep}event->data.${function}.${arg}"
-	sep=",
-             "
-      done
-      echo "${ass});"
+      if test ${actual}
+      then
+        echo "          vector->${function}"
+        sep="            ("
+        ass=""
+        for arg in `echo ${actual} | tr '[,]' '[:]' | tr -d '[ ]'`; do
+          ass="${ass}${sep}event->data.${function}.${arg}"
+	  sep=",
+               "
+        done
+        echo "${ass});"
+      else
+        echo "          vector->${function} ();"
+      fi
       echo "          break;"
       ;;
   esac
@@ -523,7 +446,7 @@ done
 cat <<EOF
         }
       delivering_events = event->next;
-      free (event);
+      xfree (event);
     }
 }
 EOF
@@ -535,7 +458,7 @@ void _initialize_gdb_events (void);
 void
 _initialize_gdb_events (void)
 {
-#if WITH_GDB_EVENTS
+  struct cmd_list_element *c;
 EOF
 function_list | while eval read $read
 do
@@ -546,24 +469,40 @@ do
   esac
 done
 cat <<EOF
-#endif
-  add_show_from_set (add_set_cmd ("eventdebug",
-                                  class_maintenance,
-                                  var_zinteger,
-                                  (char *)&gdb_events_debug,
-                                  "Set event debugging.\n\\
-When non-zero, event/notify debugging is enabled.", &setlist),
-                     &showlist);
+
+  c = add_set_cmd ("eventdebug", class_maintenance, var_zinteger,
+		   (char *) (&gdb_events_debug), "Set event debugging.\n\\
+When non-zero, event/notify debugging is enabled.", &setlist);
+  deprecate_cmd (c, "set debug event");
+  deprecate_cmd (deprecated_add_show_from_set (c, &showlist),
+                 "show debug event");
+
+  deprecated_add_show_from_set
+    (add_set_cmd ("event",
+	          class_maintenance,
+		  var_zinteger,
+		  (char *) (&gdb_events_debug),
+		  "Set event debugging.\n\\
+When non-zero, event/notify debugging is enabled.", &setdebuglist),
+     &showdebuglist);
 }
 EOF
 
 # close things off
 exec 1>&2
 #../move-if-change new-gdb-events.c gdb-events.c
-if ! test -r gdb-events.c
+# Replace any leading spaces with tabs
+sed < new-gdb-events.c > tmp-gdb-events.c \
+    -e 's/\(	\)*        /\1	/g'
+mv tmp-gdb-events.c new-gdb-events.c
+# Move if changed?
+if test -r gdb-events.c
 then
+  diff -c gdb-events.c new-gdb-events.c
+  if [ $? = 1 ]
+  then
+    echo "gdb-events.c changed? cp new-gdb-events.c gdb-events.c" 1>&2
+  fi
+else
   echo "File missing? mv new-gdb-events.c gdb-events.c" 1>&2
-elif ! diff -c gdb-events.c new-gdb-events.c
-then
-  echo "gdb-events.c changed? cp new-gdb-events.c gdb-events.c" 1>&2
 fi

@@ -1,5 +1,6 @@
 /* Remote target callback routines.
-   Copyright 1995, 1996, 1997 Free Software Foundation, Inc.
+   Copyright 1995, 1996, 1997, 2000, 2002, 2003, 2004
+   Free Software Foundation, Inc.
    Contributed by Cygnus Solutions.
 
    This file is part of GDB.
@@ -22,7 +23,7 @@
    level.  */
 
 #ifdef HAVE_CONFIG_H
-#include "config.h"
+#include "cconfig.h"
 #endif
 #include "ansidecl.h"
 #ifdef ANSI_PROTOTYPES
@@ -46,7 +47,7 @@
 #include <time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include "callback.h"
+#include "gdb/callback.h"
 #include "targ-vals.h"
 
 #ifdef HAVE_UNISTD_H
@@ -109,7 +110,7 @@ fdbad (p, fd)
      host_callback *p;
      int fd;
 {
-  if (fd < 0 || fd > MAX_CALLBACK_FDS || !p->fdopen[fd])
+  if (fd < 0 || fd > MAX_CALLBACK_FDS || p->fd_buddy[fd] < 0)
     {
       p->last_errno = EINVAL;
       return -1;
@@ -131,13 +132,20 @@ os_close (p, fd)
      int fd;
 {
   int result;
+  int i, next;
 
   result = fdbad (p, fd);
   if (result)
     return result;
-  result = wrap (p, close (fdmap (p, fd)));
-  if (result == 0 && !p->alwaysopen[fd])
-    p->fdopen[fd] = 0;
+  /* If this file descripter has one or more buddies (originals /
+     duplicates from a dup), just remove it from the circular list.  */
+  for (i = fd; (next = p->fd_buddy[i]) != fd; )
+    i = next;
+  if (fd != i)
+    p->fd_buddy[i] = p->fd_buddy[fd];
+  else
+    result = wrap (p, close (fdmap (p, fd)));
+  p->fd_buddy[fd] = -1;
 
   return result;
 }
@@ -233,7 +241,7 @@ os_open (p, name, flags)
   int i;
   for (i = 0; i < MAX_CALLBACK_FDS; i++)
     {
-      if (!p->fdopen[i])
+      if (p->fd_buddy[i] < 0)
 	{
 	  int f = open (name, cb_target_to_host_open (p, flags), 0644);
 	  if (f < 0)
@@ -241,7 +249,7 @@ os_open (p, name, flags)
 	      p->last_errno = errno;
 	      return f;
 	    }
-	  p->fdopen[i] = 1;
+	  p->fd_buddy[i] = i;
 	  p->fdmap[i] = f;
 	  return i;
 	}
@@ -306,7 +314,7 @@ os_write (p, fd, buf, len)
 
 static int 
 os_write_stdout (p, buf, len)
-     host_callback *p;
+     host_callback *p ATTRIBUTE_UNUSED;
      const char *buf;
      int len;
 {
@@ -315,14 +323,14 @@ os_write_stdout (p, buf, len)
 
 static void
 os_flush_stdout (p)
-     host_callback *p;
+     host_callback *p ATTRIBUTE_UNUSED;
 {
   fflush (stdout);
 }
 
 static int 
 os_write_stderr (p, buf, len)
-     host_callback *p;
+     host_callback *p ATTRIBUTE_UNUSED;
      const char *buf;
      int len;
 {
@@ -331,7 +339,7 @@ os_write_stderr (p, buf, len)
 
 static void
 os_flush_stderr (p)
-     host_callback *p;
+     host_callback *p ATTRIBUTE_UNUSED;
 {
   fflush (stderr);
 }
@@ -399,17 +407,60 @@ os_fstat (p, fd, buf)
   return wrap (p, fstat (fdmap (p, fd), buf));
 }
 
+static int 
+os_ftruncate (p, fd, len)
+     host_callback *p;
+     int fd;
+     long len;
+{
+  int result;
+
+  result = fdbad (p, fd);
+  if (result)
+    return result;
+  result = wrap (p, ftruncate (fdmap (p, fd), len));
+  return result;
+}
+
+static int
+os_truncate (p, file, len)
+     host_callback *p;
+     const char *file;
+     long len;
+{
+  return wrap (p, truncate (file, len));
+}
+
 static int
 os_shutdown (p)
      host_callback *p;
 {
-  int i;
+  int i, next, j;
   for (i = 0; i < MAX_CALLBACK_FDS; i++)
     {
-      if (p->fdopen[i] && !p->alwaysopen[i]) {
+      int do_close = 1;
+
+      next = p->fd_buddy[i];
+      if (next < 0)
+	continue;
+      do
+	{
+	  j = next;
+	  if (j == MAX_CALLBACK_FDS)
+	    do_close = 0;
+	  next = p->fd_buddy[j];
+	  p->fd_buddy[j] = -1;
+	  /* At the initial call of os_init, we got -1, 0, 0, 0, ...  */
+	  if (next < 0)
+	    {
+	      p->fd_buddy[i] = -1;
+	      do_close = 0;
+	      break;
+	    }
+	}
+      while (j != i);
+      if (do_close)
 	close (p->fdmap[i]);
-	p->fdopen[i] = 0;
-      }
     }
   return 1;
 }
@@ -424,9 +475,10 @@ os_init (p)
   for (i = 0; i < 3; i++)
     {
       p->fdmap[i] = i;
-      p->fdopen[i] = 1;
-      p->alwaysopen[i] = 1;
+      p->fd_buddy[i] = i - 1;
     }
+  p->fd_buddy[0] = MAX_CALLBACK_FDS;
+  p->fd_buddy[MAX_CALLBACK_FDS] = 2;
 
   p->syscall_map = cb_init_syscall_map;
   p->errno_map = cb_init_errno_map;
@@ -435,12 +487,12 @@ os_init (p)
   return 1;
 }
 
-/* DEPRECIATED */
+/* DEPRECATED */
 
 /* VARARGS */
 static void
 #ifdef ANSI_PROTOTYPES
-os_printf_filtered (host_callback *p, const char *format, ...)
+os_printf_filtered (host_callback *p ATTRIBUTE_UNUSED, const char *format, ...)
 #else
 os_printf_filtered (p, va_alist)
      host_callback *p;
@@ -464,7 +516,7 @@ os_printf_filtered (p, va_alist)
 /* VARARGS */
 static void
 #ifdef ANSI_PROTOTYPES
-os_vprintf_filtered (host_callback *p, const char *format, va_list args)
+os_vprintf_filtered (host_callback *p ATTRIBUTE_UNUSED, const char *format, va_list args)
 #else
 os_vprintf_filtered (p, format, args)
      host_callback *p;
@@ -478,7 +530,7 @@ os_vprintf_filtered (p, format, args)
 /* VARARGS */
 static void
 #ifdef ANSI_PROTOTYPES
-os_evprintf_filtered (host_callback *p, const char *format, va_list args)
+os_evprintf_filtered (host_callback *p ATTRIBUTE_UNUSED, const char *format, va_list args)
 #else
 os_evprintf_filtered (p, format, args)
      host_callback *p;
@@ -492,7 +544,7 @@ os_evprintf_filtered (p, format, args)
 /* VARARGS */
 static void
 #ifdef ANSI_PROTOTYPES
-os_error (host_callback *p, const char *format, ...)
+os_error (host_callback *p ATTRIBUTE_UNUSED, const char *format, ...)
 #else
 os_error (p, va_alist)
      host_callback *p;
@@ -538,6 +590,9 @@ host_callback default_callback =
   os_stat,
   os_fstat,
 
+  os_ftruncate,
+  os_truncate,
+
   os_poll_quit,
 
   os_shutdown,
@@ -552,8 +607,7 @@ host_callback default_callback =
   0, 		/* last errno */
 
   { 0, },	/* fdmap */
-  { 0, },	/* fdopen */
-  { 0, },	/* alwaysopen */
+  { -1, },	/* fd_buddy */
 
   0, /* syscall_map */
   0, /* errno_map */
@@ -726,7 +780,7 @@ store (p, size, val, big_p)
    TS is ignored.
 
    The result is the size of the target's stat struct,
-   or zero if an error occured during the translation.  */
+   or zero if an error occurred during the translation.  */
 
 int
 cb_host_to_target_stat (cb, hs, ts)

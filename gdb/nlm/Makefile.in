@@ -1,4 +1,5 @@
-#Copyright 1989, 1990, 91, 92, 93, 94, 95, 1999 Free Software Foundation, Inc.
+#Copyright 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1999
+#Free Software Foundation, Inc.
 
 # This file is part of GDB.
 
@@ -129,7 +130,7 @@ gdbserve.O: prelude.o gdbserve.o $(TDEPFILES)
 # specific routine gets the one for the correct machine.
 # The xyzzy stuff below deals with empty DEPFILES
 TAGS:	${TAGFILES}
-	etags `find ${srcdir}/../config -name $(TM_FILE) -print` \
+	etags `find ${srcdir}/../config -name $(DEPRECATED_TM_FILE) -print` \
 	  `find ${srcdir}/../config -name ${XM_FILE} -print` \
 	  `find ${srcdir}/../config -name ${NAT_FILE} -print` \
 	  `for i in yzzy ${DEPFILES}; do \

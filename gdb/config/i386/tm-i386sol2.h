@@ -1,5 +1,6 @@
 /* Macro definitions for GDB on an Intel i386 running Solaris 2.
-   Copyright (C) 1998 Free Software Foundation, Inc.
+
+   Copyright 1998, 1999, 2000, 2004 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,29 +22,14 @@
 #ifndef TM_I386SOL2_H
 #define TM_I386SOL2_H 1
 
-#include "i386/tm-i386v4.h"
-
-/* Signal handler frames under Solaris 2 are recognized by a return address
-   of 0xFFFFFFFF, the third parameter on the signal handler stack is
-   a pointer to an ucontext.  */
-#undef sigtramp_saved_pc
-#undef I386V4_SIGTRAMP_SAVED_PC
-#define SIGCONTEXT_PC_OFFSET (36 + 14 * 4)
-#undef IN_SIGTRAMP
-#define IN_SIGTRAMP(pc, name) (pc == 0xFFFFFFFF)
+#include "solib.h"
 
 /* The SunPRO compiler puts out 0 instead of the address in N_SO symbols,
    and for SunPRO 3.0, N_FUN symbols too.  */
 #define SOFUN_ADDRESS_MAYBE_MISSING
 
-extern char *sunpro_static_transform_name PARAMS ((char *));
+extern char *sunpro_static_transform_name (char *);
 #define STATIC_TRANSFORM_NAME(x) sunpro_static_transform_name (x)
 #define IS_STATIC_TRANSFORM_NAME(name) ((name)[0] == '.')
 
-#define FAULTED_USE_SIGINFO
-
-/* Macros to extract process id and thread id from a composite pid/tid */
-#define PIDGET(pid) ((pid) & 0xffff)
-#define TIDGET(pid) (((pid) >> 16) & 0xffff)
-
-#endif /* ifndef TM_I386SOL2_H */
+#endif /* tm-i386sol2.h */

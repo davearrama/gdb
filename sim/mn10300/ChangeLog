@@ -1,3 +1,184 @@
+2004-06-26  Alexandre Oliva  <aoliva@redhat.com>
+
+	2000-08-07  Graham Stott  <grahams@cygnus.co.uk>
+	* am33-2.igen (fmadd, fmsub, fmnadd, fmnsub): Correct typo.
+	2000-05-29  Alexandre Oliva  <aoliva@cygnus.com>
+	* interp.c (fpu_disabled_exception, fpu_unimp_exception,
+	fpu_check_signal_exception): Take additional state arguments.
+	Print exception type and call program_interrupt.  Adjust callers.
+	(fpu_rsqrt, fpu_cmp, fpu_add, fpu_sub, fpu_mul, fpu_div,
+	fpu_fmadd, fpu_fmsub, fpu_fnmadd, fpu_fnmsub): Take additional
+	arguments.
+	* mn10300_sim.h (fpu_disabled_exception, fpu_unimp_exception,
+	fpu_check_signal_exception): Adjust prototypes.
+	(fpu_rsqrt, fpu_cmp, fpu_add, fpu_sub, fpu_mul, fpu_div,
+	fpu_fmadd, fpu_fmsub, fpu_fnmadd, fpu_fnmsub): Likewise.
+	* am33-2.igen: Adjust calls.
+	2000-05-19  Alexandre Oliva  <aoliva@cygnus.com>
+	* op_utils.c (cmp2fcc): Moved...
+	* interp.c: ... here.
+	2000-05-18  Alexandre Oliva  <aoliva@cygnus.com>
+	* am33-2.igen: Use `unsigned32', `signed32', `unsigned64' or
+	`signed64' where type width is relevant.
+	2000-05-15  Alexandre Oliva  <aoliva@cygnus.com>
+	* mn10300_sim.h: Include sim-fpu.h.
+	(FD2FPU, FPU2FD): Enclose the FD argument in parentheses.
+	(fpu_check_signal_exception): Declare.
+	(struct fp_prec_t, fp_single_prec, fp_double_prec): Likewise.
+	(FP_SINGLE, FP_DOUBLE): Shorthands for fp_*_prec.
+	(fpu_rsqrt, fpu_cmp, fpu_add, fpu_sub, fpu_mul, fpu_div,
+	fpu_fmadd, fpu_fmsub, fpu_fnmadd, fpu_fnmsub): Declare.
+	* interp.c (fpu_disabled_exception): Document.
+	(fpu_unimp_exception): Likewise.
+	(fpu_check_signal_exception): Define.
+	(reg2val_32, round_32, val2reg_32, fp_single_prec): Likewise.
+	(reg2val_64, round_64, val2reg_64, fp_double_prec): Likewise.
+	(REG2VAL, ROUND, VAL2REG): Define shorthands.
+	(fpu_status_ok): Define.
+	(fpu_rsqrt, fpu_cmp, fpu_add, fpu_sub, fpu_mul, fpu_div,
+	fpu_fmadd, fpu_fmsub, fpu_fnmadd, fpu_fnmsub): Define.
+	* am33-2.igen (frsqrt, fcmp, fadd, fsub, fmul, fdiv,
+	fmadd, fmsub, fnmadd, fnmsub): Use new functions.
+	2000-04-27  Alexandre Oliva  <aoliva@cygnus.com>
+	* interp.c (sim_create_inferior): Set PSW bit to enable FP insns
+	if architecture is AM33/2.0.
+	* am33.igen: Include am33-2.igen.
+	2000-04-23  Alexandre Oliva  <aoliva@cygnus.com>
+	* mn10300.igen (movm, call, ret, retf): Check for am33_2 too.
+	* am33.igen (movm): Likewise.
+	2000-04-19  Alexandre Oliva  <aoliva@cygnus.com>
+	* am33.igen: Added `*am33_2' to some instructions that were
+	missing it.
+	2000-04-07  Alexandre Oliva  <aoliva@cygnus.com>
+	* am33-2.igen: New file.  All insns implemented, but FP flags are
+	only set for fcmp, exceptional conditions are not handled yet.
+	* Makefile.in (IGEN_INSN): Added am33-2.igen.
+	(tmp-igen): Added -M am33_2.
+	* mn10300.igen, am33.igen: Added `*am33_2' to all insns.
+	* gencode.c: Support FMT_D3.
+	* mn10300_sim.h (dword): New type.
+	(struct _state): Added fpregs.
+	(REG_FPCR, FPCR): New define.  All assorted bitmaps.
+	(XS2FS, AS2FS, Xf2FD): New macros.
+	(FS2FPU, FD2FPU, FPU2FS, FPU2FD): Likewise.
+	(load_dword, store_dword): New functions or macros.
+	(u642dw, dw2u64): New functions.
+	(fpu_disabled_exception, fpu_unimp_exception): Declared.
+	* interp.c (fpu_disabled_exception): Defined; no actual
+	implementation.
+	(fpu_unimp_exception): Likewise.
+	* op_utils.c (cmp2fcc): New function.
+
+	* interp.c, mn10300_sim.h, op_utils.c: Convert function prototypes
+	and definitions to ISO C.
+
+	* gencode.c, simops.c: Delete.
+	* Makefile.in: Remove non-COMMON dependencies and commands.
+
+	* configure.in: Use common simulator always.  Don't subst sim_gen
+	nor mn10300_common.
+	* configure: Rebuilt.
+	* Makefile.in (WITHOUT_COMMON_OBJS, WITHOUT_COMMON_INTERP_DEP,
+	WITHOUT_COMMON_RUN_OBJS): Remove.
+	(WITH_COMMON_OBJS): Rename to MN10300_OBJS.
+	(WITH_COMMON_INTERP_DEP): Rename to MN10300_INTERP_DEP.
+	(WITH_COMMON_RUN_OBJS): Rename to SIM_RUN_OBJS.
+	(SIM_EXTRA_CFLAGS): Don't use @sim_gen@.
+	* interp.c: Remove non-common bits.
+	* mn10300_sim.h: Likewise.
+
+2003-08-28  Andrew Cagney  <cagney@redhat.com>
+
+	* dv-mn103ser.c (do_polling_event): Change type of "serial_reg" to
+	"long".
+	(read_status_reg): Cast "serial_reg" to "long".
+	* dv-mn103tim.c (do_counter_event): Change type of "timer_nr" to
+	"long".
+	(do_counter6_event, write_mode_reg, write_tm6md): Ditto.
+
+2003-02-27  Andrew Cagney  <cagney@redhat.com>
+
+	* interp.c (sim_open, sim_create_inferior, sim_open)
+	(sim_create_inferior): Rename _bfd to bfd.
+
+2003-02-26  Andrew Cagney  <cagney@redhat.com>
+
+	* am33.igen: Call sim_engine_abort instead of abort.
+
+2003-02-26  David Carlton  <carlton@math.stanford.edu>
+
+	* dv-mn103tim.c (read_special_timer6_reg): Add break after
+	empty default: label.
+	(write_special_timer6_reg): Ditto.
+	Update copyright.
+
+2002-11-28  Andrew Cagney  <cagney@redhat.com>
+
+	* sim-main.h: Only include "idecode.h" once.
+	* Makefile.in (SIM_EXTRA_DEPS): Define.
+
+2002-06-16  Andrew Cagney  <ac131313@redhat.com>
+
+	* configure: Regenerated to track ../common/aclocal.m4 changes.
+
+2002-06-09  Andrew Cagney  <cagney@redhat.com>
+
+	* Makefile.in (INCLUDE): Update path to callback.h.
+	* mn10300_sim.h: Include "gdb/callback.h" and "gdb/remote-sim.h".
+	* tconfig.in: Ditto.
+
+2001-05-06  Jim Blandy  <jimb@redhat.com>
+
+	* mn10300.igen: Doc fixes.
+	
+2001-04-26  Alexandre Oliva  <aoliva@redhat.com>
+
+	* Makefile.in (idecode.o, op_utils.o, semantics.o, simops.o):
+	Depend on targ-vals.h.
+
+2001-04-15  J.T. Conklin  <jtc@redback.com>
+
+	* Makefile.in (simops.o): Add simops.h to dependency list.
+
+Wed Aug  9 02:24:53 2000  Graham Stott  <grahams@cygnus.co.uk>
+
+	* am33.igen: Warning clean-up.
+	(movm): Initialize PC and mask.
+	(mov, movbu, movhu): Set srcreg2 from RI0.
+	(bsch): Initialize c.
+	(sat16_cmp): Actually do the comparison.
+	(mov_llt): Do not overwrite dstreg with uninitialized variable.
+
+Tue May 23 21:39:23 2000  Andrew Cagney  <cagney@b1.cygnus.com>
+
+	* configure: Regenerated to track ../common/aclocal.m4 changes.
+
+2000-05-22  Alexandre Oliva  <aoliva@cygnus.com>
+
+	* am33.igen: Fix leading comments of SP-relative offset insns that
+	referred to other registers.  Make their offsets unsigned.
+
+2000-05-18  Alexandre Oliva  <aoliva@cygnus.com>
+
+	* mn10300_sim.h (genericAdd, genericSub, genericCmp, genericOr,
+	genericXor, genericBtst): Use `unsigned32'.
+	* op_utils.c: Likewise.
+	* mn10300.igen, am33.igen: Use `unsigned32', `signed32',
+	`unsigned64' or `signed64' where type width is relevant.
+
+2000-04-25  Alexandre Oliva  <aoliva@cygnus.com>
+
+	* am33.igen (inc4 Rn): Use genericAdd so as to modify flags.
+
+2000-04-09  Alexandre Oliva  <aoliva@cygnus.com>
+
+	* am33.igen: Make SP-relative offsets unsigned.  Add `*am33' for
+	some instructions that were missing it.
+
+2000-03-03  Alexandre Oliva  <oliva@lsd.ic.unicamp.br>
+
+	* Makefile.in (IGEN_INSN): Added am33.igen.
+
 Thu Sep  2 18:15:53 1999  Andrew Cagney  <cagney@b1.cygnus.com>
 
 	* configure: Regenerated to track ../common/aclocal.m4 changes.

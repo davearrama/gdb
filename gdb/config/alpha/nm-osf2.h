@@ -1,5 +1,5 @@
 /* Native definitions for alpha running OSF/1-2.x, using procfs.
-   Copyright (C) 1995 Free Software Foundation, Inc.
+   Copyright 1995, 1996, 2000 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -25,9 +25,6 @@
 #define USE_PROC_FS
 #define HAVE_OPTIONAL_PROC_FS
 
-/* OSF/1 doesn't provide the standard fault definitions, so don't use them.  */
-#define FAULTED_USE_SIGINFO
-
 /* Don't trace faults under OSF/1, rely on the posting of the appropriate
    signal if fault tracing is disabled.
    Tracing T_IFAULT under Alpha OSF/1 causes a `floating point enable'
@@ -38,18 +35,10 @@
 #define PROCFS_DONT_TRACE_FAULTS
 
 /* Work around some peculiarities in the OSF/1 procfs implementation.  */
-#define PROCFS_SIGPEND_OFFSET
 #define PROCFS_NEED_PIOCSSIG_FOR_KILL
 #define PROCFS_DONT_PIOCSSIG_CURSIG
 
 /* Return sizeof user struct to callers in less machine dependent routines */
 
 #define KERNEL_U_SIZE kernel_u_size()
-extern int kernel_u_size PARAMS ((void));
-
-/* poll() doesn't seem to work properly for /proc in this version of the OS.
-   If we only specify POLLPRI, things hang.  It seems to get better when we set
-   POLLOUT, but that always returns POLLNVAL!!!  Also, POLLOUT causes problems
-   on other OSes.  */
-
-#define LOSING_POLL
+extern int kernel_u_size (void);

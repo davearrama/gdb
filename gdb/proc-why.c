@@ -1,5 +1,5 @@
 /* Machine independent support for SVR4 /proc (process file system) for GDB.
-   Copyright 1999 Free Software Foundation, Inc.
+   Copyright 1999, 2000 Free Software Foundation, Inc.
    Written by Michael Snyder at Cygnus Solutions.
    Based on work by Fred Fish, Stu Grossman, Geoff Noer, and others.
 
@@ -105,11 +105,8 @@ static struct trans pr_why_table[] =
 };
 
 void
-proc_prettyfprint_why (file, why, what, verbose)
-     FILE         *file;
-     unsigned long why; 
-     unsigned long what; 
-     int           verbose;
+proc_prettyfprint_why (FILE *file, unsigned long why, unsigned long what,
+		       int verbose)
 {
   int i;
 
@@ -157,7 +154,7 @@ proc_prettyfprint_why (file, why, what, verbose)
 #endif
 #ifdef PR_DEAD
 	case PR_DEAD:
-	  fprintf (file, "Exit status: %d\n", what);
+	  fprintf (file, "Exit status: %ld\n", what);
 	  break;
 #endif
 	default:
@@ -172,10 +169,7 @@ proc_prettyfprint_why (file, why, what, verbose)
 }
 
 void
-proc_prettyprint_why (why, what, verbose)
-     unsigned long why; 
-     unsigned long what; 
-     int           verbose;
+proc_prettyprint_why (unsigned long why, unsigned long what, int verbose)
 {
   proc_prettyfprint_why (stdout, why, what, verbose);
 }

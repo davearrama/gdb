@@ -1,11 +1,11 @@
 #include <signal.h>
 #include "sysdep.h"
 #include "bfd.h"
-#include "callback.h"
-#include "remote-sim.h"
+#include "gdb/callback.h"
+#include "gdb/remote-sim.h"
 
 #include "d10v_sim.h"
-#include "sim-d10v.h"
+#include "gdb/sim-d10v.h"
 
 enum _leftright { LEFT_FIRST, RIGHT_FIRST };
 
@@ -49,7 +49,7 @@ static INLINE uint8 *map_memory (unsigned phys_addr);
 static long ui_loop_hook_counter = UI_LOOP_POLL_INTERVAL;
 
 /* Actual hook to call to run through gdb's gui event loop */
-extern int (*ui_loop_hook) PARAMS ((int signo));
+extern int (*deprecated_ui_loop_hook) PARAMS ((int signo));
 #endif /* NEED_UI_LOOP_HOOK */
 
 #ifndef INLINE
@@ -99,8 +99,6 @@ lookup_hash (ins, size)
     {
       if (h->next == NULL)
 	{
-	  (*d10v_callback->printf_filtered)
-	    (d10v_callback, "ERROR: Illegal instruction %x at PC %x\n", ins, PC);
 	  State.exception = SIGILL;
 	  State.pc_changed = 1; /* Don't increment the PC. */
 	  return NULL;
@@ -365,7 +363,7 @@ set_dmap_register (int reg_nr, unsigned long value)
 }
 
 static unsigned long
-dmap_register (int reg_nr)
+dmap_register (void *regcache, int reg_nr)
 {
   uint8 *raw = map_memory (SIM_D10V_MEMORY_DATA
 			   + DMAP0_OFFSET + 2 * reg_nr);
@@ -388,7 +386,7 @@ set_imap_register (int reg_nr, unsigned long value)
 }
 
 static unsigned long
-imap_register (int reg_nr)
+imap_register (void *regcache, int reg_nr)
 {
   uint8 *raw = map_memory (SIM_D10V_MEMORY_DATA
 			   + IMAP0_OFFSET + 2 * reg_nr);
@@ -442,7 +440,9 @@ unsigned long
 sim_d10v_translate_dmap_addr (unsigned long offset,
 			      int nr_bytes,
 			      unsigned long *phys,
-			      unsigned long (*dmap_register) (int reg_nr))
+			      void *regcache,
+			      unsigned long (*dmap_register) (void *regcache,
+							      int reg_nr))
 {
   short map;
   int regno;
@@ -459,7 +459,7 @@ sim_d10v_translate_dmap_addr (unsigned long offset,
       /* Don't cross a BLOCK boundary */
       nr_bytes = DMAP_BLOCK_SIZE - (offset % DMAP_BLOCK_SIZE);
     }
-  map = dmap_register (regno);
+  map = dmap_register (regcache, regno);
   if (regno == 3)
     {
       /* Always maps to data memory */
@@ -500,7 +500,9 @@ unsigned long
 sim_d10v_translate_imap_addr (unsigned long offset,
 			      int nr_bytes,
 			      unsigned long *phys,
-			      unsigned long (*imap_register) (int reg_nr))
+			      void *regcache,
+			      unsigned long (*imap_register) (void *regcache,
+							      int reg_nr))
 {
   short map;
   int regno;
@@ -519,7 +521,7 @@ sim_d10v_translate_imap_addr (unsigned long offset,
       /* Don't cross a BLOCK boundary */
       nr_bytes = IMAP_BLOCK_SIZE - offset;
     }
-  map = imap_register (regno);
+  map = imap_register (regcache, regno);
   sp = (map & 0x3000) >> 12;
   segno = (map & 0x007f);
   switch (sp)
@@ -551,8 +553,11 @@ unsigned long
 sim_d10v_translate_addr (unsigned long memaddr,
 			 int nr_bytes,
 			 unsigned long *targ_addr,
-			 unsigned long (*dmap_register) (int reg_nr),
-			 unsigned long (*imap_register) (int reg_nr))
+			 void *regcache,
+			 unsigned long (*dmap_register) (void *regcache,
+							 int reg_nr),
+			 unsigned long (*imap_register) (void *regcache,
+							 int reg_nr))
 {
   unsigned long phys;
   unsigned long seg;
@@ -616,12 +621,12 @@ sim_d10v_translate_addr (unsigned long memaddr,
       break;
 
     case 0x10:			/* in logical data address segment */
-      nr_bytes = sim_d10v_translate_dmap_addr (off, nr_bytes, &phys,
+      nr_bytes = sim_d10v_translate_dmap_addr (off, nr_bytes, &phys, regcache,
 					       dmap_register);
       break;
 
     case 0x11:			/* in logical instruction address segment */
-      nr_bytes = sim_d10v_translate_imap_addr (off, nr_bytes, &phys,
+      nr_bytes = sim_d10v_translate_imap_addr (off, nr_bytes, &phys, regcache,
 					       imap_register);
       break;
 
@@ -715,50 +720,39 @@ xfer_mem (SIM_ADDR virt,
 	  int size,
 	  int write_p)
 {
-  int xfered = 0;
+  uint8 *memory;
+  unsigned long phys;
+  int phys_size;
+  phys_size = sim_d10v_translate_addr (virt, size, &phys, NULL,
+				       dmap_register, imap_register);
+  if (phys_size == 0)
+    return 0;
 
-  while (xfered < size)
-    {
-      uint8 *memory;
-      unsigned long phys;
-      int phys_size;
-      phys_size = sim_d10v_translate_addr (virt, size,
-					   &phys,
-					   dmap_register,
-					   imap_register);
-      if (phys_size == 0)
-	return xfered;
-
-      memory = map_memory (phys);
+  memory = map_memory (phys);
 
 #ifdef DEBUG
-      if ((d10v_debug & DEBUG_INSTRUCTION) != 0)
-	{
-	  (*d10v_callback->printf_filtered)
-	    (d10v_callback,
-	     "sim_%s %d bytes: 0x%08lx (%s) -> 0x%08lx (%s) -> 0x%08lx (%s)\n",
+  if ((d10v_debug & DEBUG_INSTRUCTION) != 0)
+    {
+      (*d10v_callback->printf_filtered)
+	(d10v_callback,
+	 "sim_%s %d bytes: 0x%08lx (%s) -> 0x%08lx (%s) -> 0x%08lx (%s)\n",
 	     (write_p ? "write" : "read"),
-	     phys_size, virt, last_from,
-	     phys, last_to,
-	     (long) memory, last_segname);
-	}
+	 phys_size, virt, last_from,
+	 phys, last_to,
+	 (long) memory, last_segname);
+    }
 #endif
 
-      if (write_p)
-	{
-	  memcpy (memory, buffer, phys_size);
-	}
-      else
-	{
-	  memcpy (buffer, memory, phys_size);
-	}
-
-      virt += phys_size;
-      buffer += phys_size;
-      xfered += phys_size;
+  if (write_p)
+    {
+      memcpy (memory, buffer, phys_size);
     }
-
-  return size;
+  else
+    {
+      memcpy (buffer, memory, phys_size);
+    }
+  
+  return phys_size;
 }
 
 
@@ -789,7 +783,7 @@ SIM_DESC
 sim_open (kind, callback, abfd, argv)
      SIM_OPEN_KIND kind;
      host_callback *callback;
-     struct _bfd *abfd;
+     struct bfd *abfd;
      char **argv;
 {
   struct simops *s;
@@ -893,7 +887,7 @@ dmem_addr (uint16 offset)
      things like ``0xfffe + 0x0e60 == 0x10e5d''.  Since offset's type
      is uint16 this is modulo'ed onto 0x0e5d. */
 
-  phys_size = sim_d10v_translate_dmap_addr (offset, 1, &phys,
+  phys_size = sim_d10v_translate_dmap_addr (offset, 1, &phys, NULL,
 					    dmap_register);
   if (phys_size == 0)
     {
@@ -920,7 +914,8 @@ imem_addr (uint32 offset)
 {
   unsigned long phys;
   uint8 *mem;
-  int phys_size = sim_d10v_translate_imap_addr (offset, 1, &phys, imap_register);
+  int phys_size = sim_d10v_translate_imap_addr (offset, 1, &phys, NULL,
+						imap_register);
   if (phys_size == 0)
     {
       return State.mem.fault;
@@ -964,6 +959,32 @@ sim_resume (sd, step, siggnal)
   State.exception = 0;
   if (step)
     sim_stop (sd);
+
+  switch (siggnal)
+    {
+    case 0:
+      break;
+#ifdef SIGBUS
+    case SIGBUS:
+#endif
+    case SIGSEGV:
+      SET_BPC (PC);
+      SET_BPSW (PSW);
+      SET_HW_PSW ((PSW & (PSW_F0_BIT | PSW_F1_BIT | PSW_C_BIT)));
+      JMP (AE_VECTOR_START);
+      SLOT_FLUSH ();
+      break;
+    case SIGILL:
+      SET_BPC (PC);
+      SET_BPSW (PSW);
+      SET_HW_PSW ((PSW & (PSW_F0_BIT | PSW_F1_BIT | PSW_C_BIT)));
+      JMP (RIE_VECTOR_START);
+      SLOT_FLUSH ();
+      break;
+    default:
+      /* just ignore it */
+      break;
+    }
 
   do
     {
@@ -1040,10 +1061,10 @@ sim_resume (sd, step, siggnal)
       SLOT_FLUSH ();
 
 #ifdef NEED_UI_LOOP_HOOK
-      if (ui_loop_hook != NULL && ui_loop_hook_counter-- < 0)
+      if (deprecated_ui_loop_hook != NULL && ui_loop_hook_counter-- < 0)
 	{
 	  ui_loop_hook_counter = UI_LOOP_POLL_INTERVAL;
-	  ui_loop_hook (0);
+	  deprecated_ui_loop_hook (0);
 	}
 #endif /* NEED_UI_LOOP_HOOK */
     }
@@ -1053,15 +1074,12 @@ sim_resume (sd, step, siggnal)
     State.exception = SIGTRAP;
 }
 
-int
-sim_trace (sd)
-     SIM_DESC sd;
+void
+sim_set_trace (void)
 {
 #ifdef DEBUG
   d10v_debug = DEBUG;
 #endif
-  sim_resume (sd, 0, 0);
-  return 1;
 }
 
 void
@@ -1172,7 +1190,7 @@ sim_info (sd, verbose)
 SIM_RC
 sim_create_inferior (sd, abfd, argv, env)
      SIM_DESC sd;
-     struct _bfd *abfd;
+     struct bfd *abfd;
      char **argv;
      char **env;
 {
@@ -1181,24 +1199,13 @@ sim_create_inferior (sd, abfd, argv, env)
   /* reset all state information */
   memset (&State.regs, 0, (int)&State.mem - (int)&State.regs);
 
-  if (argv)
-    {
-      /* a hack to set r0/r1 with argc/argv */
-      /* some high memory that won't be overwritten by the stack soon */
-      bfd_vma addr = 0x7C00;
-      int p = 20;
-      int i = 0;
-      while (argv[i])
- 	{
- 	  int size = strlen (argv[i]) + 1;
- 	  SW (addr + 2*i, addr + p); 
- 	  sim_write (sd, addr + 0, argv[i], size);
- 	  p += size;
- 	  i++;
- 	}
-      SET_GPR (0, addr);
-      SET_GPR (1, i);
-    }
+  /* There was a hack here to copy the values of argc and argv into r0
+     and r1.  The values were also saved into some high memory that
+     won't be overwritten by the stack (0x7C00).  The reason for doing
+     this was to allow the 'run' program to accept arguments.  Without
+     the hack, this is not possible anymore.  If the simulator is run
+     from the debugger, arguments cannot be passed in, so this makes
+     no difference.  */
 
   /* set PC */
   if (abfd != NULL)
@@ -1231,7 +1238,8 @@ sim_create_inferior (sd, abfd, argv, env)
       set_imap_register (1, 0x1000);
       set_dmap_register (0, 0x2000);
       set_dmap_register (1, 0x2000);
-      set_dmap_register (2, 0x0000); /* Old DMAP, Value is not 0x2000 */
+      set_dmap_register (2, 0x2000); /* DMAP2 initial internal value is
+					0x2000 on the new board. */
       set_dmap_register (3, 0x0000);
     }
 
@@ -1267,6 +1275,15 @@ sim_stop_reason (sd, reason, sigrc)
       *sigrc = GPR (0);
       break;
 
+    case SIG_D10V_BUS:
+      *reason = sim_stopped;
+#ifdef SIGBUS
+      *sigrc = SIGBUS;
+#else
+      *sigrc = SIGSEGV;
+#endif
+      break;
+
     default:				/* some signal */
       *reason = sim_stopped;
       if (stop_simulator && !State.exception)
@@ -1287,54 +1304,82 @@ sim_fetch_register (sd, rn, memory, length)
      int length;
 {
   int size;
-  if (rn < 0)
-    size = 0;
-  else if (rn >= SIM_D10V_R0_REGNUM
-	   && rn < SIM_D10V_R0_REGNUM + SIM_D10V_NR_R_REGS)
+  switch ((enum sim_d10v_regs) rn)
     {
+    case SIM_D10V_R0_REGNUM:
+    case SIM_D10V_R1_REGNUM:
+    case SIM_D10V_R2_REGNUM:
+    case SIM_D10V_R3_REGNUM:
+    case SIM_D10V_R4_REGNUM:
+    case SIM_D10V_R5_REGNUM:
+    case SIM_D10V_R6_REGNUM:
+    case SIM_D10V_R7_REGNUM:
+    case SIM_D10V_R8_REGNUM:
+    case SIM_D10V_R9_REGNUM:
+    case SIM_D10V_R10_REGNUM:
+    case SIM_D10V_R11_REGNUM:
+    case SIM_D10V_R12_REGNUM:
+    case SIM_D10V_R13_REGNUM:
+    case SIM_D10V_R14_REGNUM:
+    case SIM_D10V_R15_REGNUM:
       WRITE_16 (memory, GPR (rn - SIM_D10V_R0_REGNUM));
       size = 2;
-    }
-  else if (rn >= SIM_D10V_CR0_REGNUM
-	   && rn < SIM_D10V_CR0_REGNUM + SIM_D10V_NR_CR_REGS)
-    {
+      break;
+    case SIM_D10V_CR0_REGNUM:
+    case SIM_D10V_CR1_REGNUM:
+    case SIM_D10V_CR2_REGNUM:
+    case SIM_D10V_CR3_REGNUM:
+    case SIM_D10V_CR4_REGNUM:
+    case SIM_D10V_CR5_REGNUM:
+    case SIM_D10V_CR6_REGNUM:
+    case SIM_D10V_CR7_REGNUM:
+    case SIM_D10V_CR8_REGNUM:
+    case SIM_D10V_CR9_REGNUM:
+    case SIM_D10V_CR10_REGNUM:
+    case SIM_D10V_CR11_REGNUM:
+    case SIM_D10V_CR12_REGNUM:
+    case SIM_D10V_CR13_REGNUM:
+    case SIM_D10V_CR14_REGNUM:
+    case SIM_D10V_CR15_REGNUM:
       WRITE_16 (memory, CREG (rn - SIM_D10V_CR0_REGNUM));
       size = 2;
-    }
-  else if (rn >= SIM_D10V_A0_REGNUM
-	   && rn < SIM_D10V_A0_REGNUM + SIM_D10V_NR_A_REGS)
-    {
+      break;
+    case SIM_D10V_A0_REGNUM:
+    case SIM_D10V_A1_REGNUM:
       WRITE_64 (memory, ACC (rn - SIM_D10V_A0_REGNUM));
       size = 8;
-    }
-  else if (rn == SIM_D10V_SPI_REGNUM)
-    {
+      break;
+    case SIM_D10V_SPI_REGNUM:
       /* PSW_SM indicates that the current SP is the USER
          stack-pointer. */
       WRITE_16 (memory, spi_register ());
       size = 2;
-    }
-  else if (rn == SIM_D10V_SPU_REGNUM)
-    {
+      break;
+    case SIM_D10V_SPU_REGNUM:
       /* PSW_SM indicates that the current SP is the USER
          stack-pointer. */
       WRITE_16 (memory, spu_register ());
       size = 2;
-    }
-  else if (rn >= SIM_D10V_IMAP0_REGNUM
-	   && rn < SIM_D10V_IMAP0_REGNUM + SIM_D10V_NR_IMAP_REGS)
-    {
-      WRITE_16 (memory, imap_register (rn - SIM_D10V_IMAP0_REGNUM));
+      break;
+    case SIM_D10V_IMAP0_REGNUM:
+    case SIM_D10V_IMAP1_REGNUM:
+      WRITE_16 (memory, imap_register (NULL, rn - SIM_D10V_IMAP0_REGNUM));
       size = 2;
-    }
-  else if (rn >= SIM_D10V_DMAP0_REGNUM
-	   && rn < SIM_D10V_DMAP0_REGNUM + SIM_D10V_NR_DMAP_REGS)
-    {
-      WRITE_16 (memory, dmap_register (rn - SIM_D10V_DMAP0_REGNUM));
+      break;
+    case SIM_D10V_DMAP0_REGNUM:
+    case SIM_D10V_DMAP1_REGNUM:
+    case SIM_D10V_DMAP2_REGNUM:
+    case SIM_D10V_DMAP3_REGNUM:
+      WRITE_16 (memory, dmap_register (NULL, rn - SIM_D10V_DMAP0_REGNUM));
       size = 2;
+      break;
+    case SIM_D10V_TS2_DMAP_REGNUM:
+      size = 0;
+      break;
+    default:
+      size = 0;
+      break;
     }
-  else
-    size = 0;
   return size;
 }
  
@@ -1346,52 +1391,80 @@ sim_store_register (sd, rn, memory, length)
      int length;
 {
   int size;
-  if (rn < 0)
-    size = 0;
-  else if (rn >= SIM_D10V_R0_REGNUM
-	   && rn < SIM_D10V_R0_REGNUM + SIM_D10V_NR_R_REGS)
+  switch ((enum sim_d10v_regs) rn)
     {
+    case SIM_D10V_R0_REGNUM:
+    case SIM_D10V_R1_REGNUM:
+    case SIM_D10V_R2_REGNUM:
+    case SIM_D10V_R3_REGNUM:
+    case SIM_D10V_R4_REGNUM:
+    case SIM_D10V_R5_REGNUM:
+    case SIM_D10V_R6_REGNUM:
+    case SIM_D10V_R7_REGNUM:
+    case SIM_D10V_R8_REGNUM:
+    case SIM_D10V_R9_REGNUM:
+    case SIM_D10V_R10_REGNUM:
+    case SIM_D10V_R11_REGNUM:
+    case SIM_D10V_R12_REGNUM:
+    case SIM_D10V_R13_REGNUM:
+    case SIM_D10V_R14_REGNUM:
+    case SIM_D10V_R15_REGNUM:
       SET_GPR (rn - SIM_D10V_R0_REGNUM, READ_16 (memory));
       size = 2;
-    }
-  else if (rn >= SIM_D10V_CR0_REGNUM
-	   && rn < SIM_D10V_CR0_REGNUM + SIM_D10V_NR_CR_REGS)
-    {
+      break;
+    case SIM_D10V_CR0_REGNUM:
+    case SIM_D10V_CR1_REGNUM:
+    case SIM_D10V_CR2_REGNUM:
+    case SIM_D10V_CR3_REGNUM:
+    case SIM_D10V_CR4_REGNUM:
+    case SIM_D10V_CR5_REGNUM:
+    case SIM_D10V_CR6_REGNUM:
+    case SIM_D10V_CR7_REGNUM:
+    case SIM_D10V_CR8_REGNUM:
+    case SIM_D10V_CR9_REGNUM:
+    case SIM_D10V_CR10_REGNUM:
+    case SIM_D10V_CR11_REGNUM:
+    case SIM_D10V_CR12_REGNUM:
+    case SIM_D10V_CR13_REGNUM:
+    case SIM_D10V_CR14_REGNUM:
+    case SIM_D10V_CR15_REGNUM:
       SET_CREG (rn - SIM_D10V_CR0_REGNUM, READ_16 (memory));
       size = 2;
-    }
-  else if (rn >= SIM_D10V_A0_REGNUM
-	   && rn < SIM_D10V_A0_REGNUM + SIM_D10V_NR_A_REGS)
-    {
+      break;
+    case SIM_D10V_A0_REGNUM:
+    case SIM_D10V_A1_REGNUM:
       SET_ACC (rn - SIM_D10V_A0_REGNUM, READ_64 (memory) & MASK40);
       size = 8;
-    }
-  else if (rn == SIM_D10V_SPI_REGNUM)
-    {
+      break;
+    case SIM_D10V_SPI_REGNUM:
       /* PSW_SM indicates that the current SP is the USER
          stack-pointer. */
       set_spi_register (READ_16 (memory));
       size = 2;
-    }
-  else if (rn == SIM_D10V_SPU_REGNUM)
-    {
+      break;
+    case SIM_D10V_SPU_REGNUM:
       set_spu_register (READ_16 (memory));
       size = 2;
-    }
-  else if (rn >= SIM_D10V_IMAP0_REGNUM
-	   && rn < SIM_D10V_IMAP0_REGNUM + SIM_D10V_NR_IMAP_REGS)
-    {
+      break;
+    case SIM_D10V_IMAP0_REGNUM:
+    case SIM_D10V_IMAP1_REGNUM:
       set_imap_register (rn - SIM_D10V_IMAP0_REGNUM, READ_16(memory));
       size = 2;
-    }
-  else if (rn >= SIM_D10V_DMAP0_REGNUM
-	   && rn < SIM_D10V_DMAP0_REGNUM + SIM_D10V_NR_DMAP_REGS)
-    {
+      break;
+    case SIM_D10V_DMAP0_REGNUM:
+    case SIM_D10V_DMAP1_REGNUM:
+    case SIM_D10V_DMAP2_REGNUM:
+    case SIM_D10V_DMAP3_REGNUM:
       set_dmap_register (rn - SIM_D10V_DMAP0_REGNUM, READ_16(memory));
       size = 2;
+      break;
+    case SIM_D10V_TS2_DMAP_REGNUM:
+      size = 0;
+      break;
+    default:
+      size = 0;
+      break;
     }
-  else
-    size = 0;
   SLOT_FLUSH ();
   return size;
 }

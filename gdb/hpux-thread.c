@@ -1,5 +1,5 @@
 /* Low level interface for debugging HPUX/DCE threads for GDB, the GNU debugger.
-   Copyright 1996, 1999 Free Software Foundation, Inc.
+   Copyright 1996, 1998, 1999, 2000, 2001 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -39,14 +39,15 @@
 #include "gdbthread.h"
 #include "target.h"
 #include "inferior.h"
+#include "regcache.h"
 #include <fcntl.h>
-#include <sys/stat.h>
+#include "gdb_stat.h"
 #include "gdbcore.h"
 
 extern int child_suppress_run;
 extern struct target_ops child_ops;	/* target vector for inftarg.c */
 
-extern void _initialize_hpux_thread PARAMS ((void));
+extern void _initialize_hpux_thread (void);
 
 struct string_map
   {
@@ -56,77 +57,28 @@ struct string_map
 
 static int hpux_thread_active = 0;
 
-static int main_pid;		/* Real process ID */
+static ptid_t main_ptid;		/* Real process ID */
 
 static CORE_ADDR P_cma__g_known_threads;
 static CORE_ADDR P_cma__g_current_thread;
 
-static struct cleanup *save_inferior_pid PARAMS ((void));
+static void hpux_thread_resume (ptid_t ptid, int step,
+                                enum target_signal signo);
 
-static void restore_inferior_pid PARAMS ((int pid));
-
-static void hpux_thread_resume PARAMS ((int pid, int step,
-					enum target_signal signo));
-
-static void init_hpux_thread_ops PARAMS ((void));
+static void init_hpux_thread_ops (void);
 
 static struct target_ops hpux_thread_ops;
 
-/*
-
-   LOCAL FUNCTION
-
-   save_inferior_pid - Save inferior_pid on the cleanup list
-   restore_inferior_pid - Restore inferior_pid from the cleanup list
-
-   SYNOPSIS
-
-   struct cleanup *save_inferior_pid ()
-   void restore_inferior_pid (int pid)
-
-   DESCRIPTION
-
-   These two functions act in unison to restore inferior_pid in
-   case of an error.
-
-   NOTES
-
-   inferior_pid is a global variable that needs to be changed by many of
-   these routines before calling functions in procfs.c.  In order to
-   guarantee that inferior_pid gets restored (in case of errors), you
-   need to call save_inferior_pid before changing it.  At the end of the
-   function, you should invoke do_cleanups to restore it.
-
- */
-
-
-static struct cleanup *
-save_inferior_pid ()
-{
-  return make_cleanup (restore_inferior_pid, inferior_pid);
-}
-
-static void
-restore_inferior_pid (pid)
-     int pid;
-{
-  inferior_pid = pid;
-}
-
-static int find_active_thread PARAMS ((void));
+static ptid_t find_active_thread (void);
 
 static int cached_thread;
-static int cached_active_thread;
 static cma__t_int_tcb cached_tcb;
 
-static int
-find_active_thread ()
+static ptid_t
+find_active_thread (void)
 {
   static cma__t_int_tcb tcb;
   CORE_ADDR tcb_ptr;
-
-  if (cached_active_thread != 0)
-    return cached_active_thread;
 
   read_memory ((CORE_ADDR) P_cma__g_current_thread,
 	       (char *) &tcb_ptr,
@@ -134,17 +86,18 @@ find_active_thread ()
 
   read_memory (tcb_ptr, (char *) &tcb, sizeof tcb);
 
-  return (cma_thread_get_unique (&tcb.prolog.client_thread) << 16) | main_pid;
+  return (ptid_build (PIDGET (main_ptid), 0,
+                      cma_thread_get_unique (&tcb.prolog.client_thread)));
 }
 
-static cma__t_int_tcb *find_tcb PARAMS ((int thread));
+static cma__t_int_tcb *find_tcb (ptid_t ptid);
 
 static cma__t_int_tcb *
-find_tcb (thread)
-     int thread;
+find_tcb (ptid_t ptid)
 {
   cma__t_known_object queue_header;
   cma__t_queue *queue_ptr;
+  int thread = ptid_get_tid (ptid);
 
   if (thread == cached_thread)
     return &cached_tcb;
@@ -164,25 +117,22 @@ find_tcb (thread)
       read_memory ((CORE_ADDR) tcb_ptr, (char *) &cached_tcb, sizeof cached_tcb);
 
       if (cached_tcb.header.type == cma__c_obj_tcb)
-	if (cma_thread_get_unique (&cached_tcb.prolog.client_thread) == thread >> 16)
+	if (cma_thread_get_unique (&cached_tcb.prolog.client_thread) == thread)
 	  {
 	    cached_thread = thread;
 	    return &cached_tcb;
 	  }
     }
 
-  error ("Can't find TCB %d,%d", thread >> 16, thread & 0xffff);
+  error ("Can't find TCB %d", thread);
   return NULL;
 }
 
 /* Most target vector functions from here on actually just pass through to
    inftarg.c, as they don't need to do anything specific for threads.  */
 
-/* ARGSUSED */
 static void
-hpux_thread_open (arg, from_tty)
-     char *arg;
-     int from_tty;
+hpux_thread_open (char *arg, int from_tty)
 {
   child_ops.to_open (arg, from_tty);
 }
@@ -191,9 +141,7 @@ hpux_thread_open (arg, from_tty)
    and wait for the trace-trap that results from attaching.  */
 
 static void
-hpux_thread_attach (args, from_tty)
-     char *args;
-     int from_tty;
+hpux_thread_attach (char *args, int from_tty)
 {
   child_ops.to_attach (args, from_tty);
 
@@ -209,9 +157,7 @@ hpux_thread_attach (args, from_tty)
    started via the normal ptrace (PTRACE_TRACEME).  */
 
 static void
-hpux_thread_detach (args, from_tty)
-     char *args;
-     int from_tty;
+hpux_thread_detach (char *args, int from_tty)
 {
   child_ops.to_detach (args, from_tty);
 }
@@ -222,16 +168,14 @@ hpux_thread_detach (args, from_tty)
    for procfs.  */
 
 static void
-hpux_thread_resume (pid, step, signo)
-     int pid;
-     int step;
-     enum target_signal signo;
+hpux_thread_resume (ptid_t ptid, int step, enum target_signal signo)
 {
   struct cleanup *old_chain;
 
-  old_chain = save_inferior_pid ();
+  old_chain = save_inferior_ptid ();
 
-  pid = inferior_pid = main_pid;
+  ptid = main_ptid;
+  inferior_ptid = main_ptid;
 
 #if 0
   if (pid != -1)
@@ -242,10 +186,9 @@ hpux_thread_resume (pid, step, signo)
     }
 #endif
 
-  child_ops.to_resume (pid, step, signo);
+  child_ops.to_resume (ptid, step, signo);
 
   cached_thread = 0;
-  cached_active_thread = 0;
 
   do_cleanups (old_chain);
 }
@@ -253,22 +196,20 @@ hpux_thread_resume (pid, step, signo)
 /* Wait for any threads to stop.  We may have to convert PID from a thread id
    to a LWP id, and vice versa on the way out.  */
 
-static int
-hpux_thread_wait (pid, ourstatus)
-     int pid;
-     struct target_waitstatus *ourstatus;
+static ptid_t
+hpux_thread_wait (ptid_t ptid, struct target_waitstatus *ourstatus)
 {
-  int rtnval;
+  ptid_t rtnval;
   struct cleanup *old_chain;
 
-  old_chain = save_inferior_pid ();
+  old_chain = save_inferior_ptid ();
 
-  inferior_pid = main_pid;
+  inferior_ptid = main_ptid;
 
-  if (pid != -1)
-    pid = main_pid;
+  if (!ptid_equal (ptid, minus_one_ptid))
+    ptid = main_ptid;
 
-  rtnval = child_ops.to_wait (pid, ourstatus);
+  rtnval = child_ops.to_wait (ptid, ourstatus);
 
   rtnval = find_active_thread ();
 
@@ -304,19 +245,18 @@ static char regmap[NUM_REGS] =
 };
 
 static void
-hpux_thread_fetch_registers (regno)
-     int regno;
+hpux_thread_fetch_registers (int regno)
 {
   cma__t_int_tcb tcb, *tcb_ptr;
   struct cleanup *old_chain;
   int i;
   int first_regno, last_regno;
 
-  tcb_ptr = find_tcb (inferior_pid);
+  tcb_ptr = find_tcb (inferior_ptid);
 
-  old_chain = save_inferior_pid ();
+  old_chain = save_inferior_ptid ();
 
-  inferior_pid = main_pid;
+  inferior_ptid = main_ptid;
 
   if (tcb_ptr->state == cma__c_state_running)
     {
@@ -344,22 +284,22 @@ hpux_thread_fetch_registers (regno)
 	child_ops.to_fetch_registers (regno);
       else
 	{
-	  unsigned char buf[MAX_REGISTER_RAW_SIZE];
+	  unsigned char buf[MAX_REGISTER_SIZE];
 	  CORE_ADDR sp;
 
 	  sp = (CORE_ADDR) tcb_ptr->static_ctx.sp - 160;
 
 	  if (regno == FLAGS_REGNUM)
 	    /* Flags must be 0 to avoid bogus value for SS_INSYSCALL */
-	    memset (buf, '\000', REGISTER_RAW_SIZE (regno));
+	    memset (buf, '\000', register_size (current_gdbarch, regno));
 	  else if (regno == SP_REGNUM)
-	    store_address (buf, sizeof sp, sp);
+	    store_unsigned_integer (buf, sizeof sp, sp);
 	  else if (regno == PC_REGNUM)
-	    read_memory (sp - 20, buf, REGISTER_RAW_SIZE (regno));
+	    read_memory (sp - 20, buf, register_size (current_gdbarch, regno));
 	  else
-	    read_memory (sp + regmap[regno], buf, REGISTER_RAW_SIZE (regno));
+	    read_memory (sp + regmap[regno], buf, register_size (current_gdbarch, regno));
 
-	  supply_register (regno, buf);
+	  regcache_raw_supply (current_regcache, regno, buf);
 	}
     }
 
@@ -367,19 +307,18 @@ hpux_thread_fetch_registers (regno)
 }
 
 static void
-hpux_thread_store_registers (regno)
-     int regno;
+hpux_thread_store_registers (int regno)
 {
   cma__t_int_tcb tcb, *tcb_ptr;
   struct cleanup *old_chain;
   int i;
   int first_regno, last_regno;
 
-  tcb_ptr = find_tcb (inferior_pid);
+  tcb_ptr = find_tcb (inferior_ptid);
 
-  old_chain = save_inferior_pid ();
+  old_chain = save_inferior_ptid ();
 
-  inferior_pid = main_pid;
+  inferior_ptid = main_ptid;
 
   if (tcb_ptr->state == cma__c_state_running)
     {
@@ -407,7 +346,7 @@ hpux_thread_store_registers (regno)
 	child_ops.to_store_registers (regno);
       else
 	{
-	  unsigned char buf[MAX_REGISTER_RAW_SIZE];
+	  unsigned char buf[MAX_REGISTER_SIZE];
 	  CORE_ADDR sp;
 
 	  sp = (CORE_ADDR) tcb_ptr->static_ctx.sp - 160;
@@ -417,19 +356,20 @@ hpux_thread_store_registers (regno)
 	  else if (regno == SP_REGNUM)
 	    {
 	      write_memory ((CORE_ADDR) & tcb_ptr->static_ctx.sp,
-			    registers + REGISTER_BYTE (regno),
-			    REGISTER_RAW_SIZE (regno));
+			    &deprecated_registers[DEPRECATED_REGISTER_BYTE (regno)],
+			    register_size (current_gdbarch, regno));
 	      tcb_ptr->static_ctx.sp = (cma__t_hppa_regs *)
-		(extract_address (registers + REGISTER_BYTE (regno), REGISTER_RAW_SIZE (regno)) + 160);
+		(extract_unsigned_integer (&deprecated_registers[DEPRECATED_REGISTER_BYTE (regno)],
+					   register_size (current_gdbarch, regno)) + 160);
 	    }
 	  else if (regno == PC_REGNUM)
 	    write_memory (sp - 20,
-			  registers + REGISTER_BYTE (regno),
-			  REGISTER_RAW_SIZE (regno));
+			  &deprecated_registers[DEPRECATED_REGISTER_BYTE (regno)],
+			  register_size (current_gdbarch, regno));
 	  else
 	    write_memory (sp + regmap[regno],
-			  registers + REGISTER_BYTE (regno),
-			  REGISTER_RAW_SIZE (regno));
+			  &deprecated_registers[DEPRECATED_REGISTER_BYTE (regno)],
+			  register_size (current_gdbarch, regno));
 	}
     }
 
@@ -443,27 +383,25 @@ hpux_thread_store_registers (regno)
    debugged.  */
 
 static void
-hpux_thread_prepare_to_store ()
+hpux_thread_prepare_to_store (void)
 {
   child_ops.to_prepare_to_store ();
 }
 
 static int
-hpux_thread_xfer_memory (memaddr, myaddr, len, dowrite, target)
-     CORE_ADDR memaddr;
-     char *myaddr;
-     int len;
-     int dowrite;
-     struct target_ops *target;	/* ignored */
+hpux_thread_xfer_memory (CORE_ADDR memaddr, char *myaddr, int len,
+			 int dowrite, struct mem_attrib *attribs,
+			 struct target_ops *target)
 {
   int retval;
   struct cleanup *old_chain;
 
-  old_chain = save_inferior_pid ();
+  old_chain = save_inferior_ptid ();
 
-  inferior_pid = main_pid;
+  inferior_ptid = main_ptid;
 
-  retval = child_ops.to_xfer_memory (memaddr, myaddr, len, dowrite, target);
+  retval = 
+    child_ops.to_xfer_memory (memaddr, myaddr, len, dowrite, attribs, target);
 
   do_cleanups (old_chain);
 
@@ -473,44 +411,40 @@ hpux_thread_xfer_memory (memaddr, myaddr, len, dowrite, target)
 /* Print status information about what we're accessing.  */
 
 static void
-hpux_thread_files_info (ignore)
-     struct target_ops *ignore;
+hpux_thread_files_info (struct target_ops *ignore)
 {
   child_ops.to_files_info (ignore);
 }
 
 static void
-hpux_thread_kill_inferior ()
+hpux_thread_kill_inferior (void)
 {
   child_ops.to_kill ();
 }
 
 static void
-hpux_thread_notice_signals (pid)
-     int pid;
+hpux_thread_notice_signals (ptid_t ptid)
 {
-  child_ops.to_notice_signals (pid);
+  child_ops.to_notice_signals (ptid);
 }
 
 /* Fork an inferior process, and start debugging it with /proc.  */
 
 static void
-hpux_thread_create_inferior (exec_file, allargs, env)
-     char *exec_file;
-     char *allargs;
-     char **env;
+hpux_thread_create_inferior (char *exec_file, char *allargs, char **env,
+			     int from_tty)
 {
-  child_ops.to_create_inferior (exec_file, allargs, env);
+  child_ops.to_create_inferior (exec_file, allargs, env, from_tty);
 
   if (hpux_thread_active)
     {
-      main_pid = inferior_pid;
+      main_ptid = inferior_ptid;
 
       push_target (&hpux_thread_ops);
 
-      inferior_pid = find_active_thread ();
+      inferior_ptid = find_active_thread ();
 
-      add_thread (inferior_pid);
+      add_thread (inferior_ptid);
     }
 }
 
@@ -525,11 +459,10 @@ hpux_thread_create_inferior (exec_file, allargs, env)
  */
 
 /* Saved pointer to previous owner of the new_objfile event. */
-static void (*target_new_objfile_chain) PARAMS ((struct objfile *));
+static void (*target_new_objfile_chain) (struct objfile *);
 
 void
-hpux_thread_new_objfile (objfile)
-     struct objfile *objfile;
+hpux_thread_new_objfile (struct objfile *objfile)
 {
   struct minimal_symbol *ms;
 
@@ -563,7 +496,7 @@ quit:
 /* Clean up after the inferior dies.  */
 
 static void
-hpux_thread_mourn_inferior ()
+hpux_thread_mourn_inferior (void)
 {
   child_ops.to_mourn_inferior ();
 }
@@ -571,20 +504,19 @@ hpux_thread_mourn_inferior ()
 /* Mark our target-struct as eligible for stray "run" and "attach" commands.  */
 
 static int
-hpux_thread_can_run ()
+hpux_thread_can_run (void)
 {
   return child_suppress_run;
 }
 
 static int
-hpux_thread_alive (pid)
-     int pid;
+hpux_thread_alive (ptid_t ptid)
 {
   return 1;
 }
 
 static void
-hpux_thread_stop ()
+hpux_thread_stop (void)
 {
   child_ops.to_stop ();
 }
@@ -592,18 +524,18 @@ hpux_thread_stop ()
 /* Convert a pid to printable form. */
 
 char *
-hpux_pid_to_str (pid)
-     int pid;
+hpux_pid_to_str (ptid_t ptid)
 {
   static char buf[100];
+  int pid = PIDGET (ptid);
 
-  sprintf (buf, "Thread %d", pid >> 16);
+  sprintf (buf, "Thread %ld", ptid_get_tid (ptid));
 
   return buf;
 }
 
 static void
-init_hpux_thread_ops ()
+init_hpux_thread_ops (void)
 {
   hpux_thread_ops.to_shortname = "hpux-threads";
   hpux_thread_ops.to_longname = "HPUX threads and pthread.";
@@ -623,6 +555,7 @@ init_hpux_thread_ops ()
   hpux_thread_ops.to_terminal_init = terminal_init_inferior;
   hpux_thread_ops.to_terminal_inferior = terminal_inferior;
   hpux_thread_ops.to_terminal_ours_for_output = terminal_ours_for_output;
+  hpux_thread_ops.to_terminal_save_ours = terminal_save_ours;
   hpux_thread_ops.to_terminal_ours = terminal_ours;
   hpux_thread_ops.to_terminal_info = child_terminal_info;
   hpux_thread_ops.to_kill = hpux_thread_kill_inferior;
@@ -642,13 +575,13 @@ init_hpux_thread_ops ()
 }
 
 void
-_initialize_hpux_thread ()
+_initialize_hpux_thread (void)
 {
   init_hpux_thread_ops ();
   add_target (&hpux_thread_ops);
 
   child_suppress_run = 1;
   /* Hook into new_objfile notification. */
-  target_new_objfile_chain = target_new_objfile_hook;
-  target_new_objfile_hook  = hpux_thread_new_objfile;
+  target_new_objfile_chain = deprecated_target_new_objfile_hook;
+  deprecated_target_new_objfile_hook  = hpux_thread_new_objfile;
 }

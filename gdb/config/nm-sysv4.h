@@ -1,5 +1,5 @@
 /* Definitions for running gdb on a host machine running any flavor of SVR4.
-   Copyright 1991, 1992, 1998 Free Software Foundation, Inc.
+   Copyright 1991, 1992, 1993, 1998 Free Software Foundation, Inc.
    Written by Fred Fish at Cygnus Support (fnf@cygnus.com).
 
    This file is part of GDB.
@@ -21,14 +21,8 @@
 
 /* Use SVR4 style shared library support */
 
-#define SVR4_SHARED_LIBS
 #include "solib.h"
 
 /* SVR4 has /proc support, so use it instead of ptrace. */
 
 #define USE_PROC_FS
-
-/* SVR4 machines can easily do attach and detach via /proc (procfs.c)
-   support */
-
-#define ATTACH_DETACH

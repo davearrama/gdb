@@ -1,5 +1,7 @@
-/* Intel 386 native support for SYSV systems (pre-SVR4).
-   Copyright (C) 1988, 89, 91, 92, 94, 96, 1998 Free Software Foundation, Inc.
+/* Intel 386 native support for System V systems (pre-SVR4).
+
+   Copyright 1988, 1989, 1991, 1992, 1993, 1994, 1995, 1996, 1998,
+   1999, 2000, 2002 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -33,10 +35,6 @@
 #include "language.h"
 #include "gdbcore.h"
 
-#ifdef USG
-#include <sys/types.h>
-#endif
-
 #include <sys/param.h>
 #include <sys/dir.h>
 #include <signal.h>
@@ -44,20 +42,8 @@
 #include <sys/ioctl.h>
 #include <fcntl.h>
 
-
-/* FIXME: The following used to be just "#include <sys/debugreg.h>", but
- * the the Linux 2.1.x kernel and glibc 2.0.x are not in sync; including
- * <sys/debugreg.h> will result in an error.  With luck, these losers
- * will get their act together and we can trash this hack in the near future.
- * --jsm 1998-10-21
- */
-
 #ifdef TARGET_HAS_HARDWARE_WATCHPOINTS
-#ifdef HAVE_ASM_DEBUGREG_H
-#include <asm/debugreg.h>
-#else
 #include <sys/debugreg.h>
-#endif
 #endif
 
 #include <sys/file.h>
@@ -70,10 +56,12 @@
 #include "floatformat.h"
 
 #include "target.h"
+
+#include "i386-tdep.h"
 
 
-/* this table must line up with REGISTER_NAMES in tm-i386v.h */
-/* symbols like 'EAX' come from <sys/reg.h> */
+/* Mapping between the general-purpose registers in `struct user'
+   format and GDB's register array layout.  */
 static int regmap[] =
 {
   EAX, ECX, EDX, EBX,
@@ -82,41 +70,36 @@ static int regmap[] =
   DS, ES, FS, GS,
 };
 
-/* blockend is the value of u.u_ar0, and points to the
- * place where GS is stored
- */
+/* Support for the user struct.  */
 
-int
-i386_register_u_addr (blockend, regnum)
-     int blockend;
-     int regnum;
+/* Return the address of register REGNUM.  BLOCKEND is the value of
+   u.u_ar0, and points to the place where GS is stored.  */
+
+CORE_ADDR
+register_u_addr (CORE_ADDR blockend, int regnum)
 {
   struct user u;
-  int fpstate;
-  int ubase;
+  CORE_ADDR fpstate;
 
-  ubase = blockend;
-  /* FIXME:  Should have better way to test floating point range */
-  if (regnum >= FP0_REGNUM && regnum <= (FP0_REGNUM + 7))
+  if (i386_fp_regnum_p (regnum))
     {
-#ifdef KSTKSZ			/* SCO, and others? */
-      ubase += 4 * (SS + 1) - KSTKSZ;
-      fpstate = ubase + ((char *) &u.u_fps.u_fpstate - (char *) &u);
+#ifdef KSTKSZ			/* SCO, and others?  */
+      blockend += 4 * (SS + 1) - KSTKSZ;
+      fpstate = blockend + ((char *) &u.u_fps.u_fpstate - (char *) &u);
       return (fpstate + 0x1c + 10 * (regnum - FP0_REGNUM));
 #else
-      fpstate = ubase + ((char *) &u.i387.st_space - (char *) &u);
+      fpstate = blockend + ((char *) &u.i387.st_space - (char *) &u);
       return (fpstate + 10 * (regnum - FP0_REGNUM));
 #endif
     }
-  else
-    {
-      return (ubase + 4 * regmap[regnum]);
-    }
 
+  return (blockend + 4 * regmap[regnum]);
 }
-
+
+/* Return the size of the user struct.  */
+
 int
-kernel_u_size ()
+kernel_u_size (void)
 {
   return (sizeof (struct user));
 }
@@ -133,33 +116,23 @@ static int debug_control_mirror;
 /* Record which address associates with which register.  */
 static CORE_ADDR address_lookup[DR_LASTADDR - DR_FIRSTADDR + 1];
 
-static int
-i386_insert_aligned_watchpoint PARAMS ((int, CORE_ADDR, CORE_ADDR, int,
-					int));
+static int i386_insert_aligned_watchpoint (int, CORE_ADDR, CORE_ADDR, int,
+					   int);
 
-static int
-i386_insert_nonaligned_watchpoint PARAMS ((int, CORE_ADDR, CORE_ADDR, int,
-					   int));
+static int i386_insert_nonaligned_watchpoint (int, CORE_ADDR, CORE_ADDR, int,
+					      int);
 
 /* Insert a watchpoint.  */
 
 int
-i386_insert_watchpoint (pid, addr, len, rw)
-     int pid;
-     CORE_ADDR addr;
-     int len;
-     int rw;
+i386_insert_watchpoint (int pid, CORE_ADDR addr, int len, int rw)
 {
   return i386_insert_aligned_watchpoint (pid, addr, addr, len, rw);
 }
 
 static int
-i386_insert_aligned_watchpoint (pid, waddr, addr, len, rw)
-     int pid;
-     CORE_ADDR waddr;
-     CORE_ADDR addr;
-     int len;
-     int rw;
+i386_insert_aligned_watchpoint (int pid, CORE_ADDR waddr, CORE_ADDR addr,
+				int len, int rw)
 {
   int i;
   int read_write_bits, len_bits;
@@ -218,23 +191,19 @@ i386_insert_aligned_watchpoint (pid, waddr, addr, len, rw)
 }
 
 static int
-i386_insert_nonaligned_watchpoint (pid, waddr, addr, len, rw)
-     int pid;
-     CORE_ADDR waddr;
-     CORE_ADDR addr;
-     int len;
-     int rw;
+i386_insert_nonaligned_watchpoint (int pid, CORE_ADDR waddr, CORE_ADDR addr,
+				   int len, int rw)
 {
   int align;
   int size;
   int rv;
 
-  static int size_try_array[16] =
+  static int size_try_array[4][4] =
   {
-    1, 1, 1, 1,			/* trying size one */
-    2, 1, 2, 1,			/* trying size two */
-    2, 1, 2, 1,			/* trying size three */
-    4, 1, 2, 1			/* trying size four */
+    { 1, 1, 1, 1 },		/* trying size one */
+    { 2, 1, 2, 1 },		/* trying size two */
+    { 2, 1, 2, 1 },		/* trying size three */
+    { 4, 1, 2, 1 }		/* trying size four */
   };
 
   rv = 0;
@@ -242,8 +211,7 @@ i386_insert_nonaligned_watchpoint (pid, waddr, addr, len, rw)
     {
       align = addr % 4;
       /* Four is the maximum length for 386.  */
-      size = (len > 4) ? 3 : len - 1;
-      size = size_try_array[size * 4 + align];
+      size = size_try_array[len > 4 ? 3 : len - 1][align];
 
       rv = i386_insert_aligned_watchpoint (pid, waddr, addr, size, rw);
       if (rv)
@@ -260,10 +228,7 @@ i386_insert_nonaligned_watchpoint (pid, waddr, addr, len, rw)
 /* Remove a watchpoint.  */
 
 int
-i386_remove_watchpoint (pid, addr, len)
-     int pid;
-     CORE_ADDR addr;
-     int len;
+i386_remove_watchpoint (int pid, CORE_ADDR addr, int len)
 {
   int i;
   int register_number;
@@ -288,8 +253,7 @@ i386_remove_watchpoint (pid, addr, len)
 /* Check if stopped by a watchpoint.  */
 
 CORE_ADDR
-i386_stopped_by_watchpoint (pid)
-     int pid;
+i386_stopped_by_watchpoint (int pid)
 {
   int i;
   int status;

@@ -1,5 +1,7 @@
 /* Macro definitions for i386 running under the win32 API Unix.
-   Copyright 1995 - 1999 Free Software Foundation, Inc.
+
+   Copyright 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2004 Free
+   Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,31 +20,17 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
+#define ATTACH_NO_WAIT
+#define SOLIB_ADD(filename, from_tty, targ, readsyms) child_solib_add(filename, from_tty, targ, readsyms)
+#define PC_SOLIB(addr) solib_address (addr)
+#define SOLIB_LOADED_LIBRARY_PATHNAME(pid) child_solib_loaded_library_pathname(pid)
+#define CLEAR_SOLIB child_clear_solibs
+#define ADD_SHARED_SYMBOL_FILES dll_symbol_command
 
-#undef HAVE_SSE_REGS	/* FIXME! win32-nat.c needs to support XMMi registers */
-#define HAVE_I387_REGS
-
-#include "i386/tm-i386v.h"
-
-#define IN_SOLIB_CALL_TRAMPOLINE(pc, name) skip_trampoline_code (pc, name)
-#define SKIP_TRAMPOLINE_CODE(pc)           skip_trampoline_code (pc, 0)
-extern CORE_ADDR skip_trampoline_code PARAMS ((CORE_ADDR pc, char *name));
-
-extern char *cygwin_pid_to_str PARAMS ((int pid));
-
-struct frame_info;
-void child_init_frame(int x, struct frame_info *);
-CORE_ADDR child_frame_saved_pc(struct frame_info *);
-CORE_ADDR child_frame_chain(struct frame_info *);
-
-#undef FRAME_CHAIN_VALID_ALTERNATE
-#define FRAME_CHAIN_VALID_ALTERNATE 1
-
-#undef INIT_EXTRA_FRAME_INFO
-#define INIT_EXTRA_FRAME_INFO(x, f) child_init_frame(x, f) 
-
-#undef FRAME_CHAIN
-#define FRAME_CHAIN child_frame_chain
-
-#undef FRAME_SAVED_PC
-#define FRAME_SAVED_PC child_frame_saved_pc
+struct target_ops;
+char *cygwin_pid_to_str (ptid_t ptid);
+void child_solib_add (char *, int, struct target_ops *, int);
+char *solib_address (CORE_ADDR);
+char *child_solib_loaded_library_pathname(int);
+void child_clear_solibs (void);
+void dll_symbol_command (char *, int);

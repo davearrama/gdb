@@ -1,5 +1,8 @@
 /* Source-language-related definitions for GDB.
-   Copyright 1991, 1992, 2000 Free Software Foundation, Inc.
+
+   Copyright 1991, 1992, 1993, 1994, 1995, 1998, 1999, 2000, 2003,
+   2004 Free Software Foundation, Inc.
+
    Contributed by the Department of Computer Science at the State University
    of New York at Buffalo.
 
@@ -27,15 +30,17 @@
 struct value;
 struct objfile;
 struct expression;
+struct ui_file;
+
 /* enum exp_opcode;     ANSI's `wisdom' didn't include forward enum decls. */
 
 /* This used to be included to configure GDB for one or more specific
-   languages.  Now it is shortcutted to configure for all of them.  FIXME.  */
+   languages.  Now it is left out to configure for all of them.  FIXME.  */
 /* #include "lang_def.h" */
 #define	_LANG_c
 #define	_LANG_m2
-#define	_LANG_chill
-#define _LANG_fortran
+#define  _LANG_fortran
+#define  _LANG_pascal
 
 #define MAX_FORTRAN_DIMS  7	/* Maximum number of F77 array dims */
 
@@ -80,37 +85,57 @@ extern enum type_check
     type_check_off, type_check_warn, type_check_on
   }
 type_check;
-
-/* Information for doing language dependent formatting of printed values. */
 
-struct language_format_info
+/* case_mode ==
+   case_mode_auto:   case_sensitivity set upon selection of scope 
+   case_mode_manual: case_sensitivity set only by user.  */
+
+extern enum case_mode
   {
-    /* The format that can be passed directly to standard C printf functions
-       to generate a completely formatted value in the format appropriate for
-       the language. */
+    case_mode_auto, case_mode_manual
+  }
+case_mode;
 
-    char *la_format;
+/* array_ordering ==
+   array_row_major:     Arrays are in row major order
+   array_column_major:  Arrays are in column major order.*/
 
-    /* The prefix to be used when directly printing a value, or constructing
-       a standard C printf format.  This generally is everything up to the
-       conversion specification (the part introduced by the '%' character
-       and terminated by the conversion specifier character). */
+extern enum array_ordering
+  {
+    array_row_major, array_column_major
+  } 
+array_ordering;
 
-    char *la_format_prefix;
 
-    /* The conversion specifier.  This is generally everything after the
-       field width and precision, typically only a single character such
-       as 'o' for octal format or 'x' for hexadecimal format. */
+/* case_sensitivity ==
+   case_sensitive_on:   Case sensitivity in name matching is used
+   case_sensitive_off:  Case sensitivity in name matching is not used  */
 
-    char *la_format_specifier;
+extern enum case_sensitivity
+  {
+    case_sensitive_on, case_sensitive_off
+  }
+case_sensitivity;
+
+/* Per architecture (OS/ABI) language information.  */
 
-    /* The suffix to be used when directly printing a value, or constructing
-       a standard C printf format.  This generally is everything after the
-       conversion specification (the part introduced by the '%' character
-       and terminated by the conversion specifier character). */
+struct language_arch_info
+{
+  /* Its primitive types.  This is a vector ended by a NULL pointer.
+     These types can be specified by name in parsing types in
+     expressions, regardless of whether the program being debugged
+     actually defines such a type.  */
+  struct type **primitive_type_vector;
+  /* Type of elements of strings. */
+  struct type *string_char_type;
+};
 
-    char *la_format_suffix;	/* Suffix for custom format string */
-  };
+struct type *language_string_char_type (const struct language_defn *l,
+					struct gdbarch *gdbarch);
+
+struct type *language_lookup_primitive_type_by_name (const struct language_defn *l,
+						     struct gdbarch *gdbarch,
+						     const char *name);
 
 /* Structure tying together assorted information about a language.  */
 
@@ -139,17 +164,32 @@ struct language_defn
 
     enum type_check la_type_check;
 
+    /* Default case sensitivity */
+    enum case_sensitivity la_case_sensitivity;
+
+    /* Multi-dimensional array ordering */
+    enum array_ordering la_array_ordering;
+
+    /* Definitions related to expression printing, prefixifying, and
+       dumping */
+
+    const struct exp_descriptor *la_exp_desc;
+
     /* Parser function. */
 
-    int (*la_parser) PARAMS ((void));
+    int (*la_parser) (void);
 
     /* Parser error function */
 
-    void (*la_error) PARAMS ((char *));
+    void (*la_error) (char *);
 
-    /* Evaluate an expression. */
-    struct value *(*evaluate_exp) PARAMS ((struct type *, struct expression *,
-					   int *, enum noside));
+    /* Given an expression *EXPP created by prefixifying the result of
+       la_parser, perform any remaining processing necessary to complete
+       its translation.  *EXPP may change; la_post_parser is responsible 
+       for releasing its previous contents, if necessary.  If 
+       VOID_CONTEXT_P, then no value is expected from the expression.  */
+
+    void (*la_post_parser) (struct expression ** expp, int void_context_p);
 
     void (*la_printchar) (int ch, struct ui_file * stream);
 
@@ -159,7 +199,7 @@ struct language_defn
 
     void (*la_emitchar) (int ch, struct ui_file * stream, int quoter);
 
-    struct type *(*la_fund_type) PARAMS ((struct objfile *, int));
+    struct type *(*la_fund_type) (struct objfile *, int);
 
     /* Print a type using syntax appropriate for this language. */
 
@@ -177,21 +217,41 @@ struct language_defn
     int (*la_value_print) (struct value *, struct ui_file *,
 			   int, enum val_prettyprint);
 
-    /* Base 2 (binary) formats. */
+    /* PC is possibly an unknown languages trampoline.
+       If that PC falls in a trampoline belonging to this language,
+       return the address of the first pc in the real function, or 0
+       if it isn't a language tramp for this language.  */
+    CORE_ADDR (*skip_trampoline) (CORE_ADDR pc);
 
-    struct language_format_info la_binary_format;
+    /* Now come some hooks for lookup_symbol.  */
 
-    /* Base 8 (octal) formats. */
+    /* If this is non-NULL, lookup_symbol will do the 'field_of_this'
+       check, using this function to find the value of this.  */
 
-    struct language_format_info la_octal_format;
+    /* FIXME: carlton/2003-05-19: Audit all the language_defn structs
+       to make sure we're setting this appropriately: I'm sure it
+       could be NULL in more languages.  */
 
-    /* Base 10 (decimal) formats */
+    struct value *(*la_value_of_this) (int complain);
 
-    struct language_format_info la_decimal_format;
+    /* This is a function that lookup_symbol will call when it gets to
+       the part of symbol lookup where C looks up static and global
+       variables.  */
 
-    /* Base 16 (hexadecimal) formats */
+    struct symbol *(*la_lookup_symbol_nonlocal) (const char *,
+						 const char *,
+						 const struct block *,
+						 const domain_enum,
+						 struct symtab **);
 
-    struct language_format_info la_hex_format;
+    /* Find the definition of the type with the given name.  */
+    struct type *(*la_lookup_transparent_type) (const char *);
+
+    /* Return demangled language symbol, or NULL.  */
+    char *(*la_demangle) (const char *mangled, int options);
+
+    /* Return class name of a mangled method name or NULL.  */
+    char *(*la_class_name_from_physname) (const char *physname);
 
     /* Table for printing expressions */
 
@@ -207,6 +267,13 @@ struct language_defn
 
     /* Type of elements of strings. */
     struct type **string_char_type;
+
+    /* The list of characters forming word boundaries.  */
+    char *(*la_word_break_characters) (void);
+
+    /* The per-architecture (OS/ABI) language information.  */
+    void (*la_language_arch_info) (struct gdbarch *,
+				   struct language_arch_info *);
 
     /* Add fields above this point, so the magic number is always last. */
     /* Magic number for compat checking */
@@ -231,7 +298,7 @@ struct language_defn
    its own language and we should keep track of that regardless of the
    language when symbols are read.  If we want some manual setting for
    the language of symbol files (e.g. detecting when ".c" files are
-   C++), it should be a seprate setting from the current_language.  */
+   C++), it should be a separate setting from the current_language.  */
 
 extern const struct language_defn *current_language;
 
@@ -263,13 +330,12 @@ language_mode;
 /* "cast" really means conversion */
 /* FIXME -- should be a setting in language_defn */
 #define CAST_IS_CONVERSION (current_language->la_language == language_c  || \
-			    current_language->la_language == language_cplus)
+			    current_language->la_language == language_cplus || \
+			    current_language->la_language == language_objc)
 
-extern void
-language_info PARAMS ((int));
+extern void language_info (int);
 
-extern enum language
-set_language PARAMS ((enum language));
+extern enum language set_language (enum language);
 
 
 /* This page contains functions that return things that are
@@ -289,47 +355,6 @@ set_language PARAMS ((enum language));
 #define LA_VALUE_PRINT(val,stream,fmt,pretty) \
   (current_language->la_value_print(val,stream,fmt,pretty))
 
-/* Return a format string for printf that will print a number in one of
-   the local (language-specific) formats.  Result is static and is
-   overwritten by the next call.  Takes printf options like "08" or "l"
-   (to produce e.g. %08x or %lx).  */
-
-#define local_binary_format() \
-  (current_language->la_binary_format.la_format)
-#define local_binary_format_prefix() \
-  (current_language->la_binary_format.la_format_prefix)
-#define local_binary_format_specifier() \
-  (current_language->la_binary_format.la_format_specifier)
-#define local_binary_format_suffix() \
-  (current_language->la_binary_format.la_format_suffix)
-
-#define local_octal_format() \
-  (current_language->la_octal_format.la_format)
-#define local_octal_format_prefix() \
-  (current_language->la_octal_format.la_format_prefix)
-#define local_octal_format_specifier() \
-  (current_language->la_octal_format.la_format_specifier)
-#define local_octal_format_suffix() \
-  (current_language->la_octal_format.la_format_suffix)
-
-#define local_decimal_format() \
-  (current_language->la_decimal_format.la_format)
-#define local_decimal_format_prefix() \
-  (current_language->la_decimal_format.la_format_prefix)
-#define local_decimal_format_specifier() \
-  (current_language->la_decimal_format.la_format_specifier)
-#define local_decimal_format_suffix() \
-  (current_language->la_decimal_format.la_format_suffix)
-
-#define local_hex_format() \
-  (current_language->la_hex_format.la_format)
-#define local_hex_format_prefix() \
-  (current_language->la_hex_format.la_format_prefix)
-#define local_hex_format_specifier() \
-  (current_language->la_hex_format.la_format_specifier)
-#define local_hex_format_suffix() \
-  (current_language->la_hex_format.la_format_suffix)
-
 #define LA_PRINT_CHAR(ch, stream) \
   (current_language->la_printchar(ch, stream))
 #define LA_PRINT_STRING(stream, string, length, width, force_ellipses) \
@@ -348,124 +373,88 @@ set_language PARAMS ((enum language));
    && ((c) < 0x7F || (c) >= 0xA0)	\
    && (!sevenbit_strings || (c) < 0x80))
 
-/* Return a format string for printf that will print a number in one of
-   the local (language-specific) formats.  Result is static and is
-   overwritten by the next call.  Takes printf options like "08" or "l"
-   (to produce e.g. %08x or %lx).  */
-
-extern char *
-  local_decimal_format_custom PARAMS ((char *));	/* language.c */
-
-extern char *
-  local_octal_format_custom PARAMS ((char *));	/* language.c */
-
-extern char *
-  local_hex_format_custom PARAMS ((char *));	/* language.c */
-
+#if 0
+/* FIXME: cagney/2000-03-04: This function does not appear to be used.
+   It can be deleted once 5.0 has been released. */
 /* Return a string that contains the hex digits of the number.  No preceeding
    "0x" */
 
-extern char *
-  longest_raw_hex_string PARAMS ((LONGEST));
-
-/* Return a string that contains a number formatted in one of the local
-   (language-specific) formats.  Result is static and is overwritten by
-   the next call.  Takes printf options like "08l" or "l".  */
-
-extern char *
-  local_hex_string PARAMS ((unsigned long));	/* language.c */
-
-extern char *
-  longest_local_hex_string PARAMS ((LONGEST));	/* language.c */
-
-extern char *
-  local_hex_string_custom PARAMS ((unsigned long, char *));	/* language.c */
-
-extern char *
-  longest_local_hex_string_custom PARAMS ((LONGEST, char *));	/* language.c */
+extern char *longest_raw_hex_string (LONGEST);
+#endif
 
 /* Type predicates */
 
-extern int
-simple_type PARAMS ((struct type *));
+extern int simple_type (struct type *);
 
-extern int
-ordered_type PARAMS ((struct type *));
+extern int ordered_type (struct type *);
 
-extern int
-same_type PARAMS ((struct type *, struct type *));
+extern int same_type (struct type *, struct type *);
 
-extern int
-integral_type PARAMS ((struct type *));
+extern int integral_type (struct type *);
 
-extern int
-numeric_type PARAMS ((struct type *));
+extern int numeric_type (struct type *);
 
-extern int
-character_type PARAMS ((struct type *));
+extern int character_type (struct type *);
 
-extern int
-boolean_type PARAMS ((struct type *));
+extern int boolean_type (struct type *);
 
-extern int
-float_type PARAMS ((struct type *));
+extern int float_type (struct type *);
 
-extern int
-pointer_type PARAMS ((struct type *));
+extern int pointer_type (struct type *);
 
-extern int
-structured_type PARAMS ((struct type *));
+extern int structured_type (struct type *);
 
 /* Checks Binary and Unary operations for semantic type correctness */
 /* FIXME:  Does not appear to be used */
 #define unop_type_check(v,o) binop_type_check((v),NULL,(o))
 
-extern void
-binop_type_check PARAMS ((struct value *, struct value *, int));
+extern void binop_type_check (struct value *, struct value *, int);
 
 /* Error messages */
 
-extern void
-op_error PARAMS ((char *fmt, enum exp_opcode, int));
+extern void op_error (const char *lhs, enum exp_opcode,
+		      const char *rhs);
 
-#define type_op_error(f,o) \
-   op_error((f),(o),type_check==type_check_on ? 1 : 0)
-#define range_op_error(f,o) \
-   op_error((f),(o),range_check==range_check_on ? 1 : 0)
+extern void type_error (const char *, ...) ATTR_FORMAT (printf, 1, 2);
 
-extern void
-  type_error
-PARAMS ((char *,...))
-ATTR_FORMAT (printf, 1, 2);
-
-     void
-     range_error PARAMS ((char *,...))
-  ATTR_FORMAT (printf, 1, 2);
+extern void range_error (const char *, ...) ATTR_FORMAT (printf, 1, 2);
 
 /* Data:  Does this value represent "truth" to the current language?  */
 
-     extern int
-     value_true PARAMS ((struct value *));
+extern int value_true (struct value *);
 
-     extern struct type *lang_bool_type PARAMS ((void));
+extern struct type *lang_bool_type (void);
 
 /* The type used for Boolean values in the current language. */
 #define LA_BOOL_TYPE lang_bool_type ()
 
 /* Misc:  The string representing a particular enum language.  */
 
-     extern enum language language_enum PARAMS ((char *str));
+extern enum language language_enum (char *str);
 
-     extern const struct language_defn *language_def PARAMS ((enum language));
+extern const struct language_defn *language_def (enum language);
 
-     extern char *language_str PARAMS ((enum language));
+extern char *language_str (enum language);
 
 /* Add a language to the set known by GDB (at initialization time).  */
 
-     extern void
-     add_language PARAMS ((const struct language_defn *));
+extern void add_language (const struct language_defn *);
 
-     extern enum language
-     get_frame_language PARAMS ((void));	/* In stack.c */
+extern enum language get_frame_language (void);	/* In stack.c */
+
+/* Check for a language-specific trampoline. */
+
+extern CORE_ADDR skip_language_trampoline (CORE_ADDR pc);
+
+/* Return demangled language symbol, or NULL.  */
+extern char *language_demangle (const struct language_defn *current_language, 
+				const char *mangled, int options);
+
+/* Return class name from physname, or NULL.  */
+extern char *language_class_name_from_physname (const struct language_defn *,
+					        const char *physname);
+
+/* Splitting strings into words.  */
+extern char *default_word_break_characters (void);
 
 #endif /* defined (LANGUAGE_H) */

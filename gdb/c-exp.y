@@ -1,5 +1,6 @@
 /* YACC parser for C expressions, for GDB.
-   Copyright (C) 1986, 1989, 1990, 1991, 1993, 1994, 1996, 1997
+   Copyright 1986, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997,
+   1998, 1999, 2000, 2003, 2004
    Free Software Foundation, Inc.
 
 This file is part of GDB.
@@ -48,9 +49,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "bfd.h" /* Required by objfiles.h.  */
 #include "symfile.h" /* Required by objfiles.h.  */
 #include "objfiles.h" /* For have_full_symbols and have_partial_symbols */
-
-/* Flag indicating we're dealing with HP-compiled objects */ 
-extern int hp_som_som_object_present;
+#include "charset.h"
+#include "block.h"
+#include "cp-support.h"
 
 /* Remap normal yacc parser interface names (yyparse, yylex, yyerror, etc),
    as well as gratuitiously global symbol names, so we can have multiple
@@ -88,6 +89,8 @@ extern int hp_som_som_object_present;
 #define	yylloc	c_lloc
 #define yyreds	c_reds		/* With YYDEBUG defined */
 #define yytoks	c_toks		/* With YYDEBUG defined */
+#define yyname	c_name		/* With YYDEBUG defined */
+#define yyrule	c_rule		/* With YYDEBUG defined */
 #define yylhs	c_yylhs
 #define yylen	c_yylen
 #define yydefred c_yydefred
@@ -99,17 +102,16 @@ extern int hp_som_som_object_present;
 #define yycheck	 c_yycheck
 
 #ifndef YYDEBUG
-#define	YYDEBUG	0		/* Default to no yydebug support */
+#define	YYDEBUG 1		/* Default to yydebug support */
 #endif
 
-int
-yyparse PARAMS ((void));
+#define YYFPRINTF parser_fprintf
 
-static int
-yylex PARAMS ((void));
+int yyparse (void);
 
-void
-yyerror PARAMS ((char *));
+static int yylex (void);
+
+void yyerror (char *);
 
 %}
 
@@ -144,13 +146,12 @@ yyerror PARAMS ((char *));
 
 %{
 /* YYSTYPE gets defined by %union */
-static int
-parse_number PARAMS ((char *, int, int, YYSTYPE *));
+static int parse_number (char *, int, int, YYSTYPE *);
 %}
 
 %type <voidval> exp exp1 type_exp start variable qualified_name lcurly
 %type <lval> rcurly
-%type <tval> type typebase
+%type <tval> type typebase qualified_type
 %type <tvec> nonempty_typelist
 /* %type <bval> block */
 
@@ -197,7 +198,6 @@ parse_number PARAMS ((char *, int, int, YYSTYPE *));
 %token <opcode> ASSIGN_MODIFY
 
 /* C++ */
-%token THIS
 %token TRUEKEYWORD
 %token FALSEKEYWORD
 
@@ -246,9 +246,11 @@ exp1	:	exp
 /* Expressions, not including the comma operator.  */
 exp	:	'*' exp    %prec UNARY
 			{ write_exp_elt_opcode (UNOP_IND); }
+	;
 
 exp	:	'&' exp    %prec UNARY
 			{ write_exp_elt_opcode (UNOP_ADDR); }
+	;
 
 exp	:	'-' exp    %prec UNARY
 			{ write_exp_elt_opcode (UNOP_NEG); }
@@ -499,7 +501,7 @@ exp	:	VARIABLE
 
 exp	:	SIZEOF '(' type ')'	%prec UNARY
 			{ write_exp_elt_opcode (OP_LONG);
-			  write_exp_elt_type (builtin_type_int);
+			  write_exp_elt_type (builtin_type (current_gdbarch)->builtin_int);
 			  CHECK_TYPEDEF ($3);
 			  write_exp_elt_longcst ((LONGEST) TYPE_LENGTH ($3));
 			  write_exp_elt_opcode (OP_LONG); }
@@ -515,12 +517,12 @@ exp	:	STRING
 			  while (count-- > 0)
 			    {
 			      write_exp_elt_opcode (OP_LONG);
-			      write_exp_elt_type (builtin_type_char);
+			      write_exp_elt_type (builtin_type (current_gdbarch)->builtin_char);
 			      write_exp_elt_longcst ((LONGEST)(*sp++));
 			      write_exp_elt_opcode (OP_LONG);
 			    }
 			  write_exp_elt_opcode (OP_LONG);
-			  write_exp_elt_type (builtin_type_char);
+			  write_exp_elt_type (builtin_type (current_gdbarch)->builtin_char);
 			  write_exp_elt_longcst ((LONGEST)'\0');
 			  write_exp_elt_opcode (OP_LONG);
 			  write_exp_elt_opcode (OP_ARRAY);
@@ -530,21 +532,16 @@ exp	:	STRING
 	;
 
 /* C++.  */
-exp	:	THIS
-			{ write_exp_elt_opcode (OP_THIS);
-			  write_exp_elt_opcode (OP_THIS); }
-	;
-
 exp     :       TRUEKEYWORD    
                         { write_exp_elt_opcode (OP_LONG);
-                          write_exp_elt_type (builtin_type_bool);
+                          write_exp_elt_type (builtin_type (current_gdbarch)->builtin_bool);
                           write_exp_elt_longcst ((LONGEST) 1);
                           write_exp_elt_opcode (OP_LONG); }
 	;
 
 exp     :       FALSEKEYWORD   
                         { write_exp_elt_opcode (OP_LONG);
-                          write_exp_elt_type (builtin_type_bool);
+                          write_exp_elt_type (builtin_type (current_gdbarch)->builtin_bool);
                           write_exp_elt_longcst ((LONGEST) 0);
                           write_exp_elt_opcode (OP_LONG); }
 	;
@@ -568,7 +565,7 @@ block	:	BLOCKNAME
 block	:	block COLONCOLON name
 			{ struct symbol *tem
 			    = lookup_symbol (copy_name ($3), $1,
-					     VAR_NAMESPACE, (int *) NULL,
+					     VAR_DOMAIN, (int *) NULL,
 					     (struct symtab **) NULL);
 			  if (!tem || SYMBOL_CLASS (tem) != LOC_BLOCK)
 			    error ("No function \"%s\" in specified context.",
@@ -579,7 +576,7 @@ block	:	block COLONCOLON name
 variable:	block COLONCOLON name
 			{ struct symbol *sym;
 			  sym = lookup_symbol (copy_name ($3), $1,
-					       VAR_NAMESPACE, (int *) NULL,
+					       VAR_DOMAIN, (int *) NULL,
 					       (struct symtab **) NULL);
 			  if (sym == 0)
 			    error ("No symbol \"%s\" in specified context.",
@@ -596,7 +593,8 @@ qualified_name:	typebase COLONCOLON name
 			{
 			  struct type *type = $1;
 			  if (TYPE_CODE (type) != TYPE_CODE_STRUCT
-			      && TYPE_CODE (type) != TYPE_CODE_UNION)
+			      && TYPE_CODE (type) != TYPE_CODE_UNION
+			      && TYPE_CODE (type) != TYPE_CODE_NAMESPACE)
 			    error ("`%s' is not defined as an aggregate type.",
 				   TYPE_NAME (type));
 
@@ -610,7 +608,8 @@ qualified_name:	typebase COLONCOLON name
 			  struct type *type = $1;
 			  struct stoken tmp_token;
 			  if (TYPE_CODE (type) != TYPE_CODE_STRUCT
-			      && TYPE_CODE (type) != TYPE_CODE_UNION)
+			      && TYPE_CODE (type) != TYPE_CODE_UNION
+			      && TYPE_CODE (type) != TYPE_CODE_NAMESPACE)
 			    error ("`%s' is not defined as an aggregate type.",
 				   TYPE_NAME (type));
 
@@ -638,7 +637,7 @@ variable:	qualified_name
 
 			  sym =
 			    lookup_symbol (name, (const struct block *) NULL,
-					   VAR_NAMESPACE, (int *) NULL,
+					   VAR_DOMAIN, (int *) NULL,
 					   (struct symtab **) NULL);
 			  if (sym)
 			    {
@@ -653,8 +652,8 @@ variable:	qualified_name
 			  if (msymbol != NULL)
 			    {
 			      write_exp_msymbol (msymbol,
-						 lookup_function_type (builtin_type_int),
-						 builtin_type_int);
+						 lookup_function_type (builtin_type (current_gdbarch)->builtin_int),
+						 builtin_type (current_gdbarch)->builtin_int);
 			    }
 			  else
 			    if (!have_full_symbols () && !have_partial_symbols ())
@@ -702,15 +701,15 @@ variable:	name_not_typename
 			  else
 			    {
 			      struct minimal_symbol *msymbol;
-			      register char *arg = copy_name ($1.stoken);
+			      char *arg = copy_name ($1.stoken);
 
 			      msymbol =
 				lookup_minimal_symbol (arg, NULL, NULL);
 			      if (msymbol != NULL)
 				{
 				  write_exp_msymbol (msymbol,
-						     lookup_function_type (builtin_type_int),
-						     builtin_type_int);
+						     lookup_function_type (builtin_type (current_gdbarch)->builtin_int),
+						     builtin_type (current_gdbarch)->builtin_int);
 				}
 			      else if (!have_full_symbols () && !have_partial_symbols ())
 				error ("No symbol table is loaded.  Use the \"file\" command.");
@@ -721,21 +720,26 @@ variable:	name_not_typename
 			}
 	;
 
+space_identifier : '@' NAME
+		{ push_type_address_space (copy_name ($2.stoken));
+		  push_type (tp_space_identifier);
+		}
+	;
 
-ptype	:	typebase
-	/* "const" and "volatile" are curently ignored.  A type qualifier
-	   before the type is currently handled in the typebase rule.
-	   The reason for recognizing these here (shift/reduce conflicts)
-	   might be obsolete now that some pointer to member rules have
-	   been deleted.  */
-	|	typebase CONST_KEYWORD
-	|	typebase VOLATILE_KEYWORD
-	|	typebase abs_decl
-		{ $$ = follow_types ($1); }
-	|	typebase CONST_KEYWORD abs_decl
-		{ $$ = follow_types ($1); }
-	|	typebase VOLATILE_KEYWORD abs_decl
-		{ $$ = follow_types ($1); }
+const_or_volatile: const_or_volatile_noopt
+	|
+	;
+
+cv_with_space_id : const_or_volatile space_identifier const_or_volatile
+	;
+
+const_or_volatile_or_space_identifier_noopt: cv_with_space_id
+	| const_or_volatile_noopt 
+	;
+
+const_or_volatile_or_space_identifier: 
+		const_or_volatile_or_space_identifier_noopt
+	|
 	;
 
 abs_decl:	'*'
@@ -778,7 +782,7 @@ array_mod:	'[' ']'
 func_mod:	'(' ')'
 			{ $$ = 0; }
 	|	'(' nonempty_typelist ')'
-			{ free ((PTR)$2); $$ = 0; }
+			{ free ($2); $$ = 0; }
 	;
 
 /* We used to try to recognize more pointer to member types here, but
@@ -791,38 +795,68 @@ func_mod:	'(' ')'
 
 type	:	ptype
 	|	typebase COLONCOLON '*'
-			{ $$ = lookup_member_type (builtin_type_int, $1); }
+			{ $$ = lookup_member_type (builtin_type (current_gdbarch)->builtin_int, $1); }
 	;
 
 typebase  /* Implements (approximately): (type-qualifier)* type-specifier */
 	:	TYPENAME
 			{ $$ = $1.type; }
 	|	INT_KEYWORD
-			{ $$ = builtin_type_int; }
+			{ $$ = builtin_type (current_gdbarch)->builtin_int; }
 	|	LONG
-			{ $$ = builtin_type_long; }
+			{ $$ = builtin_type (current_gdbarch)->builtin_long; }
 	|	SHORT
-			{ $$ = builtin_type_short; }
+			{ $$ = builtin_type (current_gdbarch)->builtin_short; }
 	|	LONG INT_KEYWORD
-			{ $$ = builtin_type_long; }
+			{ $$ = builtin_type (current_gdbarch)->builtin_long; }
+	|	LONG SIGNED_KEYWORD INT_KEYWORD
+			{ $$ = builtin_type (current_gdbarch)->builtin_long; }
+	|	LONG SIGNED_KEYWORD
+			{ $$ = builtin_type (current_gdbarch)->builtin_long; }
+	|	SIGNED_KEYWORD LONG INT_KEYWORD
+			{ $$ = builtin_type (current_gdbarch)->builtin_long; }
 	|	UNSIGNED LONG INT_KEYWORD
-			{ $$ = builtin_type_unsigned_long; }
+			{ $$ = builtin_type (current_gdbarch)->builtin_unsigned_long; }
+	|	LONG UNSIGNED INT_KEYWORD
+			{ $$ = builtin_type (current_gdbarch)->builtin_unsigned_long; }
+	|	LONG UNSIGNED
+			{ $$ = builtin_type (current_gdbarch)->builtin_unsigned_long; }
 	|	LONG LONG
-			{ $$ = builtin_type_long_long; }
+			{ $$ = builtin_type (current_gdbarch)->builtin_long_long; }
 	|	LONG LONG INT_KEYWORD
-			{ $$ = builtin_type_long_long; }
+			{ $$ = builtin_type (current_gdbarch)->builtin_long_long; }
+	|	LONG LONG SIGNED_KEYWORD INT_KEYWORD
+			{ $$ = builtin_type (current_gdbarch)->builtin_long_long; }
+	|	LONG LONG SIGNED_KEYWORD
+			{ $$ = builtin_type (current_gdbarch)->builtin_long_long; }
+	|	SIGNED_KEYWORD LONG LONG
+			{ $$ = builtin_type (current_gdbarch)->builtin_long_long; }
+	|	SIGNED_KEYWORD LONG LONG INT_KEYWORD
+			{ $$ = builtin_type (current_gdbarch)->builtin_long_long; }
 	|	UNSIGNED LONG LONG
-			{ $$ = builtin_type_unsigned_long_long; }
+			{ $$ = builtin_type (current_gdbarch)->builtin_unsigned_long_long; }
 	|	UNSIGNED LONG LONG INT_KEYWORD
-			{ $$ = builtin_type_unsigned_long_long; }
+			{ $$ = builtin_type (current_gdbarch)->builtin_unsigned_long_long; }
+	|	LONG LONG UNSIGNED
+			{ $$ = builtin_type (current_gdbarch)->builtin_unsigned_long_long; }
+	|	LONG LONG UNSIGNED INT_KEYWORD
+			{ $$ = builtin_type (current_gdbarch)->builtin_unsigned_long_long; }
 	|	SHORT INT_KEYWORD
-			{ $$ = builtin_type_short; }
+			{ $$ = builtin_type (current_gdbarch)->builtin_short; }
+	|	SHORT SIGNED_KEYWORD INT_KEYWORD
+			{ $$ = builtin_type (current_gdbarch)->builtin_short; }
+	|	SHORT SIGNED_KEYWORD
+			{ $$ = builtin_type (current_gdbarch)->builtin_short; }
 	|	UNSIGNED SHORT INT_KEYWORD
-			{ $$ = builtin_type_unsigned_short; }
+			{ $$ = builtin_type (current_gdbarch)->builtin_unsigned_short; }
+	|	SHORT UNSIGNED 
+			{ $$ = builtin_type (current_gdbarch)->builtin_unsigned_short; }
+	|	SHORT UNSIGNED INT_KEYWORD
+			{ $$ = builtin_type (current_gdbarch)->builtin_unsigned_short; }
 	|	DOUBLE_KEYWORD
-			{ $$ = builtin_type_double; }
+			{ $$ = builtin_type (current_gdbarch)->builtin_double; }
 	|	LONG DOUBLE_KEYWORD
-			{ $$ = builtin_type_long_double; }
+			{ $$ = builtin_type (current_gdbarch)->builtin_long_double; }
 	|	STRUCT name
 			{ $$ = lookup_struct (copy_name ($2),
 					      expression_context_block); }
@@ -838,11 +872,11 @@ typebase  /* Implements (approximately): (type-qualifier)* type-specifier */
 	|	UNSIGNED typename
 			{ $$ = lookup_unsigned_typename (TYPE_NAME($2.type)); }
 	|	UNSIGNED
-			{ $$ = builtin_type_unsigned_int; }
+			{ $$ = builtin_type (current_gdbarch)->builtin_unsigned_int; }
 	|	SIGNED_KEYWORD typename
 			{ $$ = lookup_signed_typename (TYPE_NAME($2.type)); }
 	|	SIGNED_KEYWORD
-			{ $$ = builtin_type_int; }
+			{ $$ = builtin_type (current_gdbarch)->builtin_int; }
                 /* It appears that this rule for templates is never
                    reduced; template recognition happens by lookahead
                    in the token processing code in yylex. */         
@@ -850,11 +884,81 @@ typebase  /* Implements (approximately): (type-qualifier)* type-specifier */
 			{ $$ = lookup_template_type(copy_name($2), $4,
 						    expression_context_block);
 			}
-	/* "const" and "volatile" are curently ignored.  A type qualifier
-	   after the type is handled in the ptype rule.  I think these could
-	   be too.  */
-	|	CONST_KEYWORD typebase { $$ = $2; }
-	|	VOLATILE_KEYWORD typebase { $$ = $2; }
+	| const_or_volatile_or_space_identifier_noopt typebase 
+			{ $$ = follow_types ($2); }
+	| typebase const_or_volatile_or_space_identifier_noopt 
+			{ $$ = follow_types ($1); }
+	| qualified_type
+	;
+
+/* FIXME: carlton/2003-09-25: This next bit leads to lots of
+   reduce-reduce conflicts, because the parser doesn't know whether or
+   not to use qualified_name or qualified_type: the rules are
+   identical.  If the parser is parsing 'A::B::x', then, when it sees
+   the second '::', it knows that the expression to the left of it has
+   to be a type, so it uses qualified_type.  But if it is parsing just
+   'A::B', then it doesn't have any way of knowing which rule to use,
+   so there's a reduce-reduce conflict; it picks qualified_name, since
+   that occurs earlier in this file than qualified_type.
+
+   There's no good way to fix this with the grammar as it stands; as
+   far as I can tell, some of the problems arise from ambiguities that
+   GDB introduces ('start' can be either an expression or a type), but
+   some of it is inherent to the nature of C++ (you want to treat the
+   input "(FOO)" fairly differently depending on whether FOO is an
+   expression or a type, and if FOO is a complex expression, this can
+   be hard to determine at the right time).  Fortunately, it works
+   pretty well in most cases.  For example, if you do 'ptype A::B',
+   where A::B is a nested type, then the parser will mistakenly
+   misidentify it as an expression; but evaluate_subexp will get
+   called with 'noside' set to EVAL_AVOID_SIDE_EFFECTS, and everything
+   will work out anyways.  But there are situations where the parser
+   will get confused: the most common one that I've run into is when
+   you want to do
+
+     print *((A::B *) x)"
+
+   where the parser doesn't realize that A::B has to be a type until
+   it hits the first right paren, at which point it's too late.  (The
+   workaround is to type "print *(('A::B' *) x)" instead.)  (And
+   another solution is to fix our symbol-handling code so that the
+   user never wants to type something like that in the first place,
+   because we get all the types right without the user's help!)
+
+   Perhaps we could fix this by making the lexer smarter.  Some of
+   this functionality used to be in the lexer, but in a way that
+   worked even less well than the current solution: that attempt
+   involved having the parser sometimes handle '::' and having the
+   lexer sometimes handle it, and without a clear division of
+   responsibility, it quickly degenerated into a big mess.  Probably
+   the eventual correct solution will give more of a role to the lexer
+   (ideally via code that is shared between the lexer and
+   decode_line_1), but I'm not holding my breath waiting for somebody
+   to get around to cleaning this up...  */
+
+qualified_type: typebase COLONCOLON name
+		{
+		  struct type *type = $1;
+		  struct type *new_type;
+		  char *ncopy = alloca ($3.length + 1);
+
+		  memcpy (ncopy, $3.ptr, $3.length);
+		  ncopy[$3.length] = '\0';
+
+		  if (TYPE_CODE (type) != TYPE_CODE_STRUCT
+		      && TYPE_CODE (type) != TYPE_CODE_UNION
+		      && TYPE_CODE (type) != TYPE_CODE_NAMESPACE)
+		    error ("`%s' is not defined as an aggregate type.",
+			   TYPE_NAME (type));
+
+		  new_type = cp_lookup_nested_type (type, ncopy,
+						    expression_context_block);
+		  if (new_type == NULL)
+		    error ("No type \"%s\" within class or namespace \"%s\".",
+			   ncopy, TYPE_NAME (type));
+		  
+		  $$ = new_type;
+		}
 	;
 
 typename:	TYPENAME
@@ -862,19 +966,19 @@ typename:	TYPENAME
 		{
 		  $$.stoken.ptr = "int";
 		  $$.stoken.length = 3;
-		  $$.type = builtin_type_int;
+		  $$.type = builtin_type (current_gdbarch)->builtin_int;
 		}
 	|	LONG
 		{
 		  $$.stoken.ptr = "long";
 		  $$.stoken.length = 4;
-		  $$.type = builtin_type_long;
+		  $$.type = builtin_type (current_gdbarch)->builtin_long;
 		}
 	|	SHORT
 		{
 		  $$.stoken.ptr = "short";
 		  $$.stoken.length = 5;
-		  $$.type = builtin_type_short;
+		  $$.type = builtin_type (current_gdbarch)->builtin_short;
 		}
 	;
 
@@ -889,6 +993,25 @@ nonempty_typelist
 		  $$ = (struct type **) realloc ((char *) $1, len);
 		  $$[$<ivec>$[0]] = $3;
 		}
+	;
+
+ptype	:	typebase
+	|	ptype const_or_volatile_or_space_identifier abs_decl const_or_volatile_or_space_identifier
+		{ $$ = follow_types ($1); }
+	;
+
+const_and_volatile: 	CONST_KEYWORD VOLATILE_KEYWORD
+	| 		VOLATILE_KEYWORD CONST_KEYWORD
+	;
+
+const_or_volatile_noopt:  	const_and_volatile 
+			{ push_type (tp_const);
+			  push_type (tp_volatile); 
+			}
+	| 		CONST_KEYWORD
+			{ push_type (tp_const); }
+	| 		VOLATILE_KEYWORD
+			{ push_type (tp_volatile); }
 	;
 
 name	:	NAME { $$ = $1.stoken; }
@@ -918,20 +1041,20 @@ name_not_typename :	NAME
 
 static int
 parse_number (p, len, parsed_float, putithere)
-     register char *p;
-     register int len;
+     char *p;
+     int len;
      int parsed_float;
      YYSTYPE *putithere;
 {
   /* FIXME: Shouldn't these be unsigned?  We don't deal with negative values
      here, and we do kind of silly things like cast to unsigned.  */
-  register LONGEST n = 0;
-  register LONGEST prevn = 0;
+  LONGEST n = 0;
+  LONGEST prevn = 0;
   ULONGEST un;
 
-  register int i = 0;
-  register int c;
-  register int base = input_radix;
+  int i = 0;
+  int c;
+  int base = input_radix;
   int unsigned_p = 0;
 
   /* Number of "L" suffixes encountered.  */
@@ -977,11 +1100,11 @@ parse_number (p, len, parsed_float, putithere)
       c = tolower (p[len - 1]);
 
       if (c == 'f')
-	putithere->typed_val_float.type = builtin_type_float;
+	putithere->typed_val_float.type = builtin_type (current_gdbarch)->builtin_float;
       else if (c == 'l')
-	putithere->typed_val_float.type = builtin_type_long_double;
+	putithere->typed_val_float.type = builtin_type (current_gdbarch)->builtin_long_double;
       else if (isdigit (c) || c == '.')
-	putithere->typed_val_float.type = builtin_type_double;
+	putithere->typed_val_float.type = builtin_type (current_gdbarch)->builtin_double;
       else
 	return ERROR;
 
@@ -1097,15 +1220,15 @@ parse_number (p, len, parsed_float, putithere)
 	 int.  This probably should be fixed.  GCC gives a warning on
 	 such constants.  */
 
-      unsigned_type = builtin_type_unsigned_int;
-      signed_type = builtin_type_int;
+      unsigned_type = builtin_type (current_gdbarch)->builtin_unsigned_int;
+      signed_type = builtin_type (current_gdbarch)->builtin_int;
     }
   else if (long_p <= 1
 	   && (un >> (TARGET_LONG_BIT - 2)) == 0)
     {
       high_bit = ((ULONGEST)1) << (TARGET_LONG_BIT-1);
-      unsigned_type = builtin_type_unsigned_long;
-      signed_type = builtin_type_long;
+      unsigned_type = builtin_type (current_gdbarch)->builtin_unsigned_long;
+      signed_type = builtin_type (current_gdbarch)->builtin_long;
     }
   else
     {
@@ -1116,8 +1239,8 @@ parse_number (p, len, parsed_float, putithere)
       else
 	shift = (TARGET_LONG_LONG_BIT - 1);
       high_bit = (ULONGEST) 1 << shift;
-      unsigned_type = builtin_type_unsigned_long_long;
-      signed_type = builtin_type_long_long;
+      unsigned_type = builtin_type (current_gdbarch)->builtin_unsigned_long_long;
+      signed_type = builtin_type (current_gdbarch)->builtin_long_long;
     }
 
    putithere->typed_val_int.val = n;
@@ -1194,12 +1317,24 @@ yylex ()
    
  retry:
 
+  /* Check if this is a macro invocation that we need to expand.  */
+  if (! scanning_macro_expansion ())
+    {
+      char *expanded = macro_expand_next (&lexptr,
+                                          expression_macro_lookup_func,
+                                          expression_macro_lookup_baton);
+
+      if (expanded)
+        scan_macro_expansion (expanded);
+    }
+
+  prev_lexptr = lexptr;
   unquoted_expr = 1;
 
   tokstart = lexptr;
   /* See if it is a special token of length 3.  */
   for (i = 0; i < sizeof tokentab3 / sizeof tokentab3[0]; i++)
-    if (STREQN (tokstart, tokentab3[i].operator, 3))
+    if (strncmp (tokstart, tokentab3[i].operator, 3) == 0)
       {
 	lexptr += 3;
 	yylval.opcode = tokentab3[i].opcode;
@@ -1208,7 +1343,7 @@ yylex ()
 
   /* See if it is a special token of length 2.  */
   for (i = 0; i < sizeof tokentab2 / sizeof tokentab2[0]; i++)
-    if (STREQN (tokstart, tokentab2[i].operator, 2))
+    if (strncmp (tokstart, tokentab2[i].operator, 2) == 0)
       {
 	lexptr += 2;
 	yylval.opcode = tokentab2[i].opcode;
@@ -1218,7 +1353,17 @@ yylex ()
   switch (c = *tokstart)
     {
     case 0:
-      return 0;
+      /* If we were just scanning the result of a macro expansion,
+         then we need to resume scanning the original text.
+         Otherwise, we were already scanning the original text, and
+         we're really done.  */
+      if (scanning_macro_expansion ())
+        {
+          finished_macro_expansion ();
+          goto retry;
+        }
+      else
+        return 0;
 
     case ' ':
     case '\t':
@@ -1236,9 +1381,18 @@ yylex ()
 	c = parse_escape (&lexptr);
       else if (c == '\'')
 	error ("Empty character constant.");
+      else if (! host_char_to_target (c, &c))
+        {
+          int toklen = lexptr - tokstart + 1;
+          char *tok = alloca (toklen + 1);
+          memcpy (tok, tokstart, toklen);
+          tok[toklen] = '\0';
+          error ("There is no character corresponding to %s in the target "
+                 "character set `%s'.", tok, target_charset ());
+        }
 
       yylval.typed_val_int.val = c;
-      yylval.typed_val_int.type = builtin_type_char;
+      yylval.typed_val_int.type = builtin_type (current_gdbarch)->builtin_char;
 
       c = *lexptr++;
       if (c != '\'')
@@ -1271,7 +1425,9 @@ yylex ()
       return c;
 
     case ',':
-      if (comma_terminates && paren_depth == 0)
+      if (comma_terminates
+          && paren_depth == 0
+          && ! scanning_macro_expansion ())
 	return 0;
       lexptr++;
       return c;
@@ -1295,7 +1451,7 @@ yylex ()
       {
 	/* It's a number.  */
 	int got_dot = 0, got_e = 0, toktype;
-	register char *p = tokstart;
+	char *p = tokstart;
 	int hex = input_radix > 10;
 
 	if (c == '0' && (p[1] == 'x' || p[1] == 'X'))
@@ -1384,6 +1540,8 @@ yylex ()
       tempbufindex = 0;
 
       do {
+        char *char_start_pos = tokptr;
+
 	/* Grow the static temp buffer if necessary, including allocating
 	   the first one on demand. */
 	if (tempbufindex + 1 >= tempbufsize)
@@ -1406,7 +1564,19 @@ yylex ()
 	    tempbuf[tempbufindex++] = c;
 	    break;
 	  default:
-	    tempbuf[tempbufindex++] = *tokptr++;
+	    c = *tokptr++;
+            if (! host_char_to_target (c, &c))
+              {
+                int len = tokptr - char_start_pos;
+                char *copy = alloca (len + 1);
+                memcpy (copy, char_start_pos, len);
+                copy[len] = '\0';
+
+                error ("There is no character corresponding to `%s' "
+                       "in the target character set `%s'.",
+                       copy, target_charset ());
+              }
+            tempbuf[tempbufindex++] = c;
 	    break;
 	  }
       } while ((*tokptr != '"') && (*tokptr != '\0'));
@@ -1437,8 +1607,6 @@ yylex ()
 
       if (c == '<')
 	{ 
-           if (hp_som_som_object_present)
-             {
                /* Scan ahead to get rest of the template specification.  Note
                   that we look ahead only when the '<' adjoins non-whitespace
                   characters; for comparison expressions, e.g. "a < b > c",
@@ -1448,33 +1616,17 @@ yylex ()
                if (p)
                  namelen = p - tokstart;
                break;
-             }
-           else
-             { 
-	       int i = namelen;
-	       int nesting_level = 1;
-	       while (tokstart[++i])
-		 {
-		   if (tokstart[i] == '<')
-		     nesting_level++;
-		   else if (tokstart[i] == '>')
-		     {
-		       if (--nesting_level == 0)
-			 break;
-		     }
-		 }
-	       if (tokstart[i] == '>')
-		 namelen = i;
-	       else
-		 break;
-	     }
 	}
       c = tokstart[++namelen];
     }
 
-  /* The token "if" terminates the expression and is NOT 
-     removed from the input stream.  */
-  if (namelen == 2 && tokstart[0] == 'i' && tokstart[1] == 'f')
+  /* The token "if" terminates the expression and is NOT removed from
+     the input stream.  It doesn't count if it appears in the
+     expansion of a macro.  */
+  if (namelen == 2
+      && tokstart[0] == 'i'
+      && tokstart[1] == 'f'
+      && ! scanning_macro_expansion ())
     {
       return 0;
     }
@@ -1487,63 +1639,52 @@ yylex ()
   switch (namelen)
     {
     case 8:
-      if (STREQN (tokstart, "unsigned", 8))
+      if (strncmp (tokstart, "unsigned", 8) == 0)
 	return UNSIGNED;
       if (current_language->la_language == language_cplus
-	  && STREQN (tokstart, "template", 8))
+	  && strncmp (tokstart, "template", 8) == 0)
 	return TEMPLATE;
-      if (STREQN (tokstart, "volatile", 8))
+      if (strncmp (tokstart, "volatile", 8) == 0)
 	return VOLATILE_KEYWORD;
       break;
     case 6:
-      if (STREQN (tokstart, "struct", 6))
+      if (strncmp (tokstart, "struct", 6) == 0)
 	return STRUCT;
-      if (STREQN (tokstart, "signed", 6))
+      if (strncmp (tokstart, "signed", 6) == 0)
 	return SIGNED_KEYWORD;
-      if (STREQN (tokstart, "sizeof", 6))      
+      if (strncmp (tokstart, "sizeof", 6) == 0)
 	return SIZEOF;
-      if (STREQN (tokstart, "double", 6))      
+      if (strncmp (tokstart, "double", 6) == 0)
 	return DOUBLE_KEYWORD;
       break;
     case 5:
       if (current_language->la_language == language_cplus)
         {
-          if (STREQN (tokstart, "false", 5))
+          if (strncmp (tokstart, "false", 5) == 0)
             return FALSEKEYWORD;
-          if (STREQN (tokstart, "class", 5))
+          if (strncmp (tokstart, "class", 5) == 0)
             return CLASS;
         }
-      if (STREQN (tokstart, "union", 5))
+      if (strncmp (tokstart, "union", 5) == 0)
 	return UNION;
-      if (STREQN (tokstart, "short", 5))
+      if (strncmp (tokstart, "short", 5) == 0)
 	return SHORT;
-      if (STREQN (tokstart, "const", 5))
+      if (strncmp (tokstart, "const", 5) == 0)
 	return CONST_KEYWORD;
       break;
     case 4:
-      if (STREQN (tokstart, "enum", 4))
+      if (strncmp (tokstart, "enum", 4) == 0)
 	return ENUM;
-      if (STREQN (tokstart, "long", 4))
+      if (strncmp (tokstart, "long", 4) == 0)
 	return LONG;
       if (current_language->la_language == language_cplus)
           {
-            if (STREQN (tokstart, "true", 4))
+            if (strncmp (tokstart, "true", 4) == 0)
               return TRUEKEYWORD;
-
-            if (STREQN (tokstart, "this", 4))
-              {
-                static const char this_name[] =
-                { CPLUS_MARKER, 't', 'h', 'i', 's', '\0' };
-                
-                if (lookup_symbol (this_name, expression_context_block,
-                                   VAR_NAMESPACE, (int *) NULL,
-                                   (struct symtab **) NULL))
-                  return THIS;
-              }
           }
       break;
     case 3:
-      if (STREQN (tokstart, "int", 3))
+      if (strncmp (tokstart, "int", 3) == 0)
 	return INT_KEYWORD;
       break;
     default:
@@ -1563,7 +1704,13 @@ yylex ()
      string to get a reasonable class/namespace spec or a
      fully-qualified name.  This is a kludge to get around the
      HP aCC compiler's generation of symbol names with embedded
-     colons for namespace and nested classes. */ 
+     colons for namespace and nested classes. */
+
+  /* NOTE: carlton/2003-09-24: I don't entirely understand the
+     HP-specific code, either here or in linespec.  Having said that,
+     I suspect that we're actually moving towards their model: we want
+     symbols whose names are fully qualified, which matches the
+     description above.  */
   if (unquoted_expr)
     {
       /* Only do it if not inside single quotes */ 
@@ -1589,7 +1736,7 @@ yylex ()
     int hextype;
 
     sym = lookup_symbol (tmp, expression_context_block,
-			 VAR_NAMESPACE,
+			 VAR_DOMAIN,
 			 current_language->la_language == language_cplus
 			 ? &is_a_field_of_this : (int *) NULL,
 			 (struct symtab **) NULL);
@@ -1617,96 +1764,17 @@ yylex ()
 
     if (sym && SYMBOL_CLASS (sym) == LOC_TYPEDEF)
         {
-#if 1
-	  /* Despite the following flaw, we need to keep this code enabled.
-	     Because we can get called from check_stub_method, if we don't
-	     handle nested types then it screws many operations in any
-	     program which uses nested types.  */
-	  /* In "A::x", if x is a member function of A and there happens
-	     to be a type (nested or not, since the stabs don't make that
-	     distinction) named x, then this code incorrectly thinks we
-	     are dealing with nested types rather than a member function.  */
-
-	  char *p;
-	  char *namestart;
-	  struct symbol *best_sym;
-
-	  /* Look ahead to detect nested types.  This probably should be
-	     done in the grammar, but trying seemed to introduce a lot
-	     of shift/reduce and reduce/reduce conflicts.  It's possible
-	     that it could be done, though.  Or perhaps a non-grammar, but
-	     less ad hoc, approach would work well.  */
-
-	  /* Since we do not currently have any way of distinguishing
-	     a nested type from a non-nested one (the stabs don't tell
-	     us whether a type is nested), we just ignore the
-	     containing type.  */
-
-	  p = lexptr;
-	  best_sym = sym;
-	  while (1)
-	    {
-	      /* Skip whitespace.  */
-	      while (*p == ' ' || *p == '\t' || *p == '\n')
-		++p;
-	      if (*p == ':' && p[1] == ':')
-		{
-		  /* Skip the `::'.  */
-		  p += 2;
-		  /* Skip whitespace.  */
-		  while (*p == ' ' || *p == '\t' || *p == '\n')
-		    ++p;
-		  namestart = p;
-		  while (*p == '_' || *p == '$' || (*p >= '0' && *p <= '9')
-			 || (*p >= 'a' && *p <= 'z')
-			 || (*p >= 'A' && *p <= 'Z'))
-		    ++p;
-		  if (p != namestart)
-		    {
-		      struct symbol *cur_sym;
-		      /* As big as the whole rest of the expression, which is
-			 at least big enough.  */
-		      char *ncopy = alloca (strlen (tmp)+strlen (namestart)+3);
-		      char *tmp1;
-
-		      tmp1 = ncopy;
-		      memcpy (tmp1, tmp, strlen (tmp));
-		      tmp1 += strlen (tmp);
-		      memcpy (tmp1, "::", 2);
-		      tmp1 += 2;
-		      memcpy (tmp1, namestart, p - namestart);
-		      tmp1[p - namestart] = '\0';
-		      cur_sym = lookup_symbol (ncopy, expression_context_block,
-					       VAR_NAMESPACE, (int *) NULL,
-					       (struct symtab **) NULL);
-		      if (cur_sym)
-			{
-			  if (SYMBOL_CLASS (cur_sym) == LOC_TYPEDEF)
-			    {
-			      best_sym = cur_sym;
-			      lexptr = p;
-			    }
-			  else
-			    break;
-			}
-		      else
-			break;
-		    }
-		  else
-		    break;
-		}
-	      else
-		break;
-	    }
-
-	  yylval.tsym.type = SYMBOL_TYPE (best_sym);
-#else /* not 0 */
+	  /* NOTE: carlton/2003-09-25: There used to be code here to
+	     handle nested types.  It didn't work very well.  See the
+	     comment before qualified_type for more info.  */
 	  yylval.tsym.type = SYMBOL_TYPE (sym);
-#endif /* not 0 */
 	  return TYPENAME;
         }
-    if ((yylval.tsym.type = lookup_primitive_typename (tmp)) != 0)
-	return TYPENAME;
+    yylval.tsym.type
+      = language_lookup_primitive_type_by_name (current_language,
+						current_gdbarch, tmp);
+    if (yylval.tsym.type != NULL)
+      return TYPENAME;
 
     /* Input names that aren't symbols but ARE valid hex numbers,
        when the input radix permits them, can be names or numbers
@@ -1736,5 +1804,8 @@ void
 yyerror (msg)
      char *msg;
 {
+  if (prev_lexptr)
+    lexptr = prev_lexptr;
+
   error ("A %s in expression, near `%s'.", (msg ? msg : "error"), lexptr);
 }

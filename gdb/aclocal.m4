@@ -20,7 +20,7 @@ dnl This gets the standard macros, like the TCL, TK, etc ones.
 sinclude(../config/acinclude.m4)
 
 dnl CYGNUS LOCAL: This gets the right posix flag for gcc
-AC_DEFUN(CY_AC_TCL_LYNX_POSIX,
+AC_DEFUN([CY_AC_TCL_LYNX_POSIX],
 [AC_REQUIRE([AC_PROG_CC])AC_REQUIRE([AC_PROG_CPP])
 AC_MSG_CHECKING([if running LynxOS])
 AC_CACHE_VAL(ac_cv_os_lynx,
@@ -60,7 +60,7 @@ fi
 # makes configure think it's cross compiling. If --target wasn't used, then
 # we can't configure, so something is wrong. We don't use the cache
 # here cause if somebody fixes their compiler install, we want this to work.
-AC_DEFUN(CY_AC_C_WORKS,
+AC_DEFUN([CY_AC_C_WORKS],
 [# If we cannot compile and link a trivial program, we can't expect anything to work
 AC_MSG_CHECKING(whether the compiler ($CC) actually works)
 AC_TRY_COMPILE(, [/* don't need anything here */],
@@ -79,7 +79,7 @@ fi
 AC_MSG_RESULT(yes)
 ])
 
-AC_DEFUN(CY_AC_PATH_TCLH, [
+AC_DEFUN([CY_AC_PATH_TCLH], [
 #
 # Ok, lets find the tcl source trees so we can use the headers
 # Warning: transition of version 9 to 10 will break this algorithm
@@ -168,7 +168,7 @@ AC_SUBST(TCLHDIR)
 ])
 
 
-AC_DEFUN(CY_AC_PATH_TCLCONFIG, [
+AC_DEFUN([CY_AC_PATH_TCLCONFIG], [
 #
 # Ok, lets find the tcl configuration
 # First, look for one uninstalled.  
@@ -241,7 +241,7 @@ fi
 
 # Defined as a separate macro so we don't have to cache the values
 # from PATH_TCLCONFIG (because this can also be cached).
-AC_DEFUN(CY_AC_LOAD_TCLCONFIG, [
+AC_DEFUN([CY_AC_LOAD_TCLCONFIG], [
     . $TCLCONFIG
 
     AC_SUBST(TCL_VERSION)
@@ -271,6 +271,7 @@ dnl not used, don't export to save symbols
     AC_SUBST(TCL_LD_FLAGS)
 dnl don't export, not used outside of configure
     AC_SUBST(TCL_LD_SEARCH_FLAGS)
+    AC_SUBST(TCL_CC_SEARCH_FLAGS)
     AC_SUBST(TCL_COMPAT_OBJS)
     AC_SUBST(TCL_RANLIB)
     AC_SUBST(TCL_BUILD_LIB_SPEC)
@@ -296,7 +297,7 @@ dnl    AC_SUBST(TCL_UNSHARED_LIB_SUFFIX)
 #  - Symbols in tkConfig.sh are different than tclConfig.sh
 #  - Acceptable for Tk to be missing but not Tcl.
 
-AC_DEFUN(CY_AC_PATH_TKH, [
+AC_DEFUN([CY_AC_PATH_TKH], [
 #
 # Ok, lets find the tk source trees so we can use the headers
 # If the directory (presumably symlink) named "tk" exists, use that one
@@ -390,7 +391,7 @@ AC_SUBST(TKHDIR)
 ])
 
 
-AC_DEFUN(CY_AC_PATH_TKCONFIG, [
+AC_DEFUN([CY_AC_PATH_TKCONFIG], [
 #
 # Ok, lets find the tk configuration
 # First, look for one uninstalled.  
@@ -464,7 +465,7 @@ fi
 
 # Defined as a separate macro so we don't have to cache the values
 # from PATH_TKCONFIG (because this can also be cached).
-AC_DEFUN(CY_AC_LOAD_TKCONFIG, [
+AC_DEFUN([CY_AC_LOAD_TKCONFIG], [
     if test -f "$TKCONFIG" ; then
       . $TKCONFIG
     fi
@@ -495,7 +496,7 @@ dnl    AC_SUBST(TK_EXEC_PREFIX)
 
 # check for Itcl headers. 
 
-AC_DEFUN(CY_AC_PATH_ITCLCONFIG, [
+AC_DEFUN([CY_AC_PATH_ITCLCONFIG], [
 #
 # Ok, lets find the itcl configuration
 # First, look for one uninstalled.  
@@ -568,7 +569,7 @@ fi
 
 # Defined as a separate macro so we don't have to cache the values
 # from PATH_ITCLCONFIG (because this can also be cached).
-AC_DEFUN(CY_AC_LOAD_ITCLCONFIG, [
+AC_DEFUN([CY_AC_LOAD_ITCLCONFIG], [
     if test -f "$ITCLCONFIG" ; then
       . $ITCLCONFIG
     fi
@@ -597,7 +598,7 @@ dnl    AC_SUBST(ITCL_EXEC_PREFIX)
 
 # check for Itcl headers. 
 
-AC_DEFUN(CY_AC_PATH_ITCLH, [
+AC_DEFUN([CY_AC_PATH_ITCLH], [
 AC_MSG_CHECKING(for Itcl private headers. srcdir=${srcdir})
 if test x"${ac_cv_c_itclh}" = x ; then
   for i in ${srcdir}/../itcl ${srcdir}/../../itcl ${srcdir}/../../../itcl ${srcdir}/../itcl/itcl; do
@@ -621,7 +622,7 @@ AC_SUBST(ITCLHDIR)
 ])
 
 
-AC_DEFUN(CY_AC_PATH_ITKCONFIG, [
+AC_DEFUN([CY_AC_PATH_ITKCONFIG], [
 #
 # Ok, lets find the itk configuration
 # First, look for one uninstalled.  
@@ -695,7 +696,7 @@ fi
 
 # Defined as a separate macro so we don't have to cache the values
 # from PATH_ITKCONFIG (because this can also be cached).
-AC_DEFUN(CY_AC_LOAD_ITKCONFIG, [
+AC_DEFUN([CY_AC_LOAD_ITKCONFIG], [
     if test -f "$ITKCONFIG" ; then
       . $ITKCONFIG
     fi
@@ -722,7 +723,7 @@ dnl    AC_SUBST(ITK_EXEC_PREFIX)
     AC_SUBST(ITK_LIB_SPEC)
 ])
 
-AC_DEFUN(CY_AC_PATH_ITKH, [
+AC_DEFUN([CY_AC_PATH_ITKH], [
 AC_MSG_CHECKING(for Itk private headers. srcdir=${srcdir})
 if test x"${ac_cv_c_itkh}" = x ; then
   for i in ${srcdir}/../itcl ${srcdir}/../../itcl ${srcdir}/../../../itcl ${srcdir}/../itcl/itk; do
@@ -745,133 +746,31 @@ AC_SUBST(ITKHDIR)
 #AC_SUBST(ITKLIB)
 ])
 
-# check for Tix headers. 
 
-AC_DEFUN(CY_AC_PATH_TIXH, [
-AC_MSG_CHECKING(for Tix private headers. srcdir=${srcdir})
-if test x"${ac_cv_c_tixh}" = x ; then
-  for i in ${srcdir}/../tix ${srcdir}/../../tix ${srcdir}/../../../tix ; do
-    if test -f $i/generic/tix.h ; then
-      ac_cv_c_tixh=`(cd $i/generic; pwd)`
-      break
-    fi
-  done
-fi
-if test x"${ac_cv_c_tixh}" = x ; then
-  TIXHDIR="# no Tix private headers found"
-  AC_MSG_ERROR([Can't find Tix private headers])
-fi
-if test x"${ac_cv_c_tixh}" != x ; then
-     TIXHDIR="-I${ac_cv_c_tixh}"
-fi
-AC_SUBST(TIXHDIR)
+dnl sinclude(../gettext.m4) already included by bfd/acinclude.m4
+dnl The lines below arrange for aclocal not to bring gettext.m4's
+dnl CY_GNU_GETTEXT into aclocal.m4.
+ifelse(yes,no,[
+AC_DEFUN([CY_GNU_GETTEXT],)
 ])
 
-AC_DEFUN(CY_AC_PATH_TIXCONFIG, [
-#
-# Ok, lets find the tix configuration
-# First, look for one uninstalled.  
-# the alternative search directory is invoked by --with-itkconfig
-#
 
-if test x"${no_tix}" = x ; then
-  # we reset no_tix in case something fails here
-  no_tix=true
-  AC_ARG_WITH(tixconfig, [  --with-tixconfig        Directory containing tix configuration (tixConfig.sh)],
-         with_tixconfig=${withval})
-  AC_MSG_CHECKING([for Tix configuration])
-  AC_CACHE_VAL(ac_cv_c_tixconfig,[
+# Copyright 1996, 1997, 1999, 2000, 2001 Free Software Foundation, Inc.
 
-  # First check to see if --with-tixconfig was specified.
-  if test x"${with_tixconfig}" != x ; then
-    if test -f "${with_tixconfig}/tixConfig.sh" ; then
-      ac_cv_c_tixconfig=`(cd ${with_tixconfig}; pwd)`
-    else
-      AC_MSG_ERROR([${with_tixconfig} directory doesn't contain tixConfig.sh])
-    fi
-  fi
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2, or (at your option)
+# any later version.
 
-  # then check for a private Tix library
-  if test x"${ac_cv_c_tixconfig}" = x ; then
-    for i in \
-		../tix \
-		`ls -dr ../tix 2>/dev/null` \
-		../../tix \
-		`ls -dr ../../tix 2>/dev/null` \
-		../../../tix \
-		`ls -dr ../../../tix 2>/dev/null` ; do
-      echo "**** Looking at $i - with ${configdir}"
-      if test -f "$i/tixConfig.sh" ; then
-        ac_cv_c_tixconfig=`(cd $i; pwd)`
-	break
-      fi
-    done
-  fi
-  # check in a few common install locations
-  if test x"${ac_cv_c_tixconfig}" = x ; then
-    for i in `ls -d ${prefix}/lib /usr/local/lib 2>/dev/null` ; do
-      echo "**** Looking at $i"
-      if test -f "$i/tixConfig.sh" ; then
-        ac_cv_c_tixconfig=`(cd $i; pwd)`
-	break
-      fi
-    done
-  fi
-  # check in a few other private locations
-  echo "**** Other private locations"
-  if test x"${ac_cv_c_tixconfig}" = x ; then
-    for i in \
-		${srcdir}/../tix \
-		`ls -dr ${srcdir}/../tix 2>/dev/null` ; do
-      echo "**** Looking at $i - with ${configdir}"
-      if test -f "$i/${configdir}/tixConfig.sh" ; then
-        ac_cv_c_tixconfig=`(cd $i/${configdir}; pwd)`
-	break
-      fi
-    done
-  fi
-  ])
-  if test x"${ac_cv_c_tixconfig}" = x ; then
-    TIXCONFIG="# no Tix configs found"
-    AC_MSG_WARN(Can't find Tix configuration definitions)
-  else
-    no_tix=
-    TIXCONFIG=${ac_cv_c_tixconfig}/tixConfig.sh
-    AC_MSG_RESULT(found $TIXCONFIG)
-  fi
-fi
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
 
-])
-
-# Defined as a separate macro so we don't have to cache the values
-# from PATH_TIXCONFIG (because this can also be cached).
-AC_DEFUN(CY_AC_LOAD_TIXCONFIG, [
-    if test -f "$TIXCONFIG" ; then
-      . $TIXCONFIG
-    fi
-
-    AC_SUBST(TIX_VERSION)
-dnl not actually used, don't export to save symbols
-dnl    AC_SUBST(TIX_MAJOR_VERSION)
-dnl    AC_SUBST(TIX_MINOR_VERSION)
-dnl    AC_SUBST(TIX_DEFS)
-
-dnl not used, don't export to save symbols
-dnl    dnl AC_SUBST(TIX_LIB_FILE)
-
-dnl not used outside of configure
-dnl    AC_SUBST(TIX_LIBS)
-dnl not used, don't export to save symbols
-dnl    AC_SUBST(TIX_PREFIX)
-
-dnl not used, don't export to save symbols
-dnl    AC_SUBST(TIX_EXEC_PREFIX)
-
-dnl    AC_SUBST(TIX_BUILD_INCLUDES)
-    AC_SUBST(TIX_BUILD_LIB_SPEC)
-dnl    AC_SUBST(TIX_LIB_SPEC)
-])
-
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
+# 02111-1307, USA.
 
 # serial 1
 
@@ -890,7 +789,7 @@ dnl    AC_SUBST(TIX_LIB_SPEC)
 # program @code{ansi2knr}, which comes with Ghostscript.
 # @end defmac
 
-AC_DEFUN(AM_PROG_CC_STDC,
+AC_DEFUN([AM_PROG_CC_STDC],
 [AC_REQUIRE([AC_PROG_CC])
 AC_BEFORE([$0], [AC_C_INLINE])
 AC_BEFORE([$0], [AC_C_CONST])
@@ -900,7 +799,7 @@ dnl like #elif.
 dnl FIXME: can't do this because then AC_AIX won't work due to a
 dnl circular dependency.
 dnl AC_BEFORE([$0], [AC_PROG_CPP])
-AC_MSG_CHECKING(for ${CC-cc} option to accept ANSI C)
+AC_MSG_CHECKING([for ${CC-cc} option to accept ANSI C])
 AC_CACHE_VAL(am_cv_prog_cc_stdc,
 [am_cv_prog_cc_stdc=no
 ac_save_CC="$CC"
@@ -908,9 +807,10 @@ ac_save_CC="$CC"
 # breaks some systems' header files.
 # AIX			-qlanglvl=ansi
 # Ultrix and OSF/1	-std1
-# HP-UX			-Aa -D_HPUX_SOURCE
+# HP-UX 10.20 and later	-Ae
+# HP-UX older versions	-Aa -D_HPUX_SOURCE
 # SVR4			-Xc -D__EXTENSIONS__
-for ac_arg in "" -qlanglvl=ansi -std1 "-Aa -D_HPUX_SOURCE" "-Xc -D__EXTENSIONS__"
+for ac_arg in "" -qlanglvl=ansi -std1 -Ae "-Aa -D_HPUX_SOURCE" "-Xc -D__EXTENSIONS__"
 do
   CC="$ac_save_CC $ac_arg"
   AC_TRY_COMPILE(
@@ -952,7 +852,7 @@ CC="$ac_save_CC"
 if test -z "$am_cv_prog_cc_stdc"; then
   AC_MSG_RESULT([none needed])
 else
-  AC_MSG_RESULT($am_cv_prog_cc_stdc)
+  AC_MSG_RESULT([$am_cv_prog_cc_stdc])
 fi
 case "x$am_cv_prog_cc_stdc" in
   x|xno) ;;
@@ -960,348 +860,181 @@ case "x$am_cv_prog_cc_stdc" in
 esac
 ])
 
-# This file is derived from `gettext.m4'.  The difference is that the
-# included macros assume Cygnus-style source and build trees.
+dnl From Bruno Haible.
 
-# Macro to add for using GNU gettext.
-# Ulrich Drepper <drepper@cygnus.com>, 1995.
-#
-# This file file be copied and used freely without restrictions.  It can
-# be used in projects which are not available under the GNU Public License
-# but which still want to provide support for the GNU gettext functionality.
-# Please note that the actual code is *not* freely available.
+AC_DEFUN([AM_ICONV],
+[
+  dnl Some systems have iconv in libc, some have it in libiconv (OSF/1 and
+  dnl those with the standalone portable GNU libiconv installed).
 
-# serial 3
-
-AC_DEFUN(CY_WITH_NLS,
-  [AC_MSG_CHECKING([whether NLS is requested])
-    dnl Default is enabled NLS
-    AC_ARG_ENABLE(nls,
-      [  --disable-nls           do not use Native Language Support],
-      USE_NLS=$enableval, USE_NLS=yes)
-    AC_MSG_RESULT($USE_NLS)
-    AC_SUBST(USE_NLS)
-
-    USE_INCLUDED_LIBINTL=no
-
-    dnl If we use NLS figure out what method
-    if test "$USE_NLS" = "yes"; then
-      AC_DEFINE(ENABLE_NLS, 1, [Define to 1 if NLS is requested])
-      AC_MSG_CHECKING([whether included gettext is requested])
-      AC_ARG_WITH(included-gettext,
-        [  --with-included-gettext use the GNU gettext library included here],
-        nls_cv_force_use_gnu_gettext=$withval,
-        nls_cv_force_use_gnu_gettext=no)
-      AC_MSG_RESULT($nls_cv_force_use_gnu_gettext)
-
-      nls_cv_use_gnu_gettext="$nls_cv_force_use_gnu_gettext"
-      if test "$nls_cv_force_use_gnu_gettext" != "yes"; then
-        dnl User does not insist on using GNU NLS library.  Figure out what
-        dnl to use.  If gettext or catgets are available (in this order) we
-        dnl use this.  Else we have to fall back to GNU NLS library.
-	dnl catgets is only used if permitted by option --with-catgets.
-	nls_cv_header_intl=
-	nls_cv_header_libgt=
-	CATOBJEXT=NONE
-
-	AC_CHECK_HEADER(libintl.h,
-	  [AC_CACHE_CHECK([for gettext in libc], gt_cv_func_gettext_libc,
-	    [AC_TRY_LINK([#include <libintl.h>], [return (int) gettext ("")],
-	       gt_cv_func_gettext_libc=yes, gt_cv_func_gettext_libc=no)])
-
-	   if test "$gt_cv_func_gettext_libc" != "yes"; then
-	     AC_CHECK_LIB(intl, bindtextdomain,
-	       [AC_CACHE_CHECK([for gettext in libintl],
-		 gt_cv_func_gettext_libintl,
-		 [AC_TRY_LINK([], [return (int) gettext ("")],
-		 gt_cv_func_gettext_libintl=yes,
-		 gt_cv_func_gettext_libintl=no)])])
-	   fi
-
-	   if test "$gt_cv_func_gettext_libc" = "yes" \
-	      || test "$gt_cv_func_gettext_libintl" = "yes"; then
-	      AC_DEFINE(HAVE_GETTEXT, 1,
-			[Define as 1 if you have gettext and don't want to use GNU gettext.])
-	      AM_PATH_PROG_WITH_TEST(MSGFMT, msgfmt,
-		[test -z "`$ac_dir/$ac_word -h 2>&1 | grep 'dv '`"], no)dnl
-	      if test "$MSGFMT" != "no"; then
-		AC_CHECK_FUNCS(dcgettext)
-		AC_PATH_PROG(GMSGFMT, gmsgfmt, $MSGFMT)
-		AM_PATH_PROG_WITH_TEST(XGETTEXT, xgettext,
-		  [test -z "`$ac_dir/$ac_word -h 2>&1 | grep '(HELP)'`"], :)
-		AC_TRY_LINK(, [extern int _nl_msg_cat_cntr;
-			       return _nl_msg_cat_cntr],
-		  [CATOBJEXT=.gmo
-		   DATADIRNAME=share],
-		  [CATOBJEXT=.mo
-		   DATADIRNAME=lib])
-		INSTOBJEXT=.mo
-	      fi
-	    fi
-	])
-
-	dnl In the standard gettext, we would now check for catgets.
-        dnl However, we never want to use catgets for our releases.
-
-        if test "$CATOBJEXT" = "NONE"; then
-	  dnl Neither gettext nor catgets in included in the C library.
-	  dnl Fall back on GNU gettext library.
-	  nls_cv_use_gnu_gettext=yes
-        fi
-      fi
-
-      if test "$nls_cv_use_gnu_gettext" = "yes"; then
-        dnl Mark actions used to generate GNU NLS library.
-        INTLOBJS="\$(GETTOBJS)"
-        AM_PATH_PROG_WITH_TEST(MSGFMT, msgfmt,
-	  [test -z "`$ac_dir/$ac_word -h 2>&1 | grep 'dv '`"], msgfmt)
-        AC_PATH_PROG(GMSGFMT, gmsgfmt, $MSGFMT)
-        AM_PATH_PROG_WITH_TEST(XGETTEXT, xgettext,
-	  [test -z "`$ac_dir/$ac_word -h 2>&1 | grep '(HELP)'`"], :)
-        AC_SUBST(MSGFMT)
-	USE_INCLUDED_LIBINTL=yes
-        CATOBJEXT=.gmo
-        INSTOBJEXT=.mo
-        DATADIRNAME=share
-	INTLDEPS='$(top_builddir)/../intl/libintl.a'
-	INTLLIBS=$INTLDEPS
-	LIBS=`echo $LIBS | sed -e 's/-lintl//'`
-        nls_cv_header_intl=libintl.h
-        nls_cv_header_libgt=libgettext.h
-      fi
-
-      dnl Test whether we really found GNU xgettext.
-      if test "$XGETTEXT" != ":"; then
-	dnl If it is no GNU xgettext we define it as : so that the
-	dnl Makefiles still can work.
-	if $XGETTEXT --omit-header /dev/null 2> /dev/null; then
-	  : ;
-	else
-	  AC_MSG_RESULT(
-	    [found xgettext programs is not GNU xgettext; ignore it])
-	  XGETTEXT=":"
-	fi
-      fi
-
-      # We need to process the po/ directory.
-      POSUB=po
-    else
-      DATADIRNAME=share
-      nls_cv_header_intl=libintl.h
-      nls_cv_header_libgt=libgettext.h
-    fi
-
-    # If this is used in GNU gettext we have to set USE_NLS to `yes'
-    # because some of the sources are only built for this goal.
-    if test "$PACKAGE" = gettext; then
-      USE_NLS=yes
-      USE_INCLUDED_LIBINTL=yes
-    fi
-
-    dnl These rules are solely for the distribution goal.  While doing this
-    dnl we only have to keep exactly one list of the available catalogs
-    dnl in configure.in.
-    for lang in $ALL_LINGUAS; do
-      GMOFILES="$GMOFILES $lang.gmo"
-      POFILES="$POFILES $lang.po"
+  AC_ARG_WITH([libiconv-prefix],
+[  --with-libiconv-prefix=DIR  search for libiconv in DIR/include and DIR/lib], [
+    for dir in `echo "$withval" | tr : ' '`; do
+      if test -d $dir/include; then CPPFLAGS="$CPPFLAGS -I$dir/include"; fi
+      if test -d $dir/lib; then LDFLAGS="$LDFLAGS -L$dir/lib"; fi
     done
+   ])
 
-    dnl Make all variables we use known to autoconf.
-    AC_SUBST(USE_INCLUDED_LIBINTL)
-    AC_SUBST(CATALOGS)
-    AC_SUBST(CATOBJEXT)
-    AC_SUBST(DATADIRNAME)
-    AC_SUBST(GMOFILES)
-    AC_SUBST(INSTOBJEXT)
-    AC_SUBST(INTLDEPS)
-    AC_SUBST(INTLLIBS)
-    AC_SUBST(INTLOBJS)
-    AC_SUBST(POFILES)
-    AC_SUBST(POSUB)
-  ])
-
-AC_DEFUN(CY_GNU_GETTEXT,
-  [AC_REQUIRE([AC_PROG_MAKE_SET])dnl
-   AC_REQUIRE([AC_PROG_CC])dnl
-   AC_REQUIRE([AC_PROG_RANLIB])dnl
-   AC_REQUIRE([AC_ISC_POSIX])dnl
-   AC_REQUIRE([AC_HEADER_STDC])dnl
-   AC_REQUIRE([AC_C_CONST])dnl
-   AC_REQUIRE([AC_C_INLINE])dnl
-   AC_REQUIRE([AC_TYPE_OFF_T])dnl
-   AC_REQUIRE([AC_TYPE_SIZE_T])dnl
-   AC_REQUIRE([AC_FUNC_ALLOCA])dnl
-   AC_REQUIRE([AC_FUNC_MMAP])dnl
-
-   AC_CHECK_HEADERS([argz.h limits.h locale.h nl_types.h malloc.h string.h \
-unistd.h values.h sys/param.h])
-   AC_CHECK_FUNCS([getcwd munmap putenv setenv setlocale strchr strcasecmp \
-__argz_count __argz_stringify __argz_next])
-
-   if test "${ac_cv_func_stpcpy+set}" != "set"; then
-     AC_CHECK_FUNCS(stpcpy)
-   fi
-   if test "${ac_cv_func_stpcpy}" = "yes"; then
-     AC_DEFINE(HAVE_STPCPY, 1, [Define if you have the stpcpy function])
-   fi
-
-   AM_LC_MESSAGES
-   CY_WITH_NLS
-
-   if test "x$CATOBJEXT" != "x"; then
-     if test "x$ALL_LINGUAS" = "x"; then
-       LINGUAS=
-     else
-       AC_MSG_CHECKING(for catalogs to be installed)
-       NEW_LINGUAS=
-       for lang in ${LINGUAS=$ALL_LINGUAS}; do
-         case "$ALL_LINGUAS" in
-          *$lang*) NEW_LINGUAS="$NEW_LINGUAS $lang" ;;
-         esac
-       done
-       LINGUAS=$NEW_LINGUAS
-       AC_MSG_RESULT($LINGUAS)
-     fi
-
-     dnl Construct list of names of catalog files to be constructed.
-     if test -n "$LINGUAS"; then
-       for lang in $LINGUAS; do CATALOGS="$CATALOGS $lang$CATOBJEXT"; done
-     fi
-   fi
-
-   dnl The reference to <locale.h> in the installed <libintl.h> file
-   dnl must be resolved because we cannot expect the users of this
-   dnl to define HAVE_LOCALE_H.
-   if test $ac_cv_header_locale_h = yes; then
-     INCLUDE_LOCALE_H="#include <locale.h>"
-   else
-     INCLUDE_LOCALE_H="\
-/* The system does not provide the header <locale.h>.  Take care yourself.  */"
-   fi
-   AC_SUBST(INCLUDE_LOCALE_H)
-
-   dnl Determine which catalog format we have (if any is needed)
-   dnl For now we know about two different formats:
-   dnl   Linux libc-5 and the normal X/Open format
-   if test -f $srcdir/po2tbl.sed.in; then
-      if test "$CATOBJEXT" = ".cat"; then
-	 AC_CHECK_HEADER(linux/version.h, msgformat=linux, msgformat=xopen)
-
-	 dnl Transform the SED scripts while copying because some dumb SEDs
-         dnl cannot handle comments.
-	 sed -e '/^#/d' $srcdir/$msgformat-msg.sed > po2msg.sed
-      fi
-      dnl po2tbl.sed is always needed.
-      sed -e '/^#.*[^\\]$/d' -e '/^#$/d' \
-	 $srcdir/po2tbl.sed.in > po2tbl.sed
-   fi
-
-   dnl In the intl/Makefile.in we have a special dependency which makes
-   dnl only sense for gettext.  We comment this out for non-gettext
-   dnl packages.
-   if test "$PACKAGE" = "gettext"; then
-     GT_NO="#NO#"
-     GT_YES=
-   else
-     GT_NO=
-     GT_YES="#YES#"
-   fi
-   AC_SUBST(GT_NO)
-   AC_SUBST(GT_YES)
-
-   MKINSTALLDIRS="\$(srcdir)/../../mkinstalldirs"
-   AC_SUBST(MKINSTALLDIRS)
-
-   dnl *** For now the libtool support in intl/Makefile is not for real.
-   l=
-   AC_SUBST(l)
-
-   dnl Generate list of files to be processed by xgettext which will
-   dnl be included in po/Makefile.  But only do this if the po directory
-   dnl exists in srcdir.
-   if test -d $srcdir/po; then
-      test -d po || mkdir po
-      if test "x$srcdir" != "x."; then
-	 if test "x`echo $srcdir | sed 's@/.*@@'`" = "x"; then
-	    posrcprefix="$srcdir/"
-	 else
-	    posrcprefix="../$srcdir/"
-	 fi
-      else
-	 posrcprefix="../"
-      fi
-      rm -f po/POTFILES
-      sed -e "/^#/d" -e "/^\$/d" -e "s,.*,	$posrcprefix& \\\\," -e "\$s/\(.*\) \\\\/\1/" \
-	 < $srcdir/po/POTFILES.in > po/POTFILES
-   fi
-  ])
-
-# Search path for a program which passes the given test.
-# Ulrich Drepper <drepper@cygnus.com>, 1996.
-#
-# This file file be copied and used freely without restrictions.  It can
-# be used in projects which are not available under the GNU Public License
-# but which still want to provide support for the GNU gettext functionality.
-# Please note that the actual code is *not* freely available.
-
-# serial 1
-
-dnl AM_PATH_PROG_WITH_TEST(VARIABLE, PROG-TO-CHECK-FOR,
-dnl   TEST-PERFORMED-ON-FOUND_PROGRAM [, VALUE-IF-NOT-FOUND [, PATH]])
-AC_DEFUN(AM_PATH_PROG_WITH_TEST,
-[# Extract the first word of "$2", so it can be a program name with args.
-set dummy $2; ac_word=[$]2
-AC_MSG_CHECKING([for $ac_word])
-AC_CACHE_VAL(ac_cv_path_$1,
-[case "[$]$1" in
-  /*)
-  ac_cv_path_$1="[$]$1" # Let the user override the test with a path.
-  ;;
-  *)
-  IFS="${IFS= 	}"; ac_save_ifs="$IFS"; IFS="${IFS}:"
-  for ac_dir in ifelse([$5], , $PATH, [$5]); do
-    test -z "$ac_dir" && ac_dir=.
-    if test -f $ac_dir/$ac_word; then
-      if [$3]; then
-	ac_cv_path_$1="$ac_dir/$ac_word"
-	break
-      fi
+  AC_CACHE_CHECK(for iconv, am_cv_func_iconv, [
+    am_cv_func_iconv="no, consider installing GNU libiconv"
+    am_cv_lib_iconv=no
+    AC_TRY_LINK([#include <stdlib.h>
+#include <iconv.h>],
+      [iconv_t cd = iconv_open("","");
+       iconv(cd,NULL,NULL,NULL,NULL);
+       iconv_close(cd);],
+      am_cv_func_iconv=yes)
+    if test "$am_cv_func_iconv" != yes; then
+      am_save_LIBS="$LIBS"
+      LIBS="$LIBS -liconv"
+      AC_TRY_LINK([#include <stdlib.h>
+#include <iconv.h>],
+        [iconv_t cd = iconv_open("","");
+         iconv(cd,NULL,NULL,NULL,NULL);
+         iconv_close(cd);],
+        am_cv_lib_iconv=yes
+        am_cv_func_iconv=yes)
+      LIBS="$am_save_LIBS"
     fi
-  done
-  IFS="$ac_save_ifs"
-dnl If no 4th arg is given, leave the cache variable unset,
-dnl so AC_PATH_PROGS will keep looking.
-ifelse([$4], , , [  test -z "[$]ac_cv_path_$1" && ac_cv_path_$1="$4"
-])dnl
-  ;;
-esac])dnl
-$1="$ac_cv_path_$1"
-if test -n "[$]$1"; then
-  AC_MSG_RESULT([$]$1)
-else
-  AC_MSG_RESULT(no)
-fi
-AC_SUBST($1)dnl
+  ])
+  if test "$am_cv_func_iconv" = yes; then
+    AC_DEFINE(HAVE_ICONV, 1, [Define if you have the iconv() function.])
+    AC_MSG_CHECKING([for iconv declaration])
+    AC_CACHE_VAL(am_cv_proto_iconv, [
+      AC_TRY_COMPILE([
+#include <stdlib.h>
+#include <iconv.h>
+extern
+#ifdef __cplusplus
+"C"
+#endif
+#if defined(__STDC__) || defined(__cplusplus)
+size_t iconv (iconv_t cd, char * *inbuf, size_t *inbytesleft, char * *outbuf, size_t *outbytesleft);
+#else
+size_t iconv();
+#endif
+], [], am_cv_proto_iconv_arg1="", am_cv_proto_iconv_arg1="const")
+      am_cv_proto_iconv="extern size_t iconv (iconv_t cd, $am_cv_proto_iconv_arg1 char * *inbuf, size_t *inbytesleft, char * *outbuf, size_t *outbytesleft);"])
+    am_cv_proto_iconv=`echo "[$]am_cv_proto_iconv" | tr -s ' ' | sed -e 's/( /(/'`
+    AC_MSG_RESULT([$]{ac_t:-
+         }[$]am_cv_proto_iconv)
+    AC_DEFINE_UNQUOTED(ICONV_CONST, $am_cv_proto_iconv_arg1,
+      [Define as const if the declaration of iconv() needs const.])
+  fi
+  LIBICONV=
+  if test "$am_cv_lib_iconv" = yes; then
+    LIBICONV="-liconv"
+  fi
+  AC_SUBST(LIBICONV)
 ])
 
-# Check whether LC_MESSAGES is available in <locale.h>.
-# Ulrich Drepper <drepper@cygnus.com>, 1995.
-#
-# This file file be copied and used freely without restrictions.  It can
-# be used in projects which are not available under the GNU Public License
-# but which still want to provide support for the GNU gettext functionality.
-# Please note that the actual code is *not* freely available.
+# AC_GNU_SOURCE
+# -------------
+# FIXME: Remove thise once we start using Autoconf 2.5x (x>=4).
+AC_DEFUN([AC_GNU_SOURCE],
+[AC_BEFORE([$0], [AC_TRY_COMPILE])dnl
+AC_BEFORE([$0], [AC_TRY_RUN])dnl
+AC_DEFINE([_GNU_SOURCE])
+])
+
+dnl written by Guido Draheim <guidod@gmx.de>, original by Alexandre Oliva 
+dnl Version 1.3 (2001/03/02)
+dnl source http://www.gnu.org/software/ac-archive/Miscellaneous/ac_define_dir.html
+
+AC_DEFUN([AC_DEFINE_DIR], [
+  test "x$prefix" = xNONE && prefix="$ac_default_prefix"
+  test "x$exec_prefix" = xNONE && exec_prefix='${prefix}'
+  ac_define_dir=`eval echo [$]$2`
+  ac_define_dir=`eval echo [$]ac_define_dir`
+  ifelse($3, ,
+    AC_DEFINE_UNQUOTED($1, "$ac_define_dir"),
+    AC_DEFINE_UNQUOTED($1, "$ac_define_dir", $3))
+])
+
+dnl See whether we need a declaration for a function.
+dnl The result is highly dependent on the INCLUDES passed in, so make sure
+dnl to use a different cache variable name in this macro if it is invoked
+dnl in a different context somewhere else.
+dnl gcc_AC_CHECK_DECL(SYMBOL,
+dnl 	[ACTION-IF-FOUND [, ACTION-IF-NOT-FOUND [, INCLUDES]]])
+AC_DEFUN([gcc_AC_CHECK_DECL],
+[AC_MSG_CHECKING([whether $1 is declared])
+AC_CACHE_VAL(gcc_cv_have_decl_$1,
+[AC_TRY_COMPILE([$4],
+[#ifndef $1
+char *(*pfn) = (char *(*)) $1 ;
+#endif], eval "gcc_cv_have_decl_$1=yes", eval "gcc_cv_have_decl_$1=no")])
+if eval "test \"`echo '$gcc_cv_have_decl_'$1`\" = yes"; then
+  AC_MSG_RESULT(yes) ; ifelse([$2], , :, [$2])
+else
+  AC_MSG_RESULT(no) ; ifelse([$3], , :, [$3])
+fi
+])dnl
+
+dnl Check multiple functions to see whether each needs a declaration.
+dnl Arrange to define HAVE_DECL_<FUNCTION> to 0 or 1 as appropriate.
+dnl gcc_AC_CHECK_DECLS(SYMBOLS,
+dnl 	[ACTION-IF-NEEDED [, ACTION-IF-NOT-NEEDED [, INCLUDES]]])
+AC_DEFUN([gcc_AC_CHECK_DECLS],
+[for ac_func in $1
+do
+changequote(, )dnl
+  ac_tr_decl=HAVE_DECL_`echo $ac_func | tr 'abcdefghijklmnopqrstuvwxyz' 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'`
+changequote([, ])dnl
+gcc_AC_CHECK_DECL($ac_func,
+  [AC_DEFINE_UNQUOTED($ac_tr_decl, 1) $2],
+  [AC_DEFINE_UNQUOTED($ac_tr_decl, 0) $3],
+dnl It is possible that the include files passed in here are local headers
+dnl which supply a backup declaration for the relevant prototype based on
+dnl the definition of (or lack of) the HAVE_DECL_ macro.  If so, this test
+dnl will always return success.  E.g. see libiberty.h's handling of
+dnl `basename'.  To avoid this, we define the relevant HAVE_DECL_ macro to
+dnl 1 so that any local headers used do not provide their own prototype
+dnl during this test.
+#undef $ac_tr_decl
+#define $ac_tr_decl 1
+  $4
+)
+done
+dnl Automatically generate config.h entries via autoheader.
+if test x = y ; then
+  patsubst(translit([$1], [a-z], [A-Z]), [\w+],
+    [AC_DEFINE([HAVE_DECL_\&], 1,
+      [Define to 1 if we found this declaration otherwise define to 0.])])dnl
+fi
+])
+
+
+# Add --enable-maintainer-mode option to configure.
+# From Jim Meyering
 
 # serial 1
 
-AC_DEFUN(AM_LC_MESSAGES,
-  [if test $ac_cv_header_locale_h = yes; then
-    AC_CACHE_CHECK([for LC_MESSAGES], am_cv_val_LC_MESSAGES,
-      [AC_TRY_LINK([#include <locale.h>], [return LC_MESSAGES],
-       am_cv_val_LC_MESSAGES=yes, am_cv_val_LC_MESSAGES=no)])
-    if test $am_cv_val_LC_MESSAGES = yes; then
-      AC_DEFINE(HAVE_LC_MESSAGES, 1,
-		[Define if your locale.h file contains LC_MESSAGES.])
-    fi
-  fi])
+AC_DEFUN(AM_MAINTAINER_MODE,
+[AC_MSG_CHECKING([whether to enable maintainer-specific portions of Makefiles])
+  dnl maintainer-mode is disabled by default
+  AC_ARG_ENABLE(maintainer-mode,
+[  --enable-maintainer-mode enable make rules and dependencies not useful
+                          (and sometimes confusing) to the casual installer],
+      USE_MAINTAINER_MODE=$enableval,
+      USE_MAINTAINER_MODE=no)
+  AC_MSG_RESULT($USE_MAINTAINER_MODE)
+  AM_CONDITIONAL(MAINTAINER_MODE, test $USE_MAINTAINER_MODE = yes)
+  MAINT=$MAINTAINER_MODE_TRUE
+  AC_SUBST(MAINT)dnl
+]
+)
+
+# Define a conditional.
+
+AC_DEFUN(AM_CONDITIONAL,
+[AC_SUBST($1_TRUE)
+AC_SUBST($1_FALSE)
+if $2; then
+  $1_TRUE=
+  $1_FALSE='#'
+else
+  $1_TRUE='#'
+  $1_FALSE=
+fi])
 

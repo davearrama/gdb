@@ -18,21 +18,8 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-#define HOST_BYTE_ORDER LITTLE_ENDIAN
-
 #include "fopen-bin.h"
 
 #define GDBINIT_FILENAME "gdb.ini"
-
-#define SLASH_P(X) ((X)=='\\' || (X) == '/')
-
-#define ROOTED_P(X) ((SLASH_P((X)[0])) || ((X)[0] && (X)[1] ==':'))
-
-#define SLASH_CHAR '/'
-#define SLASH_STRING "/"
-
 #define CRLF_SOURCE_FILES
-
 #define DIRNAME_SEPARATOR ';'
-
-#define HOST_I386

@@ -1,5 +1,6 @@
 /* Read NLM (NetWare Loadable Module) format executable files for GDB.
-   Copyright 1993, 1994, 1998 Free Software Foundation, Inc.
+   Copyright 1993, 1994, 1995, 1996, 1998, 1999, 2000
+   Free Software Foundation, Inc.
    Written by Fred Fish at Cygnus Support (fnf@cygnus.com).
 
    This file is part of GDB.
@@ -20,31 +21,25 @@
    Boston, MA 02111-1307, USA.  */
 
 #include "defs.h"
-#include "gdb_string.h"
 #include "bfd.h"
 #include "symtab.h"
 #include "symfile.h"
 #include "objfiles.h"
-#include "gdb-stabs.h"
 #include "buildsym.h"
 #include "stabsread.h"
+#include "block.h"
 
-extern void _initialize_nlmread PARAMS ((void));
+extern void _initialize_nlmread (void);
 
-static void
-nlm_new_init PARAMS ((struct objfile *));
+static void nlm_new_init (struct objfile *);
 
-static void
-nlm_symfile_init PARAMS ((struct objfile *));
+static void nlm_symfile_init (struct objfile *);
 
-static void
-nlm_symfile_read PARAMS ((struct objfile *, int));
+static void nlm_symfile_read (struct objfile *, int);
 
-static void
-nlm_symfile_finish PARAMS ((struct objfile *));
+static void nlm_symfile_finish (struct objfile *);
 
-static void
-nlm_symtab_read PARAMS ((bfd *, CORE_ADDR, struct objfile *));
+static void nlm_symtab_read (bfd *, CORE_ADDR, struct objfile *);
 
 /* Initialize anything that needs initializing when a completely new symbol
    file is specified (not just adding some symbols from another file, e.g. a
@@ -54,8 +49,7 @@ nlm_symtab_read PARAMS ((bfd *, CORE_ADDR, struct objfile *));
    file at some point in the near future.  */
 
 static void
-nlm_new_init (ignore)
-     struct objfile *ignore;
+nlm_new_init (struct objfile *ignore)
 {
   stabsread_new_init ();
   buildsym_new_init ();
@@ -72,8 +66,7 @@ nlm_new_init (ignore)
    just a stub. */
 
 static void
-nlm_symfile_init (ignore)
-     struct objfile *ignore;
+nlm_symfile_init (struct objfile *ignore)
 {
 }
 
@@ -97,10 +90,7 @@ nlm_symfile_init (ignore)
  */
 
 static void
-nlm_symtab_read (abfd, addr, objfile)
-     bfd *abfd;
-     CORE_ADDR addr;
-     struct objfile *objfile;
+nlm_symtab_read (bfd *abfd, CORE_ADDR addr, struct objfile *objfile)
 {
   long storage_needed;
   asymbol *sym;
@@ -118,7 +108,7 @@ nlm_symtab_read (abfd, addr, objfile)
   if (storage_needed > 0)
     {
       symbol_table = (asymbol **) xmalloc (storage_needed);
-      back_to = make_cleanup (free, symbol_table);
+      back_to = make_cleanup (xfree, symbol_table);
       number_of_symbols = bfd_canonicalize_symtab (abfd, symbol_table);
       if (number_of_symbols < 0)
 	error ("Can't read symbols from %s: %s", bfd_get_filename (abfd),
@@ -182,17 +172,14 @@ nlm_symtab_read (abfd, addr, objfile)
    is not currently used. */
 
 static void
-nlm_symfile_read (objfile, mainline)
-     struct objfile *objfile;
-     int mainline;
+nlm_symfile_read (struct objfile *objfile, int mainline)
 {
   bfd *abfd = objfile->obfd;
   struct cleanup *back_to;
   CORE_ADDR offset;
-  struct symbol *mainsym;
 
   init_minimal_symbol_collection ();
-  back_to = make_cleanup ((make_cleanup_func) discard_minimal_symbols, 0);
+  back_to = make_cleanup_discard_minimal_symbols ();
 
   /* FIXME, should take a section_offsets param, not just an offset.  */
 
@@ -203,27 +190,16 @@ nlm_symfile_read (objfile, mainline)
 
   nlm_symtab_read (abfd, offset, objfile);
 
-  stabsect_build_psymtabs (objfile, mainline, ".stab",
-			   ".stabstr", ".text");
-
-  mainsym = lookup_symbol ("main", NULL, VAR_NAMESPACE, NULL, NULL);
-
-  if (mainsym
-      && SYMBOL_CLASS (mainsym) == LOC_BLOCK)
-    {
-      objfile->ei.main_func_lowpc = BLOCK_START (SYMBOL_BLOCK_VALUE (mainsym));
-      objfile->ei.main_func_highpc = BLOCK_END (SYMBOL_BLOCK_VALUE (mainsym));
-    }
-
-  /* FIXME:  We could locate and read the optional native debugging format
-     here and add the symbols to the minimal symbol table. */
-
   /* Install any minimal symbols that have been collected as the current
      minimal symbols for this objfile. */
 
   install_minimal_symbols (objfile);
-
   do_cleanups (back_to);
+
+  stabsect_build_psymtabs (objfile, mainline, ".stab",
+			   ".stabstr", ".text");
+  /* FIXME:  We could locate and read the optional native debugging format
+     here and add the symbols to the minimal symbol table. */
 }
 
 
@@ -233,12 +209,11 @@ nlm_symfile_read (objfile, mainline)
    objfile struct from the global list of known objfiles. */
 
 static void
-nlm_symfile_finish (objfile)
-     struct objfile *objfile;
+nlm_symfile_finish (struct objfile *objfile)
 {
   if (objfile->sym_private != NULL)
     {
-      mfree (objfile->md, objfile->sym_private);
+      xfree (objfile->sym_private);
     }
 }
 
@@ -256,7 +231,7 @@ static struct sym_fns nlm_sym_fns =
 };
 
 void
-_initialize_nlmread ()
+_initialize_nlmread (void)
 {
   add_symtab_fns (&nlm_sym_fns);
 }

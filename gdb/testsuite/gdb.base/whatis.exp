@@ -1,4 +1,5 @@
-#   Copyright (C) 1988, 1990, 1991, 1992, 1995, 1997 Free Software Foundation, Inc.
+# Copyright 1988, 1990, 1991, 1992, 1994, 1995, 1996, 1997, 1999, 2002,
+# 2003, 2004 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,9 +14,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  
-
-# Please email any bugs, comments, and/or additions to this file to:
-# bug-gdb@prep.ai.mit.edu
 
 # This file was written by Rob Savoye. (rob@cygnus.com)
 
@@ -74,20 +72,9 @@ gdb_test "whatis v_char" \
     "type = (unsigned char|char)" \
     "whatis char"
 
-# If we did not use the signed keyword when compiling the file, don't
-# expect GDB to know that char is signed.
-if { $hp_cc_compiler || $hp_aCC_compiler } {
-    set signed_keyword_not_used 1
-}
-if $signed_keyword_not_used then {
-    set signed_char "char"
-} else {
-    set signed_char "signed char"
-}
-setup_xfail "a29k-*-*"
 if {!$gcc_compiled} then { setup_xfail "mips-sgi-irix*" }
 gdb_test "whatis v_signed_char" \
-    "type = $signed_char" \
+    "type = (signed char|char)" \
     "whatis signed char"
 
 gdb_test "whatis v_unsigned_char" \
@@ -301,15 +288,13 @@ gdb_test "whatis v_union2" \
     "whatis unnamed union"
 
 
-if { [istarget "hppa*-hp-hpux*"] && $hp_aCC_compiler } {
-    # HP-UX: HP aCC compiler w/ +objdebug option detects language as
-    # c++, so we need the 'void' pattern here.
-    # Without +objdebug compilation option we still need to match ''.
-    # - guo
-    set void "(void|)"
-} else {
-    set void ""
-}
+# HP-UX: HP aCC compiler w/ +objdebug option detects language as
+# c++, so we need the 'void' pattern here.
+# Without +objdebug compilation option we still need to match ''.
+# - guo
+# Also, using stabs we will mark these functions as prototyped.  This
+# is harmless but causes an extra VOID to be printed.
+set void "(void|)"
 
 # test whatis command with functions return type
 gdb_test "whatis v_char_func" \

@@ -1,5 +1,7 @@
-/* Native definitions for alpha running Linux.
-   Copyright (C) 1993, 1994 Free Software Foundation, Inc.
+/* Native definitions for alpha running GNU/Linux.
+
+   Copyright 1993, 1994, 1996, 1998, 2000, 2001, 2002, 2003
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,50 +23,24 @@
 #ifndef NM_LINUX_H
 #define NM_LINUX_H
 
-#include "nm-linux.h"
-
-/* Figure out where the longjmp will land.  We expect that we have just entered
-   longjmp and haven't yet setup the stack frame, so the args are still in the
-   argument regs.  A0_REGNUM points at the jmp_buf structure from which we
-   extract the pc (JB_PC) that we will land at.  The pc is copied into ADDR.
-   This routine returns true on success */
-
-#define GET_LONGJMP_TARGET(ADDR) get_longjmp_target(ADDR)
-extern int
-get_longjmp_target PARAMS ((CORE_ADDR *));
+#include "config/nm-linux.h"
 
 /* ptrace register ``addresses'' are absolute.  */
 
 #define U_REGS_OFFSET 0
 
-/* FIXME: This is probably true, or should be, on all Linux ports.
-   IA64?  Sparc64?  */
-#define PTRACE_ARG3_TYPE long
-
-/* ptrace transfers longs, the ptrace man page is lying.  */
-
-#define PTRACE_XFER_TYPE long
-
 /* The alpha does not step over a breakpoint, the manpage is lying again.  */
 
-#define CANNOT_STEP_BREAKPOINT
-
-/* Linux has shared libraries.  */
-
-#define GDB_TARGET_HAS_SHARED_LIBS
-
-/* Support for shared libraries.  */
-
-#ifdef __ELF__
-#define TARGET_ELF64
-#endif
-
-/* This is a lie.  It's actually in stdio.h. */
-
-#define PSIGNAL_IN_SIGNAL_H
+#define CANNOT_STEP_BREAKPOINT 1
 
 /* Given a pointer to either a gregset_t or fpregset_t, return a
    pointer to the first register.  */
 #define ALPHA_REGSET_BASE(regsetp)  ((long *) (regsetp))
+
+/* Given a pointer to a gregset_t, locate the UNIQUE value.  */
+#define ALPHA_REGSET_UNIQUE(regsetp)  ((long *)(regsetp) + 32)
+
+/* The address of UNIQUE for ptrace.  */
+#define ALPHA_UNIQUE_PTRACE_ADDR 65
 
 #endif /* NM_LINUX_H */

@@ -1,5 +1,6 @@
 /* Remote target glue for the ROM68K ROM monitor.
-   Copyright 1988, 1991, 1992, 1993, 1994, 1995 Free Software Foundation, Inc.
+   Copyright 1988, 1991, 1992, 1993, 1994, 1995, 1998, 1999, 2000, 2001
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -23,15 +24,92 @@
 #include "target.h"
 #include "monitor.h"
 #include "serial.h"
+#include "regcache.h"
+#include "value.h"
 
-static void rom68k_open PARAMS ((char *args, int from_tty));
+#include "m68k-tdep.h"
+
+static void rom68k_open (char *args, int from_tty);
+
+/* Return true if C is a hex digit.
+   We can't use isxdigit here: that is affected by the current locale;
+   ROM68K is not.  */
+static int
+is_hex_digit (int c)
+{
+  return (('0' <= c && c <= '9')
+          || ('a' <= c && c <= 'f')
+          || ('A' <= c && c <= 'F'));
+}
+
+
+/* Convert hex digit A to a number.  */
+static int
+hex_digit_value (int a)
+{
+  if (a >= '0' && a <= '9')
+    return a - '0';
+  else if (a >= 'a' && a <= 'f')
+    return a - 'a' + 10;
+  else if (a >= 'A' && a <= 'F')
+    return a - 'A' + 10;
+  else
+    error ("Invalid hex digit %d", a);
+}
+
+
+/* Return true iff C is a whitespace character.
+   We can't use isspace here: that is affected by the current locale;
+   ROM68K is not.  */
+static int
+is_whitespace (int c)
+{
+  return (c == ' '
+          || c == '\r'
+          || c == '\n'
+          || c == '\t'
+          || c == '\f');
+}
+
+
+/* Parse a string of hex digits starting at HEX, supply them as the
+   value of register REGNO, skip any whitespace, and return a pointer
+   to the next character.
+
+   There is a function in monitor.c, monitor_supply_register, which is
+   supposed to do this job.  However, there is some rather odd stuff
+   in there (whitespace characters don't terminate numbers, for
+   example) that is incorrect for ROM68k.  It's basically impossible
+   to safely tweak monitor_supply_register --- it's used by a zillion
+   other monitors; who knows what behaviors they're depending on.  So
+   instead, we'll just use our own function, which can behave exactly
+   the way we want it to.  */
+static char *
+rom68k_supply_one_register (int regno, unsigned char *hex)
+{
+  ULONGEST value;
+  unsigned char regbuf[MAX_REGISTER_SIZE];
+
+  value = 0;
+  while (*hex != '\0')
+    if (is_hex_digit (*hex))
+      value = (value * 16) + hex_digit_value (*hex++);
+    else
+      break;
+
+  /* Skip any whitespace.  */
+  while (is_whitespace (*hex))
+    hex++;
+
+  store_unsigned_integer (regbuf, register_size (current_gdbarch, regno), value);
+  regcache_raw_supply (current_regcache, regno, regbuf);
+
+  return hex;
+}
+
 
 static void
-rom68k_supply_register (regname, regnamelen, val, vallen)
-     char *regname;
-     int regnamelen;
-     char *val;
-     int vallen;
+rom68k_supply_register (char *regname, int regnamelen, char *val, int vallen)
 {
   int numregs;
   int regno;
@@ -53,13 +131,13 @@ rom68k_supply_register (regname, regnamelen, val, vallen)
       case 'D':
 	if (regname[1] != 'R')
 	  break;
-	regno = D0_REGNUM;
+	regno = M68K_D0_REGNUM;
 	numregs = 8;
 	break;
       case 'A':
 	if (regname[1] != 'R')
 	  break;
-	regno = A0_REGNUM;
+	regno = M68K_A0_REGNUM;
 	numregs = 7;
 	break;
       }
@@ -73,7 +151,7 @@ rom68k_supply_register (regname, regnamelen, val, vallen)
 
   if (regno >= 0)
     while (numregs-- > 0)
-      val = monitor_supply_register (regno++, val);
+      val = rom68k_supply_one_register (regno++, val);
 }
 
 /* This array of registers need to match the indexes used by GDB.
@@ -81,11 +159,24 @@ rom68k_supply_register (regname, regnamelen, val, vallen)
    than does GDB, and don't necessarily support all the registers
    either. So, typing "info reg sp" becomes a "r30".  */
 
-static char *rom68k_regnames[NUM_REGS] =
+static const char *
+rom68k_regname (int index) 
 {
-  "D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7",
-  "A0", "A1", "A2", "A3", "A4", "A5", "A6", "ISP",
-  "SR", "PC"};
+
+  static char *regnames[] =
+  {
+    "D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7",
+    "A0", "A1", "A2", "A3", "A4", "A5", "A6", "ISP",
+    "SR", "PC"
+  };
+  
+  if ((index >= (sizeof (regnames) / sizeof(regnames[0]))) 
+       || (index < 0) || (index >= NUM_REGS))
+    return NULL;
+  else
+    return regnames[index];
+
+}
 
 /* Define the monitor command strings. Since these are passed directly
    through to a printf style function, we may include formatting
@@ -101,7 +192,7 @@ static struct monitor_ops rom68k_cmds;
 static void
 init_rom68k_cmds (void)
 {
-  rom68k_cmds.flags = 0;
+  rom68k_cmds.flags = MO_PRINT_PROGRAM_OUTPUT;
   rom68k_cmds.init = rom68k_inits;	/* monitor init string */
   rom68k_cmds.cont = "go\r";
   rom68k_cmds.step = "st\r";
@@ -144,20 +235,21 @@ init_rom68k_cmds (void)
   rom68k_cmds.cmd_end = ".\r";
   rom68k_cmds.target = &rom68k_ops;
   rom68k_cmds.stopbits = SERIAL_1_STOPBITS;
-  rom68k_cmds.regnames = rom68k_regnames;
+  rom68k_cmds.regnames = NULL;
+  rom68k_cmds.regname = rom68k_regname;
   rom68k_cmds.magic = MONITOR_OPS_MAGIC;
 }				/* init_rom68k_cmds */
 
 static void
-rom68k_open (args, from_tty)
-     char *args;
-     int from_tty;
+rom68k_open (char *args, int from_tty)
 {
   monitor_open (args, &rom68k_cmds, from_tty);
 }
 
+extern initialize_file_ftype _initialize_rom68k; /* -Wmissing-prototypes */
+
 void
-_initialize_rom68k ()
+_initialize_rom68k (void)
 {
   init_rom68k_cmds ();
   init_monitor_ops (&rom68k_ops);

@@ -1,7 +1,8 @@
 /* Low level interface for debugging UnixWare user-mode threads for
    GDB, the GNU debugger.
 
-   Copyright 1999, 2000 Free Software Foundation, Inc.
+   Copyright 1999, 2000, 2001 Free Software Foundation, Inc.
+   Written by Nick Duffek <nsd@cygnus.com>.
 
    This file is part of GDB.
 
@@ -100,32 +101,39 @@
 #include "gdbthread.h"
 #include "target.h"
 #include "inferior.h"
+#include "regcache.h"
 #include <fcntl.h>
 
-/*
- * <thread.h> includes <sys/priocntl.h>, which requires boolean_t from
- * <sys/types.h>, which doesn't typedef boolean_t with gcc.
- */
+/* <thread.h> includes <sys/priocntl.h>, which requires boolean_t from
+   <sys/types.h>, which doesn't typedef boolean_t with gcc. */
+
 #define boolean_t int
 #include <thread.h>
 #undef boolean_t
 
 #include <synch.h>		/* for UnixWare 2.x */
 
+/* Prototypes for supply_gregset etc. */
+#include "gregset.h"
 
-/*
- * Whether to emit debugging output.
- */
+/* Offset from SP to first arg on stack at first instruction of a
+   function.  We provide a default here that's right for most, if not
+   all, targets that use this file.  */
+
+#ifndef SP_ARG0
+#define SP_ARG0 (1 * 4)
+#endif
+
+/* Whether to emit debugging output. */
+
 #define DEBUG 0
 
-/*
- * Default debugging output file, overridden by envvar UWTHR_DEBUG.
- */
+/* Default debugging output file, overridden by envvar UWTHR_DEBUG. */
+
 #define DEBUG_FILE "/dev/tty"
 
-/*
- * #if DEBUG, write string S to the debugging output channel.
- */
+/* #if DEBUG, write string S to the debugging output channel. */
+
 #if !DEBUG
 # define DBG(fmt_and_args)
 # define DBG2(fmt_and_args)
@@ -134,10 +142,9 @@
 # define DBG2(fmt_and_args)
 #endif
 
-/*
- * Back end to CALL_BASE() and TRY_BASE(): evaluate CALL, then convert
- * inferior_pid to a composite thread/process id.
- */
+/* Back end to CALL_BASE() and TRY_BASE(): evaluate CALL, then convert
+   inferior_ptid to a composite thread/process id. */
+
 #define CALL_BASE_1(call)		\
 do {					\
   DBG2(("CALL_BASE(" #call ")"));	\
@@ -145,42 +152,38 @@ do {					\
   do_cleanups (infpid_cleanup);		\
 } while (0)
 
-/*
- * If inferior_pid can be converted to a composite lwp/process id, do so,
- * evaluate base_ops function CALL, and then convert inferior_pid back to a
- * composite thread/process id.
- *
- * Otherwise, issue an error message and return nonlocally.
- */
-#define CALL_BASE(call)					\
-do {							\
-  if (!lwp_infpid ())					\
-    error ("uw-thread: "__FUNCTION__": no lwp");	\
-  CALL_BASE_1 (call);					\
+/* If inferior_ptid can be converted to a composite lwp/process id, do so,
+   evaluate base_ops function CALL, and then convert inferior_ptid back to a
+   composite thread/process id.
+
+   Otherwise, issue an error message and return nonlocally. */
+
+#define CALL_BASE(call)			\
+do {					\
+  if (!lwp_infpid ())			\
+    error ("uw-thread: no lwp");	\
+  CALL_BASE_1 (call);			\
 } while (0)
 
-/*
- * Like CALL_BASE(), but instead of returning nonlocally on error, set
- * *CALLED to whether the inferior_pid conversion was successful.
- */
+/* Like CALL_BASE(), but instead of returning nonlocally on error, set
+   *CALLED to whether the inferior_ptid conversion was successful. */
+
 #define TRY_BASE(call, called)		\
 do {					\
   if ((*(called) = lwp_infpid ()))	\
     CALL_BASE_1 (call);			\
 } while (0)
 
-/*
- * Information passed by thread_iter() to its callback parameter.
- */
+/* Information passed by thread_iter() to its callback parameter. */
+
 typedef struct {
   struct thread_map map;
   __lwp_desc_t lwp;
   CORE_ADDR mapp;
 } iter_t;
 
-/*
- * Private thread data for the thread_info struct.
- */
+/* Private thread data for the thread_info struct. */
+
 struct private_thread_info {
   int stable;		/* 0 if libthread.so is modifying thread map */
   int thrid;		/* thread id assigned by libthread.so */
@@ -203,7 +206,8 @@ static struct target_ops uw_thread_ops;
    they lack current_target's default callbacks. */
 static struct target_ops base_ops;
 
-/* Saved pointer to previous owner of target_new_objfile_hook. */
+/* Saved pointer to previous owner of
+   deprecated_target_new_objfile_hook.  */
 static void (*target_new_objfile_chain)(struct objfile *);
 
 /* Whether we are debugging a user-space thread program.  This isn't
@@ -225,15 +229,14 @@ static CORE_ADDR thr_map_main;
    libthread.so passes null map when calling stub with tc_*_complete. */
 static struct thread_info *switchto_thread;
 
-/* Cleanup chain for safely restoring inferior_pid after CALL_BASE. */
+/* Cleanup chain for safely restoring inferior_ptid after CALL_BASE. */
 static struct cleanup *infpid_cleanup;
 
 
 #if DEBUG
-/*
- * Helper function for DBG() macro: if printf-style FMT is non-null, format it
- * with args and display the result on the debugging output channel.
- */
+/* Helper function for DBG() macro: if printf-style FMT is non-null, format it
+   with args and display the result on the debugging output channel. */
+
 static void
 dbg (char *fmt, ...)
 {
@@ -264,11 +267,10 @@ dbg (char *fmt, ...)
 }
 
 #if 0
-/*
- * Return a string representing composite PID's components.
- */
+/* Return a string representing composite PID's components. */
+
 static char *
-dbgpid (int pid)
+dbgpid (ptid_t ptid)
 {
   static char *buf, buf1[80], buf2[80];
   if (!buf || buf == buf2)
@@ -276,18 +278,17 @@ dbgpid (int pid)
   else
     buf = buf2;
 
-  if (pid <= 0)
-    sprintf (buf, "%d", pid);
+  if (PIDGET (ptid) <= 0)
+    sprintf (buf, "%d", PIDGET (ptid));
   else
-    sprintf (buf, "%s %d/%d", ISTID (pid) ? "thr" : "lwp",
+    sprintf (buf, "%s %ld/%d", ISTID (pid) ? "thr" : "lwp",
 	     TIDGET (pid), PIDGET (pid));
 
   return buf;
 }
 
-/*
- * Return a string representing thread state CHANGE.
- */
+/* Return a string representing thread state CHANGE. */
+
 static char *
 dbgchange (enum thread_change change)
 {
@@ -305,9 +306,8 @@ dbgchange (enum thread_change change)
   }
 }
 
-/*
- * Return a string representing thread STATE.
- */
+/* Return a string representing thread STATE. */
+
 static char *
 dbgstate (int state)
 {
@@ -327,48 +327,44 @@ dbgstate (int state)
 #endif  /* DEBUG */
 
 
-/*
- * Read the contents of _thr_debug into *DEBUGP.  Return success.
- */
+/* Read the contents of _thr_debug into *DEBUGP.  Return success. */
+
 static int
 read_thr_debug (struct thread_debug *debugp)
 {
   return base_ops.to_xfer_memory (thr_debug_addr, (char *)debugp,
-				  sizeof (*debugp), 0, &base_ops);
+				  sizeof (*debugp), 0, NULL, &base_ops);
 }
 
-/*
- * Read into MAP the contents of the thread map at inferior process address
- * MAPP.  Return success.
- */
+/* Read into MAP the contents of the thread map at inferior process address
+   MAPP.  Return success. */
+
 static int
 read_map (CORE_ADDR mapp, struct thread_map *map)
 {
   return base_ops.to_xfer_memory ((CORE_ADDR)THR_MAP (mapp), (char *)map,
-				  sizeof (*map), 0, &base_ops);
+				  sizeof (*map), 0, NULL, &base_ops);
 }
 
-/*
- * Read into LWP the contents of the lwp decriptor at inferior process address
- * LWPP.  Return success.
- */
+/* Read into LWP the contents of the lwp decriptor at inferior process address
+   LWPP.  Return success. */
+
 static int
 read_lwp (CORE_ADDR lwpp, __lwp_desc_t *lwp)
 {
   return base_ops.to_xfer_memory (lwpp, (char *)lwp,
-				  sizeof (*lwp), 0, &base_ops);
+				  sizeof (*lwp), 0, NULL, &base_ops);
 }
 
-/*
- * Iterate through all user threads, applying FUNC(<map>, <lwp>, DATA) until
- *   (a) FUNC returns nonzero,
- *   (b) FUNC has been applied to all threads, or
- *   (c) an error occurs,
- * where <map> is the thread's struct thread_map and <lwp> if non-null is the
- * thread's current __lwp_desc_t.
- *
- * If a call to FUNC returns nonzero, return that value; otherwise, return 0.
- */
+/* Iterate through all user threads, applying FUNC(<map>, <lwp>, DATA) until
+     (a) FUNC returns nonzero,
+     (b) FUNC has been applied to all threads, or
+     (c) an error occurs,
+   where <map> is the thread's struct thread_map and <lwp> if non-null is the
+   thread's current __lwp_desc_t.
+
+   If a call to FUNC returns nonzero, return that value; otherwise, return 0. */
+
 static int
 thread_iter (int (*func)(iter_t *, void *), void *data)
 {
@@ -380,7 +376,7 @@ thread_iter (int (*func)(iter_t *, void *), void *data)
   if (!read_thr_debug (&debug))
     return 0;
   if (!base_ops.to_xfer_memory ((CORE_ADDR)debug.thr_map, (char *)&mapp,
-				sizeof (mapp), 0, &base_ops))
+				sizeof (mapp), 0, NULL, &base_ops))
     return 0;
   if (!mapp)
     return 0;
@@ -404,49 +400,47 @@ thread_iter (int (*func)(iter_t *, void *), void *data)
     }
 }
 
-/*
- * Deactivate user-mode thread support.
- */
+/* Deactivate user-mode thread support. */
+
 static void
 deactivate_uw_thread (void)
 {
+  remove_thread_event_breakpoints ();
   uw_thread_active = 0;
   unpush_target (&uw_thread_ops);
 }
 
-/*
- * Return the composite lwp/process id corresponding to composite
- * id PID.  If PID is a thread with no lwp, return 0.
- */
-static int
-thr_to_lwp (int pid)
+/* Return the composite lwp/process id corresponding to composite
+   id PID.  If PID is a thread with no lwp, return 0. */
+
+static ptid_t
+thr_to_lwp (ptid_t ptid)
 {
   struct thread_info *info;
-  int lid;
+  ptid_t lid;
 
-  if (!ISTID (pid))
-    lid = pid;
-  else if (!(info = find_thread_pid (pid)))
-    lid = 0;
+  if (!ISTID (ptid))
+    lid = ptid;
+  else if (!(info = find_thread_pid (ptid)))
+    lid = null_ptid;
   else if (!info->private->lwpid)
-    lid = 0;
+    lid = null_ptid;
   else
-    lid = MKLID (pid, info->private->lwpid);
+    lid = MKLID (PIDGET (ptid), info->private->lwpid);
 
   DBG2(("  thr_to_lwp(%s) = %s", dbgpid (pid), dbgpid (lid)));
   return lid;
 }
 
-/*
- * find_thread_lwp() callback: return whether TP describes a thread
- * associated with lwp id DATA.
- */
+/* find_thread_lwp() callback: return whether TP describes a thread
+   associated with lwp id DATA. */
+
 static int
 find_thread_lwp_callback (struct thread_info *tp, void *data)
 {
   int lwpid = (int)data;
 
-  if (!ISTID (tp->pid))
+  if (!ISTID (tp->ptid))
     return 0;
   if (!tp->private->stable)
     return 0;
@@ -457,81 +451,77 @@ find_thread_lwp_callback (struct thread_info *tp, void *data)
   return 1;
 }
 
-/*
- * If a thread is associated with lwp id LWPID, return the corresponding
- * member of the global thread list; otherwise, return null.
- */
+/* If a thread is associated with lwp id LWPID, return the corresponding
+   member of the global thread list; otherwise, return null. */
+
 static struct thread_info *
 find_thread_lwp (int lwpid)
 {
   return iterate_over_threads (find_thread_lwp_callback, (void *)lwpid);
 }
 
-/*
- * Return the composite thread/process id corresponding to composite
- * id PID.  If PID is an lwp with no thread, return PID.
- */
-static int
-lwp_to_thr (int pid)
+/* Return the composite thread/process id corresponding to composite
+   id PID.  If PID is an lwp with no thread, return PID. */
+
+static ptid_t
+lwp_to_thr (ptid_t ptid)
 {
   struct thread_info *info;
-  int tid = pid, lwpid;
+  int lwpid;
+  ptid_t tid = ptid;
 
-  if (ISTID (pid))
+  if (ISTID (ptid))
     goto done;
-  if (!(lwpid = LIDGET (pid)))
+  if (!(lwpid = LIDGET (ptid)))
     goto done;
   if (!(info = find_thread_lwp (lwpid)))
     goto done;
-  tid = MKTID (pid, info->private->thrid);
+  tid = MKTID (PIDGET (ptid), info->private->thrid);
 
  done:
-  DBG2((ISTID (tid) ? NULL : "lwp_to_thr: no thr for %s", dbgpid (pid)));
+  DBG2((ISTID (tid) ? NULL : "lwp_to_thr: no thr for %s", dbgpid (ptid)));
   return tid;
 }
 
-/*
- * do_cleanups() callback: convert inferior_pid to a composite
- * thread/process id after having made a procfs call.
- */
+/* do_cleanups() callback: convert inferior_ptid to a composite
+   thread/process id after having made a procfs call. */
+
 static void
 thr_infpid (void *unused)
 {
-  int pid = lwp_to_thr (inferior_pid);
-  DBG2((" inferior_pid from procfs: %s => %s",
-	dbgpid (inferior_pid), dbgpid (pid)));
-  inferior_pid = pid;
+  ptid_t ptid = lwp_to_thr (inferior_ptid);
+  DBG2((" inferior_ptid from procfs: %s => %s",
+	dbgpid (inferior_ptid), dbgpid (ptid)));
+  inferior_ptid = ptid;
 }
 
-/*
- * If possible, convert inferior_pid to a composite lwp/process id in
- * preparation for making a procfs call.  Return success.
- */
+/* If possible, convert inferior_ptid to a composite lwp/process id in
+   preparation for making a procfs call.  Return success. */
+
 static int
 lwp_infpid (void)
 {
-  int pid = thr_to_lwp (inferior_pid);
-  DBG2((" inferior_pid to procfs: %s => %s",
-	dbgpid (inferior_pid), dbgpid (pid)));
+  ptid_t ptid = thr_to_lwp (inferior_ptid);
+  DBG2((" inferior_ptid to procfs: %s => %s",
+	dbgpid (inferior_ptid), dbgpid (ptid)));
 
-  if (!pid)
+  if (ptid_equal (ptid, null_ptid))
     return 0;
 
-  inferior_pid = pid;
+  inferior_ptid = ptid;
   infpid_cleanup = make_cleanup (thr_infpid, NULL);
   return 1;
 }
 
-/*
- * Add to the global thread list a new user-mode thread with system id THRID,
- * lwp id LWPID, map address MAPP, and composite thread/process PID.
- */
+/* Add to the global thread list a new user-mode thread with system id THRID,
+   lwp id LWPID, map address MAPP, and composite thread/process PID. */
+
 static void
-add_thread_uw (int thrid, int lwpid, CORE_ADDR mapp, int pid)
+add_thread_uw (int thrid, int lwpid, CORE_ADDR mapp, ptid_t ptid)
 {
   struct thread_info *newthread;
 
-  if ((newthread = add_thread (pid)) == NULL)
+  if ((newthread = add_thread (ptid)) == NULL)
     error ("failed to create new thread structure");
 
   newthread->private = xmalloc (sizeof (struct private_thread_info));
@@ -541,39 +531,36 @@ add_thread_uw (int thrid, int lwpid, CORE_ADDR mapp, int pid)
   newthread->private->mapp = mapp;
 
   if (target_has_execution)
-    printf_unfiltered ("[New %s]\n", target_pid_to_str (pid));
+    printf_unfiltered ("[New %s]\n", target_pid_to_str (ptid));
 }
 
-/*
- * notice_threads() and find_main() callback: if the thread list doesn't
- * already contain the thread described by ITER, add it if it's the main
- * thread or if !DATA.
- */
+/* notice_threads() and find_main() callback: if the thread list doesn't
+   already contain the thread described by ITER, add it if it's the main
+   thread or if !DATA. */
+
 static int
 notice_thread (iter_t *iter, void *data)
 {
   int thrid = iter->map.thr_tid;
   int lwpid = !iter->map.thr_lwpp ? 0 : iter->lwp.lwp_id;
-  int pid = MKTID (inferior_pid, thrid);
+  ptid_t ptid = MKTID (PIDGET (inferior_ptid), thrid);
 
-  if (!find_thread_pid (pid) && (!data || thrid == 1))
-    add_thread_uw (thrid, lwpid, iter->mapp, pid);
+  if (!find_thread_pid (ptid) && (!data || thrid == 1))
+    add_thread_uw (thrid, lwpid, iter->mapp, ptid);
 
   return 0;
 }
 
-/*
- * Add to the thread list any threads it doesn't already contain.
- */
+/* Add to the thread list any threads it doesn't already contain. */
+
 static void
 notice_threads (void)
 {
   thread_iter (notice_thread, NULL);
 }
 
-/*
- * Return the address of the main thread's map.  On error, return 0.
- */
+/* Return the address of the main thread's map.  On error, return 0. */
+
 static CORE_ADDR
 find_main (void)
 {
@@ -581,18 +568,17 @@ find_main (void)
     {
       struct thread_info *info;
       thread_iter (notice_thread, (void *)1);
-      if ((info = find_thread_pid (MKTID (inferior_pid, 1))))
+      if ((info = find_thread_pid (MKTID (PIDGET (inferior_ptid), 1))))
 	thr_map_main = info->private->mapp;
     }
   return thr_map_main;
 }
 
-/*
- * Attach to process specified by ARGS, then initialize for debugging it
- * and wait for the trace-trap that results from attaching.
- *
- * This function only gets called with uw_thread_active == 0.
- */
+/* Attach to process specified by ARGS, then initialize for debugging it
+   and wait for the trace-trap that results from attaching.
+
+   This function only gets called with uw_thread_active == 0. */
+
 static void
 uw_thread_attach (char *args, int from_tty)
 {
@@ -601,9 +587,8 @@ uw_thread_attach (char *args, int from_tty)
     thr_infpid (NULL);
 }
 
-/*
- * Detach from the process attached to by uw_thread_attach().
- */
+/* Detach from the process attached to by uw_thread_attach(). */
+
 static void
 uw_thread_detach (char *args, int from_tty)
 {
@@ -611,45 +596,48 @@ uw_thread_detach (char *args, int from_tty)
   base_ops.to_detach (args, from_tty);
 }
 
-/*
- * Tell the inferior process to continue running thread PID if >= 0
- * and all threads otherwise.
- */
-static void
-uw_thread_resume (int pid, int step, enum target_signal signo)
-{
-  if (pid > 0 && !(pid = thr_to_lwp (pid)))
-    pid = -1;
+/* Tell the inferior process to continue running thread PID if >= 0
+   and all threads otherwise. */
 
-  CALL_BASE (base_ops.to_resume (pid, step, signo));
+static void
+uw_thread_resume (ptid_t ptid, int step, enum target_signal signo)
+{
+  if (PIDGET (ptid) > 0)
+    {
+      ptid = thr_to_lwp (ptid);
+      if (ptid_equal (ptid, null_ptid))
+	ptid = pid_to_ptid (-1);
+    }
+
+  CALL_BASE (base_ops.to_resume (ptid, step, signo));
 }
 
-/*
- * If the trap we just received from lwp PID was due to a breakpoint
- * on the libthread.so debugging stub, update this module's state
- * accordingly.
- */
+/* If the trap we just received from lwp PID was due to a breakpoint
+   on the libthread.so debugging stub, update this module's state
+   accordingly. */
+
 static void
-libthread_stub (int pid)
+libthread_stub (ptid_t ptid)
 {
   CORE_ADDR sp, mapp, mapp_main;
   enum thread_change change;
   struct thread_map map;
   __lwp_desc_t lwp;
-  int tid = 0, lwpid;
+  int lwpid;
+  ptid_t tid = null_ptid;
   struct thread_info *info;
 
   /* Check for stub breakpoint. */
-  if (read_pc_pid (pid) - DECR_PC_AFTER_BREAK != thr_brk_addr)
+  if (read_pc_pid (ptid) - DECR_PC_AFTER_BREAK != thr_brk_addr)
     return;
 
   /* Retrieve stub args. */
-  sp = read_register_pid (SP_REGNUM, pid);
+  sp = read_register_pid (SP_REGNUM, ptid);
   if (!base_ops.to_xfer_memory (sp + SP_ARG0, (char *)&mapp,
-				sizeof (mapp), 0, &base_ops))
+				sizeof (mapp), 0, NULL, &base_ops))
     goto err;
   if (!base_ops.to_xfer_memory (sp + SP_ARG0 + sizeof (mapp), (char *)&change,
-				sizeof (change), 0, &base_ops))
+				sizeof (change), 0, NULL, &base_ops))
     goto err;
 
   /* create_inferior() may not have finished yet, so notice the main
@@ -669,7 +657,7 @@ libthread_stub (int pid)
       break;
     if (!read_map (mapp, &map))
       goto err;
-    tid = MKTID (pid, map.thr_tid);
+    tid = MKTID (PIDGET (ptid), map.thr_tid);
 
     switch (change) {
     case tc_thread_create:		/* new thread */
@@ -685,8 +673,8 @@ libthread_stub (int pid)
     case tc_thread_exit:		/* thread has exited */
       printf_unfiltered ("[Exited %s]\n", target_pid_to_str (tid));
       delete_thread (tid);
-      if (tid == inferior_pid)
-	inferior_pid = pid;
+      if (ptid_equal (tid, inferior_ptid))
+	inferior_ptid = ptid;
       break;
 
     case tc_switch_begin:		/* lwp is switching threads */
@@ -709,14 +697,13 @@ libthread_stub (int pid)
 
     if (change == tc_switch_complete)
       {
-	/*
-	 * If switchto_thread is the main thread, then (a) the corresponding
-	 * tc_switch_begin probably received a null map argument and therefore
-	 * (b) it may have been a spurious switch following a tc_thread_exit.
-	 *
-	 * Therefore, explicitly query the thread's lwp before caching it in
-	 * its thread list entry.
-	 */
+	/* If switchto_thread is the main thread, then (a) the corresponding
+	   tc_switch_begin probably received a null map argument and therefore
+	   (b) it may have been a spurious switch following a tc_thread_exit.
+
+	   Therefore, explicitly query the thread's lwp before caching it in
+	   its thread list entry. */
+
 	if (!read_map (switchto_thread->private->mapp, &map))
 	  goto err;
 	if (map.thr_lwpp)
@@ -746,27 +733,28 @@ libthread_stub (int pid)
 	dbgchange (change), tid ? dbgstate (map.thr_state) : ""));
 }
 
-/*
- * Wait for thread/lwp/process ID if >= 0 or for any thread otherwise.
- */
-static int
-uw_thread_wait (int pid, struct target_waitstatus *status)
+/* Wait for thread/lwp/process ID if >= 0 or for any thread otherwise. */
+
+static ptid_t
+uw_thread_wait (ptid_t ptid, struct target_waitstatus *status)
 {
-  if (pid > 0)
-    pid = thr_to_lwp (pid);
-  CALL_BASE (pid = base_ops.to_wait (pid > 0 ? pid : -1, status));
+  if (PIDGET (ptid) > 0)
+    ptid = thr_to_lwp (ptid);
+  if (PIDGET (ptid) <= 0)
+    ptid = pid_to_ptid (-1);
+
+  CALL_BASE (ptid = base_ops.to_wait (ptid, status));
 
   if (status->kind == TARGET_WAITKIND_STOPPED &&
       status->value.sig == TARGET_SIGNAL_TRAP)
-    libthread_stub (pid);
+    libthread_stub (ptid);
 
-  return lwp_to_thr (pid);
+  return lwp_to_thr (ptid);
 }
 
-/*
- * Tell gdb about the registers in the thread/lwp/process specified by
- * inferior_pid.
- */
+/* Tell gdb about the registers in the thread/lwp/process specified by
+   inferior_ptid. */
+
 static void
 uw_thread_fetch_registers (int regno)
 {
@@ -778,7 +766,7 @@ uw_thread_fetch_registers (int regno)
   if (called)
     return;
 
-  if (!(info = find_thread_pid (inferior_pid)))
+  if (!(info = find_thread_pid (inferior_ptid)))
     return;
   if (!read_map (info->private->mapp, &map))
     return;
@@ -787,37 +775,35 @@ uw_thread_fetch_registers (int regno)
   supply_fpregset (&map.thr_ucontext.uc_mcontext.fpregs);
 }
 
-/*
- * Store gdb's current view of the register set into the thread/lwp/process
- * specified by inferior_pid.
- */
+/* Store gdb's current view of the register set into the thread/lwp/process
+   specified by inferior_ptid. */
+
 static void
 uw_thread_store_registers (int regno)
 {
   CALL_BASE (base_ops.to_store_registers (regno));
 }
 
-/*
- * Prepare to modify the registers array.
- */
+/* Prepare to modify the registers array. */
+
 static void
 uw_thread_prepare_to_store (void)
 {
   CALL_BASE (base_ops.to_prepare_to_store ());
 }
 
-/*
- * Fork an inferior process and start debugging it.
- *
- * This function only gets called with uw_thread_active == 0.
- */
+/* Fork an inferior process and start debugging it.
+
+   This function only gets called with uw_thread_active == 0. */
+
 static void
-uw_thread_create_inferior (char *exec_file, char *allargs, char **env)
+uw_thread_create_inferior (char *exec_file, char *allargs, char **env,
+			   int from_tty)
 {
   if (uw_thread_active)
     deactivate_uw_thread ();
 
-  procfs_ops.to_create_inferior (exec_file, allargs, env);
+  procfs_ops.to_create_inferior (exec_file, allargs, env, from_tty);
   if (uw_thread_active)
     {
       find_main ();
@@ -825,54 +811,48 @@ uw_thread_create_inferior (char *exec_file, char *allargs, char **env)
     }
 }
 
-/*
- * Kill and forget about the inferior process.
- */
+/* Kill and forget about the inferior process. */
+
 static void
 uw_thread_kill (void)
 {
   base_ops.to_kill ();
 }
 
-/*
- * Clean up after the inferior exits.
- */
+/* Clean up after the inferior exits. */
+
 static void
 uw_thread_mourn_inferior (void)
 {
-  remove_thread_event_breakpoints ();
   deactivate_uw_thread ();
   base_ops.to_mourn_inferior ();
 }
 
-/*
- * Return whether this module can attach to and run processes.
- *
- * This function only gets called with uw_thread_active == 0.
- */
+/* Return whether this module can attach to and run processes.
+
+   This function only gets called with uw_thread_active == 0. */
+
 static int
 uw_thread_can_run (void)
 {
   return procfs_suppress_run;
 }
 
-/*
- * Return whether thread PID is still valid.
- */
+/* Return whether thread PID is still valid. */
+
 static int
-uw_thread_alive (int pid)
+uw_thread_alive (ptid_t ptid)
 {
-  if (!ISTID (pid))
-    return base_ops.to_thread_alive (pid);
+  if (!ISTID (ptid))
+    return base_ops.to_thread_alive (ptid);
 
   /* If it's in the thread list, it's valid, because otherwise
      libthread_stub() would have deleted it. */
-  return in_thread_list (pid);
+  return in_thread_list (ptid);
 }
 
-/*
- * Add to the thread list any threads and lwps it doesn't already contain.
- */
+/* Add to the thread list any threads and lwps it doesn't already contain. */
+
 static void
 uw_thread_find_new_threads (void)
 {
@@ -881,29 +861,27 @@ uw_thread_find_new_threads (void)
   notice_threads ();
 }
 
-/*
- * Return a string for pretty-printing PID in "info threads" output.
- * This may be called by either procfs.c or by generic gdb.
- */
+/* Return a string for pretty-printing PID in "info threads" output.
+   This may be called by either procfs.c or by generic gdb. */
+
 static char *
-uw_thread_pid_to_str (int pid)
+uw_thread_pid_to_str (ptid_t ptid)
 {
-#define FMT "Thread %d"
-  static char buf[sizeof (FMT) + 3 * sizeof (pid)];
+#define FMT "Thread %ld"
+  static char buf[sizeof (FMT) + 3 * sizeof (long)];
 
-  if (!ISTID (pid))
+  if (!ISTID (ptid))
     /* core_ops says "process foo", so call procfs_ops explicitly. */
-    return procfs_ops.to_pid_to_str (pid);
+    return procfs_ops.to_pid_to_str (ptid);
 
-  sprintf (buf, FMT, TIDGET (pid));
+  sprintf (buf, FMT, TIDGET (ptid));
 #undef FMT
   return buf;
 }
 
-/*
- * Return a string displaying INFO state information in "info threads"
- * output.
- */
+/* Return a string displaying INFO state information in "info threads"
+   output. */
+
 static char *
 uw_extra_thread_info (struct thread_info *info)
 {
@@ -913,7 +891,7 @@ uw_extra_thread_info (struct thread_info *info)
   int lwpid;
   char *name;
 
-  if (!ISTID (info->pid))
+  if (!ISTID (info->ptid))
     return NULL;
 
   if (!info->private->stable)
@@ -946,15 +924,14 @@ uw_extra_thread_info (struct thread_info *info)
   return buf;
 }
 
-/*
- * Check whether libthread.so has just been loaded, and if so, try to
- * initialize user-space thread debugging support.
- *
- * libthread.so loading happens while (a) an inferior process is being
- * started by procfs and (b) a core image is being loaded.
- *
- * This function often gets called with uw_thread_active == 0.
- */
+/* Check whether libthread.so has just been loaded, and if so, try to
+   initialize user-space thread debugging support.
+
+   libthread.so loading happens while (a) an inferior process is being
+   started by procfs and (b) a core image is being loaded.
+
+   This function often gets called with uw_thread_active == 0. */
+
 static void
 libthread_init (void)
 {
@@ -1008,7 +985,7 @@ libthread_init (void)
       /* Activate the stub function. */
       onp = (CORE_ADDR)&((struct thread_debug *)thr_debug_addr)->thr_debug_on;
       if (!base_ops.to_xfer_memory ((CORE_ADDR)onp, (char *)&one,
-				    sizeof (one), 1, &base_ops))
+				    sizeof (one), 1, NULL, &base_ops))
 	{
 	  delete_breakpoint (b);
 	  goto err;
@@ -1025,17 +1002,16 @@ libthread_init (void)
   deactivate_uw_thread ();
 }
 
-/*
- * target_new_objfile_hook callback.
- *
- * If OBJFILE is non-null, check whether libthread.so was just loaded,
- * and if so, prepare for user-mode thread debugging.
- *
- * If OBJFILE is null, libthread.so has gone away, so stop debugging
- * user-mode threads.
- *
- * This function often gets called with uw_thread_active == 0.
- */
+/* deprecated_target_new_objfile_hook callback.
+
+   If OBJFILE is non-null, check whether libthread.so was just loaded,
+   and if so, prepare for user-mode thread debugging.
+
+   If OBJFILE is null, libthread.so has gone away, so stop debugging
+   user-mode threads.
+
+   This function often gets called with uw_thread_active == 0. */
+
 static void
 uw_thread_new_objfile (struct objfile *objfile)
 {
@@ -1049,9 +1025,8 @@ uw_thread_new_objfile (struct objfile *objfile)
     target_new_objfile_chain (objfile);
 }
 
-/*
- * Initialize uw_thread_ops.
- */
+/* Initialize uw_thread_ops. */
+
 static void
 init_uw_thread_ops (void)
 {
@@ -1077,10 +1052,9 @@ init_uw_thread_ops (void)
   uw_thread_ops.to_magic              = OPS_MAGIC;
 }
 
-/*
- * Module startup initialization function, automagically called by
- * init.c.
- */
+/* Module startup initialization function, automagically called by
+   init.c. */
+
 void
 _initialize_uw_thread (void)
 {
@@ -1090,6 +1064,6 @@ _initialize_uw_thread (void)
   procfs_suppress_run = 1;
 
   /* Notice when libthread.so gets loaded. */
-  target_new_objfile_chain = target_new_objfile_hook;
-  target_new_objfile_hook = uw_thread_new_objfile;
+  target_new_objfile_chain = deprecated_target_new_objfile_hook;
+  deprecated_target_new_objfile_hook = uw_thread_new_objfile;
 }

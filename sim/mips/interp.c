@@ -13,9 +13,6 @@
    THIS SOFTWARE INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
    MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
 
-   $Revision$
-   $Date$             
-
 NOTEs:
 
 The IDT monitor (found on the VR4300 board), seems to lie about
@@ -64,8 +61,8 @@ code on the hardware.
 #include "getopt.h"
 #include "libiberty.h"
 #include "bfd.h"
-#include "callback.h"   /* GDB simulator callback interface */
-#include "remote-sim.h" /* GDB simulator interface */
+#include "gdb/callback.h"   /* GDB simulator callback interface */
+#include "gdb/remote-sim.h" /* GDB simulator interface */
 
 #include "sysdep.h"
 
@@ -329,7 +326,7 @@ SIM_DESC
 sim_open (kind, cb, abfd, argv)
      SIM_OPEN_KIND kind;
      host_callback *cb;
-     struct _bfd *abfd;
+     struct bfd *abfd;
      char **argv;
 {
   SIM_DESC sd = sim_state_alloc (kind, cb);
@@ -456,17 +453,18 @@ sim_open (kind, cb, abfd, argv)
 			   0xA8000000 + (i * size));
 	}
 
-      /* Dummy memory regions for unsimulated devices */
+      /* Dummy memory regions for unsimulated devices - sorted by address */
 
-      sim_do_commandf (sd, "memory alias 0x%lx@1,0x%lx", 0xFFFFE000, 0x01c); /* EBIF */
-      sim_do_commandf (sd, "memory alias 0x%lx@1,0x%lx", 0xFFFF9000, 0x200); /* EBIF */
-      sim_do_commandf (sd, "memory alias 0x%lx@1,0x%lx", 0xFFFFF500, 0x300); /* PIO */
-      sim_do_commandf (sd, "memory alias 0x%lx@1,0x%lx", 0xFFFF8000, 0x804); /* DRAMC */
       sim_do_commandf (sd, "memory alias 0x%lx@1,0x%lx", 0xB1000000, 0x400); /* ISA I/O */
       sim_do_commandf (sd, "memory alias 0x%lx@1,0x%lx", 0xB2100000, 0x004); /* ISA ctl */
       sim_do_commandf (sd, "memory alias 0x%lx@1,0x%lx", 0xB2500000, 0x004); /* LED/switch */
       sim_do_commandf (sd, "memory alias 0x%lx@1,0x%lx", 0xB2700000, 0x004); /* RTC */
       sim_do_commandf (sd, "memory alias 0x%lx@1,0x%lx", 0xB3C00000, 0x004); /* RTC */
+      sim_do_commandf (sd, "memory alias 0x%lx@1,0x%lx", 0xFFFF8000, 0x900); /* DRAMC */
+      sim_do_commandf (sd, "memory alias 0x%lx@1,0x%lx", 0xFFFF9000, 0x200); /* EBIF */
+      sim_do_commandf (sd, "memory alias 0x%lx@1,0x%lx", 0xFFFFE000, 0x01c); /* EBIF */
+      sim_do_commandf (sd, "memory alias 0x%lx@1,0x%lx", 0xFFFFF500, 0x300); /* PIO */
+
 
       /* --- simulated devices --- */
       sim_hw_parse (sd, "/tx3904irc@0xffffc000/reg 0xffffc000 0x20");
@@ -577,7 +575,7 @@ sim_open (kind, cb, abfd, argv)
       {
 	if (rn < 32)
 	  cpu->register_widths[rn] = WITH_TARGET_WORD_BITSIZE;
-	else if ((rn >= FGRIDX) && (rn < (FGRIDX + NR_FGR)))
+	else if ((rn >= FGR_BASE) && (rn < (FGR_BASE + NR_FGR)))
 	  cpu->register_widths[rn] = WITH_TARGET_FLOATING_POINT_BITSIZE;
 	else if ((rn >= 33) && (rn <= 37))
 	  cpu->register_widths[rn] = WITH_TARGET_WORD_BITSIZE;
@@ -851,26 +849,26 @@ sim_store_register (sd,rn,memory,length)
 
 
 
-  if (rn >= FGRIDX && rn < FGRIDX + NR_FGR)
+  if (rn >= FGR_BASE && rn < FGR_BASE + NR_FGR)
     {
-      cpu->fpr_state[rn - FGRIDX] = fmt_uninterpreted;
+      cpu->fpr_state[rn - FGR_BASE] = fmt_uninterpreted;
       if (cpu->register_widths[rn] == 32)
 	{
 	  if (length == 8)
 	    {
-	      cpu->fgr[rn - FGRIDX] = 
+	      cpu->fgr[rn - FGR_BASE] = 
 		(unsigned32) T2H_8 (*(unsigned64*)memory);
 	      return 8;
 	    }
 	  else
 	    {
-	      cpu->fgr[rn - FGRIDX] = T2H_4 (*(unsigned32*)memory);
+	      cpu->fgr[rn - FGR_BASE] = T2H_4 (*(unsigned32*)memory);
 	      return 4;
 	    }
 	}
       else
 	{
-	  cpu->fgr[rn - FGRIDX] = T2H_8 (*(unsigned64*)memory);
+	  cpu->fgr[rn - FGR_BASE] = T2H_8 (*(unsigned64*)memory);
 	  return 8;
 	}
     }
@@ -923,25 +921,25 @@ sim_fetch_register (sd,rn,memory,length)
 
 
   /* Any floating point register */
-  if (rn >= FGRIDX && rn < FGRIDX + NR_FGR)
+  if (rn >= FGR_BASE && rn < FGR_BASE + NR_FGR)
     {
       if (cpu->register_widths[rn] == 32)
 	{
 	  if (length == 8)
 	    {
 	      *(unsigned64*)memory =
-		H2T_8 ((unsigned32) (cpu->fgr[rn - FGRIDX]));
+		H2T_8 ((unsigned32) (cpu->fgr[rn - FGR_BASE]));
 	      return 8;
 	    }
 	  else
 	    {
-	      *(unsigned32*)memory = H2T_4 (cpu->fgr[rn - FGRIDX]);
+	      *(unsigned32*)memory = H2T_4 (cpu->fgr[rn - FGR_BASE]);
 	      return 4;
 	    }
 	}
       else
 	{
-	  *(unsigned64*)memory = H2T_8 (cpu->fgr[rn - FGRIDX]);
+	  *(unsigned64*)memory = H2T_8 (cpu->fgr[rn - FGR_BASE]);
 	  return 8;
 	}
     }
@@ -973,7 +971,7 @@ sim_fetch_register (sd,rn,memory,length)
 SIM_RC
 sim_create_inferior (sd, abfd, argv,env)
      SIM_DESC sd;
-     struct _bfd *abfd;
+     struct bfd *abfd;
      char **argv;
      char **env;
 {
@@ -1079,7 +1077,10 @@ sim_firmware_command (SIM_DESC sd, char *arg)
 	  }
       }
     else
-      address_present = 0;
+      {
+	address_present = 0;
+	address = -1; /* Dummy value.  */
+      }
   }
 
   if (! strncmp (arg, "idt", 3))
@@ -1130,7 +1131,7 @@ Recognized firmware names are: `idt', `pmon', `lsipmon', and `none'.\n",
 
 
 /* Simple monitor interface (currently setup for the IDT and PMON monitors) */
-void
+int
 sim_monitor (SIM_DESC sd,
 	     sim_cpu *cpu,
 	     address_word cia,
@@ -1225,7 +1226,7 @@ sim_monitor (SIM_DESC sd,
 	break;
       }
 
-    case 28 : /* PMON flush_cache */
+    case 28: /* PMON flush_cache */
       break;
 
     case 55: /* void get_mem_info(unsigned int *ptr) */
@@ -1240,11 +1241,11 @@ sim_monitor (SIM_DESC sd,
 	sim_write (sd, A0 + 0, (char *)&value, 4);
 	sim_write (sd, A0 + 4, (char *)&zero, 4);
 	sim_write (sd, A0 + 8, (char *)&zero, 4);
-	/* sim_io_eprintf (sd, "sim: get_mem_info() depreciated\n"); */
+	/* sim_io_eprintf (sd, "sim: get_mem_info() deprecated\n"); */
 	break;
       }
     
-    case 158 : /* PMON printf */
+    case 158: /* PMON printf */
       /* in:  A0 = pointer to format string */
       /*      A1 = optional argument 1 */
       /*      A2 = optional argument 2 */
@@ -1360,11 +1361,10 @@ sim_monitor (SIM_DESC sd,
       }
 
     default:
-      sim_io_error (sd, "TODO: sim_monitor(%d) : PC = 0x%s\n",
-		    reason, pr_addr(cia));
-      break;
+      /* Unknown reason.  */
+      return 0;
   }
-  return;
+  return 1;
 }
 
 /* Store a word into memory.  */
@@ -1429,7 +1429,7 @@ load_word (SIM_DESC sd,
 	  LoadMemory (&memval,NULL,uncached, AccessLength_WORD, paddr, vaddr,
 			       isDATA, isREAL);
 	  byte = (vaddr & mask) ^ (bigend << 2);
-	  return SIGNEXTEND (((memval >> (8 * byte)) & 0xffffffff), 32);
+	  return EXTEND32 (memval >> (8 * byte));
 	}
     }
 
@@ -1674,7 +1674,7 @@ signal_exception (SIM_DESC sd,
 
   switch (exception) {
 
-    case DebugBreakPoint :
+    case DebugBreakPoint:
       if (! (Debug & Debug_DM))
         {
           if (INDELAYSLOT())
@@ -1697,7 +1697,7 @@ signal_exception (SIM_DESC sd,
         }
       break;
 
-    case ReservedInstruction :
+    case ReservedInstruction:
      {
        va_list ap;
        unsigned int instruction;
@@ -1715,7 +1715,10 @@ signal_exception (SIM_DESC sd,
           perform this magic. */
        if ((instruction & RSVD_INSTRUCTION_MASK) == RSVD_INSTRUCTION)
 	 {
-	   sim_monitor (SD, CPU, cia, ((instruction >> RSVD_INSTRUCTION_ARG_SHIFT) & RSVD_INSTRUCTION_ARG_MASK) );
+	   int reason = (instruction >> RSVD_INSTRUCTION_ARG_SHIFT) & RSVD_INSTRUCTION_ARG_MASK;
+	   if (!sim_monitor (SD, CPU, cia, reason))
+	     sim_io_error (sd, "sim_monitor: unhandled reason = %d, pc = 0x%s\n", reason, pr_addr (cia));
+
 	   /* NOTE: This assumes that a branch-and-link style
 	      instruction was used to enter the vector (which is the
 	      case with the current IDT monitor). */
@@ -1805,7 +1808,7 @@ signal_exception (SIM_DESC sd,
 #ifdef SUBTARGET_3900
 	 /* Exception vector: BEV=0 BFC00000 / BEF=1 BFC00000  */
 	 PC = (signed)0xBFC00000;
-#endif SUBTARGET_3900
+#endif /* SUBTARGET_3900 */
 	 return;
 
        case TLBModification:
@@ -1845,7 +1848,7 @@ signal_exception (SIM_DESC sd,
 	 sim_engine_halt (SD, CPU, NULL, PC,
 			  sim_stopped, SIM_SIGTRAP);
 
-       default : /* Unknown internal exception */
+       default: /* Unknown internal exception */
 	 PC = EPC;
 	 sim_engine_halt (SD, CPU, NULL, PC,
 			  sim_stopped, SIM_SIGABRT);
@@ -1869,1093 +1872,30 @@ signal_exception (SIM_DESC sd,
 
 
 
-#if defined(WARN_RESULT)
-/* Description from page A-26 of the "MIPS IV Instruction Set" manual (revision 3.1) */
-/* This function indicates that the result of the operation is
-   undefined. However, this should not affect the instruction
-   stream. All that is meant to happen is that the destination
-   register is set to an undefined result. To keep the simulator
-   simple, we just don't bother updating the destination register, so
-   the overall result will be undefined. If desired we can stop the
-   simulator by raising a pseudo-exception. */
-#define UndefinedResult() undefined_result (sd,cia)
-static void
-undefined_result(sd,cia)
-     SIM_DESC sd;
-     address_word cia;
-{
-  sim_io_eprintf(sd,"UndefinedResult: PC = 0x%s\n",pr_addr(cia));
-#if 0 /* Disabled for the moment, since it actually happens a lot at the moment. */
-  state |= simSTOP;
-#endif
-  return;
-}
-#endif /* WARN_RESULT */
+/* This function implements what the MIPS32 and MIPS64 ISAs define as
+   "UNPREDICTABLE" behaviour.
 
-/*-- FPU support routines ---------------------------------------------------*/
+   About UNPREDICTABLE behaviour they say: "UNPREDICTABLE results
+   may vary from processor implementation to processor implementation,
+   instruction to instruction, or as a function of time on the same
+   implementation or instruction.  Software can never depend on results
+   that are UNPREDICTABLE. ..."  (MIPS64 Architecture for Programmers
+   Volume II, The MIPS64 Instruction Set.  MIPS Document MD00087 revision
+   0.95, page 2.)
+  
+   For UNPREDICTABLE behaviour, we print a message, if possible print
+   the offending instructions mips.igen instruction name (provided by
+   the caller), and stop the simulator.
 
-/* Numbers are held in normalized form. The SINGLE and DOUBLE binary
-   formats conform to ANSI/IEEE Std 754-1985. */
-/* SINGLE precision floating:
- *    seeeeeeeefffffffffffffffffffffff
- *      s =  1bit  = sign
- *      e =  8bits = exponent
- *      f = 23bits = fraction
- */
-/* SINGLE precision fixed:
- *    siiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
- *      s =  1bit  = sign
- *      i = 31bits = integer
- */
-/* DOUBLE precision floating:
- *    seeeeeeeeeeeffffffffffffffffffffffffffffffffffffffffffffffffffff
- *      s =  1bit  = sign
- *      e = 11bits = exponent
- *      f = 52bits = fraction
- */
-/* DOUBLE precision fixed:
- *    siiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
- *      s =  1bit  = sign
- *      i = 63bits = integer
- */
-
-/* Extract sign-bit: */
-#define FP_S_s(v)    (((v) & ((unsigned)1 << 31)) ? 1 : 0)
-#define FP_D_s(v)    (((v) & ((uword64)1 << 63)) ? 1 : 0)
-/* Extract biased exponent: */
-#define FP_S_be(v)   (((v) >> 23) & 0xFF)
-#define FP_D_be(v)   (((v) >> 52) & 0x7FF)
-/* Extract unbiased Exponent: */
-#define FP_S_e(v)    (FP_S_be(v) - 0x7F)
-#define FP_D_e(v)    (FP_D_be(v) - 0x3FF)
-/* Extract complete fraction field: */
-#define FP_S_f(v)    ((v) & ~((unsigned)0x1FF << 23))
-#define FP_D_f(v)    ((v) & ~((uword64)0xFFF << 52))
-/* Extract numbered fraction bit: */
-#define FP_S_fb(b,v) (((v) & (1 << (23 - (b)))) ? 1 : 0)
-#define FP_D_fb(b,v) (((v) & (1 << (52 - (b)))) ? 1 : 0)
-
-/* Explicit QNaN values used when value required: */
-#define FPQNaN_SINGLE   (0x7FBFFFFF)
-#define FPQNaN_WORD     (0x7FFFFFFF)
-#define FPQNaN_DOUBLE   (((uword64)0x7FF7FFFF << 32) | 0xFFFFFFFF)
-#define FPQNaN_LONG     (((uword64)0x7FFFFFFF << 32) | 0xFFFFFFFF)
-
-/* Explicit Infinity values used when required: */
-#define FPINF_SINGLE    (0x7F800000)
-#define FPINF_DOUBLE    (((uword64)0x7FF00000 << 32) | 0x00000000)
-
-#define RMMODE(v) (((v) == FP_RM_NEAREST) ? "Round" : (((v) == FP_RM_TOZERO) ? "Trunc" : (((v) == FP_RM_TOPINF) ? "Ceil" : "Floor")))
-#define DOFMT(v)  (((v) == fmt_single) ? "single" : (((v) == fmt_double) ? "double" : (((v) == fmt_word) ? "word" : (((v) == fmt_long) ? "long" : (((v) == fmt_unknown) ? "<unknown>" : (((v) == fmt_uninterpreted) ? "<uninterpreted>" : (((v) == fmt_uninterpreted_32) ? "<uninterpreted_32>" : (((v) == fmt_uninterpreted_64) ? "<uninterpreted_64>" : "<format error>"))))))))
-
-uword64
-value_fpr (SIM_DESC sd,
-	   sim_cpu *cpu,
-	   address_word cia,
-	   int fpr,
-	   FP_formats fmt)
-{
-  uword64 value = 0;
-  int err = 0;
-
-  /* Treat unused register values, as fixed-point 64bit values: */
-  if ((fmt == fmt_uninterpreted) || (fmt == fmt_unknown))
-#if 1
-   /* If request to read data as "uninterpreted", then use the current
-      encoding: */
-   fmt = FPR_STATE[fpr];
-#else
-   fmt = fmt_long;
-#endif
-
-  /* For values not yet accessed, set to the desired format: */
-  if (FPR_STATE[fpr] == fmt_uninterpreted) {
-    FPR_STATE[fpr] = fmt;
-#ifdef DEBUG
-    printf("DBG: Register %d was fmt_uninterpreted. Now %s\n",fpr,DOFMT(fmt));
-#endif /* DEBUG */
-  }
-  if (fmt != FPR_STATE[fpr]) {
-    sim_io_eprintf(sd,"FPR %d (format %s) being accessed with format %s - setting to unknown (PC = 0x%s)\n",fpr,DOFMT(FPR_STATE[fpr]),DOFMT(fmt),pr_addr(cia));
-    FPR_STATE[fpr] = fmt_unknown;
-  }
-
-  if (FPR_STATE[fpr] == fmt_unknown) {
-   /* Set QNaN value: */
-   switch (fmt) {
-    case fmt_single:
-     value = FPQNaN_SINGLE;
-     break;
-
-    case fmt_double:
-     value = FPQNaN_DOUBLE;
-     break;
-
-    case fmt_word:
-     value = FPQNaN_WORD;
-     break;
-
-    case fmt_long:
-     value = FPQNaN_LONG;
-     break;
-
-    default:
-     err = -1;
-     break;
-   }
-  } else if (SizeFGR() == 64) {
-    switch (fmt) {
-     case fmt_single:
-     case fmt_word:
-      value = (FGR[fpr] & 0xFFFFFFFF);
-      break;
-
-     case fmt_uninterpreted:
-     case fmt_double:
-     case fmt_long:
-      value = FGR[fpr];
-      break;
-
-     default :
-      err = -1;
-      break;
-    }
-  } else {
-    switch (fmt) {
-     case fmt_single:
-     case fmt_word:
-      value = (FGR[fpr] & 0xFFFFFFFF);
-      break;
-
-     case fmt_uninterpreted:
-     case fmt_double:
-     case fmt_long:
-      if ((fpr & 1) == 0) { /* even registers only */
-#ifdef DEBUG
-	printf("DBG: ValueFPR: FGR[%d] = %s, FGR[%d] = %s\n", 
-	       fpr+1, pr_uword64( (uword64) FGR[fpr+1] ),
-	       fpr, pr_uword64( (uword64) FGR[fpr] ));
-#endif
-	value = ((((uword64)FGR[fpr+1]) << 32) | (FGR[fpr] & 0xFFFFFFFF));
-      } else {
-	SignalException(ReservedInstruction,0);
-      }
-      break;
-
-     default :
-      err = -1;
-      break;
-    }
-  }
-
-  if (err)
-   SignalExceptionSimulatorFault ("Unrecognised FP format in ValueFPR()");
-
-#ifdef DEBUG
-  printf("DBG: ValueFPR: fpr = %d, fmt = %s, value = 0x%s : PC = 0x%s : SizeFGR() = %d\n",fpr,DOFMT(fmt),pr_uword64(value),pr_addr(cia),SizeFGR());
-#endif /* DEBUG */
-
-  return(value);
-}
-
+   XXX FIXME: eventually, stopping the simulator should be made conditional
+   on a command-line option.  */
 void
-store_fpr (SIM_DESC sd,
-	   sim_cpu *cpu,
-	   address_word cia,
-	   int fpr,
-	   FP_formats fmt,
-	   uword64 value)
+unpredictable_action(sim_cpu *cpu, address_word cia)
 {
-  int err = 0;
+  SIM_DESC sd = CPU_STATE(cpu);
 
-#ifdef DEBUG
-  printf("DBG: StoreFPR: fpr = %d, fmt = %s, value = 0x%s : PC = 0x%s : SizeFGR() = %d,\n",fpr,DOFMT(fmt),pr_uword64(value),pr_addr(cia),SizeFGR());
-#endif /* DEBUG */
-
-  if (SizeFGR() == 64) {
-    switch (fmt) {
-      case fmt_uninterpreted_32:
-	fmt = fmt_uninterpreted;
-      case fmt_single :
-      case fmt_word :
-       FGR[fpr] = (((uword64)0xDEADC0DE << 32) | (value & 0xFFFFFFFF));
-       FPR_STATE[fpr] = fmt;
-       break;
-
-      case fmt_uninterpreted_64:
-	fmt = fmt_uninterpreted;
-      case fmt_uninterpreted:
-      case fmt_double :
-      case fmt_long :
-       FGR[fpr] = value;
-       FPR_STATE[fpr] = fmt;
-       break;
-
-      default :
-       FPR_STATE[fpr] = fmt_unknown;
-       err = -1;
-       break;
-    }
-  } else {
-    switch (fmt) {
-      case fmt_uninterpreted_32:
-	fmt = fmt_uninterpreted;
-      case fmt_single :
-      case fmt_word :
-       FGR[fpr] = (value & 0xFFFFFFFF);
-       FPR_STATE[fpr] = fmt;
-       break;
-
-      case fmt_uninterpreted_64:
-	fmt = fmt_uninterpreted;
-      case fmt_uninterpreted:
-      case fmt_double :
-      case fmt_long :
-	if ((fpr & 1) == 0) { /* even register number only */
-	  FGR[fpr+1] = (value >> 32);
-	  FGR[fpr] = (value & 0xFFFFFFFF);
-	  FPR_STATE[fpr + 1] = fmt;
-	  FPR_STATE[fpr] = fmt;
-	} else {
-	  FPR_STATE[fpr] = fmt_unknown;
-	  FPR_STATE[fpr + 1] = fmt_unknown;
-	  SignalException(ReservedInstruction,0);
-	}
-       break;
-
-      default :
-       FPR_STATE[fpr] = fmt_unknown;
-       err = -1;
-       break;
-    }
-  }
-#if defined(WARN_RESULT)
-  else
-    UndefinedResult();
-#endif /* WARN_RESULT */
-
-  if (err)
-   SignalExceptionSimulatorFault ("Unrecognised FP format in StoreFPR()");
-
-#ifdef DEBUG
-  printf("DBG: StoreFPR: fpr[%d] = 0x%s (format %s)\n",fpr,pr_uword64(FGR[fpr]),DOFMT(fmt));
-#endif /* DEBUG */
-
-  return;
-}
-
-int
-NaN(op,fmt)
-     uword64 op;
-     FP_formats fmt; 
-{
-  int boolean = 0;
-  switch (fmt) {
-   case fmt_single:
-   case fmt_word:
-    {
-      sim_fpu wop;
-      sim_fpu_32to (&wop, op);
-      boolean = sim_fpu_is_nan (&wop);
-      break;
-    }
-   case fmt_double:
-   case fmt_long:
-    {
-      sim_fpu wop;
-      sim_fpu_64to (&wop, op);
-      boolean = sim_fpu_is_nan (&wop);
-      break;
-    }
-   default:
-    fprintf (stderr, "Bad switch\n");
-    abort ();
-  }
-
-#ifdef DEBUG
-printf("DBG: NaN: returning %d for 0x%s (format = %s)\n",boolean,pr_addr(op),DOFMT(fmt));
-#endif /* DEBUG */
-
-  return(boolean);
-}
-
-int
-Infinity(op,fmt)
-     uword64 op;
-     FP_formats fmt; 
-{
-  int boolean = 0;
-
-#ifdef DEBUG
-  printf("DBG: Infinity: format %s 0x%s\n",DOFMT(fmt),pr_addr(op));
-#endif /* DEBUG */
-
-  switch (fmt) {
-   case fmt_single:
-    {
-      sim_fpu wop;
-      sim_fpu_32to (&wop, op);
-      boolean = sim_fpu_is_infinity (&wop);
-      break;
-    }
-   case fmt_double:
-    {
-      sim_fpu wop;
-      sim_fpu_64to (&wop, op);
-      boolean = sim_fpu_is_infinity (&wop);
-      break;
-    }
-   default:
-    printf("DBG: TODO: unrecognised format (%s) for Infinity check\n",DOFMT(fmt));
-    break;
-  }
-
-#ifdef DEBUG
-  printf("DBG: Infinity: returning %d for 0x%s (format = %s)\n",boolean,pr_addr(op),DOFMT(fmt));
-#endif /* DEBUG */
-
-  return(boolean);
-}
-
-int
-Less(op1,op2,fmt)
-     uword64 op1;
-     uword64 op2;
-     FP_formats fmt; 
-{
-  int boolean = 0;
-
-  /* Argument checking already performed by the FPCOMPARE code */
-
-#ifdef DEBUG
-  printf("DBG: Less: %s: op1 = 0x%s : op2 = 0x%s\n",DOFMT(fmt),pr_addr(op1),pr_addr(op2));
-#endif /* DEBUG */
-
-  /* The format type should already have been checked: */
-  switch (fmt) {
-   case fmt_single:
-    {
-      sim_fpu wop1;
-      sim_fpu wop2;
-      sim_fpu_32to (&wop1, op1);
-      sim_fpu_32to (&wop2, op2);
-      boolean = sim_fpu_is_lt (&wop1, &wop2);
-      break;
-    }
-   case fmt_double:
-    {
-      sim_fpu wop1;
-      sim_fpu wop2;
-      sim_fpu_64to (&wop1, op1);
-      sim_fpu_64to (&wop2, op2);
-      boolean = sim_fpu_is_lt (&wop1, &wop2);
-      break;
-    }
-   default:
-    fprintf (stderr, "Bad switch\n");
-    abort ();
-  }
-
-#ifdef DEBUG
-  printf("DBG: Less: returning %d (format = %s)\n",boolean,DOFMT(fmt));
-#endif /* DEBUG */
-
-  return(boolean);
-}
-
-int
-Equal(op1,op2,fmt)
-     uword64 op1;
-     uword64 op2;
-     FP_formats fmt; 
-{
-  int boolean = 0;
-
-  /* Argument checking already performed by the FPCOMPARE code */
-
-#ifdef DEBUG
-  printf("DBG: Equal: %s: op1 = 0x%s : op2 = 0x%s\n",DOFMT(fmt),pr_addr(op1),pr_addr(op2));
-#endif /* DEBUG */
-
-  /* The format type should already have been checked: */
-  switch (fmt) {
-   case fmt_single:
-    {
-      sim_fpu wop1;
-      sim_fpu wop2;
-      sim_fpu_32to (&wop1, op1);
-      sim_fpu_32to (&wop2, op2);
-      boolean = sim_fpu_is_eq (&wop1, &wop2);
-      break;
-    }
-   case fmt_double:
-    {
-      sim_fpu wop1;
-      sim_fpu wop2;
-      sim_fpu_64to (&wop1, op1);
-      sim_fpu_64to (&wop2, op2);
-      boolean = sim_fpu_is_eq (&wop1, &wop2);
-      break;
-    }
-   default:
-    fprintf (stderr, "Bad switch\n");
-    abort ();
-  }
-
-#ifdef DEBUG
-  printf("DBG: Equal: returning %d (format = %s)\n",boolean,DOFMT(fmt));
-#endif /* DEBUG */
-
-  return(boolean);
-}
-
-uword64
-AbsoluteValue(op,fmt)
-     uword64 op;
-     FP_formats fmt; 
-{
-  uword64 result = 0;
-
-#ifdef DEBUG
-  printf("DBG: AbsoluteValue: %s: op = 0x%s\n",DOFMT(fmt),pr_addr(op));
-#endif /* DEBUG */
-
-  /* The format type should already have been checked: */
-  switch (fmt) {
-   case fmt_single:
-    {
-      sim_fpu wop;
-      unsigned32 ans;
-      sim_fpu_32to (&wop, op);
-      sim_fpu_abs (&wop, &wop);
-      sim_fpu_to32 (&ans, &wop);
-      result = ans;
-      break;
-    }
-   case fmt_double:
-    {
-      sim_fpu wop;
-      unsigned64 ans;
-      sim_fpu_64to (&wop, op);
-      sim_fpu_abs (&wop, &wop);
-      sim_fpu_to64 (&ans, &wop);
-      result = ans;
-      break;
-    }
-   default:
-    fprintf (stderr, "Bad switch\n");
-    abort ();
-  }
-
-  return(result);
-}
-
-uword64
-Negate(op,fmt)
-     uword64 op;
-     FP_formats fmt; 
-{
-  uword64 result = 0;
-
-#ifdef DEBUG
-  printf("DBG: Negate: %s: op = 0x%s\n",DOFMT(fmt),pr_addr(op));
-#endif /* DEBUG */
-
-  /* The format type should already have been checked: */
-  switch (fmt) {
-   case fmt_single:
-    {
-      sim_fpu wop;
-      unsigned32 ans;
-      sim_fpu_32to (&wop, op);
-      sim_fpu_neg (&wop, &wop);
-      sim_fpu_to32 (&ans, &wop);
-      result = ans;
-      break;
-    }
-   case fmt_double:
-    {
-      sim_fpu wop;
-      unsigned64 ans;
-      sim_fpu_64to (&wop, op);
-      sim_fpu_neg (&wop, &wop);
-      sim_fpu_to64 (&ans, &wop);
-      result = ans;
-      break;
-    }
-   default:
-    fprintf (stderr, "Bad switch\n");
-    abort ();
-  }
-
-  return(result);
-}
-
-uword64
-Add(op1,op2,fmt)
-     uword64 op1;
-     uword64 op2;
-     FP_formats fmt; 
-{
-  uword64 result = 0;
-
-#ifdef DEBUG
-  printf("DBG: Add: %s: op1 = 0x%s : op2 = 0x%s\n",DOFMT(fmt),pr_addr(op1),pr_addr(op2));
-#endif /* DEBUG */
-
-  /* The registers must specify FPRs valid for operands of type
-     "fmt". If they are not valid, the result is undefined. */
-
-  /* The format type should already have been checked: */
-  switch (fmt) {
-   case fmt_single:
-    {
-      sim_fpu wop1;
-      sim_fpu wop2;
-      sim_fpu ans;
-      unsigned32 res;
-      sim_fpu_32to (&wop1, op1);
-      sim_fpu_32to (&wop2, op2);
-      sim_fpu_add (&ans, &wop1, &wop2);
-      sim_fpu_to32 (&res, &ans);
-      result = res;
-      break;
-    }
-   case fmt_double:
-    {
-      sim_fpu wop1;
-      sim_fpu wop2;
-      sim_fpu ans;
-      unsigned64 res;
-      sim_fpu_64to (&wop1, op1);
-      sim_fpu_64to (&wop2, op2);
-      sim_fpu_add (&ans, &wop1, &wop2);
-      sim_fpu_to64 (&res, &ans);
-      result = res;
-      break;
-    }
-   default:
-    fprintf (stderr, "Bad switch\n");
-    abort ();
-  }
-
-#ifdef DEBUG
-  printf("DBG: Add: returning 0x%s (format = %s)\n",pr_addr(result),DOFMT(fmt));
-#endif /* DEBUG */
-
-  return(result);
-}
-
-uword64
-Sub(op1,op2,fmt)
-     uword64 op1;
-     uword64 op2;
-     FP_formats fmt; 
-{
-  uword64 result = 0;
-
-#ifdef DEBUG
-  printf("DBG: Sub: %s: op1 = 0x%s : op2 = 0x%s\n",DOFMT(fmt),pr_addr(op1),pr_addr(op2));
-#endif /* DEBUG */
-
-  /* The registers must specify FPRs valid for operands of type
-     "fmt". If they are not valid, the result is undefined. */
-
-  /* The format type should already have been checked: */
-  switch (fmt) {
-   case fmt_single:
-    {
-      sim_fpu wop1;
-      sim_fpu wop2;
-      sim_fpu ans;
-      unsigned32 res;
-      sim_fpu_32to (&wop1, op1);
-      sim_fpu_32to (&wop2, op2);
-      sim_fpu_sub (&ans, &wop1, &wop2);
-      sim_fpu_to32 (&res, &ans);
-      result = res;
-    }
-    break;
-   case fmt_double:
-    {
-      sim_fpu wop1;
-      sim_fpu wop2;
-      sim_fpu ans;
-      unsigned64 res;
-      sim_fpu_64to (&wop1, op1);
-      sim_fpu_64to (&wop2, op2);
-      sim_fpu_sub (&ans, &wop1, &wop2);
-      sim_fpu_to64 (&res, &ans);
-      result = res;
-    }
-    break;
-   default:
-    fprintf (stderr, "Bad switch\n");
-    abort ();
-  }
-
-#ifdef DEBUG
-  printf("DBG: Sub: returning 0x%s (format = %s)\n",pr_addr(result),DOFMT(fmt));
-#endif /* DEBUG */
-
-  return(result);
-}
-
-uword64
-Multiply(op1,op2,fmt)
-     uword64 op1;
-     uword64 op2;
-     FP_formats fmt; 
-{
-  uword64 result = 0;
-
-#ifdef DEBUG
-  printf("DBG: Multiply: %s: op1 = 0x%s : op2 = 0x%s\n",DOFMT(fmt),pr_addr(op1),pr_addr(op2));
-#endif /* DEBUG */
-
-  /* The registers must specify FPRs valid for operands of type
-     "fmt". If they are not valid, the result is undefined. */
-
-  /* The format type should already have been checked: */
-  switch (fmt) {
-   case fmt_single:
-    {
-      sim_fpu wop1;
-      sim_fpu wop2;
-      sim_fpu ans;
-      unsigned32 res;
-      sim_fpu_32to (&wop1, op1);
-      sim_fpu_32to (&wop2, op2);
-      sim_fpu_mul (&ans, &wop1, &wop2);
-      sim_fpu_to32 (&res, &ans);
-      result = res;
-      break;
-    }
-   case fmt_double:
-    {
-      sim_fpu wop1;
-      sim_fpu wop2;
-      sim_fpu ans;
-      unsigned64 res;
-      sim_fpu_64to (&wop1, op1);
-      sim_fpu_64to (&wop2, op2);
-      sim_fpu_mul (&ans, &wop1, &wop2);
-      sim_fpu_to64 (&res, &ans);
-      result = res;
-      break;
-    }
-   default:
-    fprintf (stderr, "Bad switch\n");
-    abort ();
-  }
-
-#ifdef DEBUG
-  printf("DBG: Multiply: returning 0x%s (format = %s)\n",pr_addr(result),DOFMT(fmt));
-#endif /* DEBUG */
-
-  return(result);
-}
-
-uword64
-Divide(op1,op2,fmt)
-     uword64 op1;
-     uword64 op2;
-     FP_formats fmt; 
-{
-  uword64 result = 0;
-
-#ifdef DEBUG
-  printf("DBG: Divide: %s: op1 = 0x%s : op2 = 0x%s\n",DOFMT(fmt),pr_addr(op1),pr_addr(op2));
-#endif /* DEBUG */
-
-  /* The registers must specify FPRs valid for operands of type
-     "fmt". If they are not valid, the result is undefined. */
-
-  /* The format type should already have been checked: */
-  switch (fmt) {
-   case fmt_single:
-    {
-      sim_fpu wop1;
-      sim_fpu wop2;
-      sim_fpu ans;
-      unsigned32 res;
-      sim_fpu_32to (&wop1, op1);
-      sim_fpu_32to (&wop2, op2);
-      sim_fpu_div (&ans, &wop1, &wop2);
-      sim_fpu_to32 (&res, &ans);
-      result = res;
-      break;
-    }
-   case fmt_double:
-    {
-      sim_fpu wop1;
-      sim_fpu wop2;
-      sim_fpu ans;
-      unsigned64 res;
-      sim_fpu_64to (&wop1, op1);
-      sim_fpu_64to (&wop2, op2);
-      sim_fpu_div (&ans, &wop1, &wop2);
-      sim_fpu_to64 (&res, &ans);
-      result = res;
-      break;
-    }
-   default:
-    fprintf (stderr, "Bad switch\n");
-    abort ();
-  }
-
-#ifdef DEBUG
-  printf("DBG: Divide: returning 0x%s (format = %s)\n",pr_addr(result),DOFMT(fmt));
-#endif /* DEBUG */
-
-  return(result);
-}
-
-uword64 UNUSED
-Recip(op,fmt)
-     uword64 op;
-     FP_formats fmt; 
-{
-  uword64 result = 0;
-
-#ifdef DEBUG
-  printf("DBG: Recip: %s: op = 0x%s\n",DOFMT(fmt),pr_addr(op));
-#endif /* DEBUG */
-
-  /* The registers must specify FPRs valid for operands of type
-     "fmt". If they are not valid, the result is undefined. */
-
-  /* The format type should already have been checked: */
-  switch (fmt) {
-   case fmt_single:
-    {
-      sim_fpu wop;
-      sim_fpu ans;
-      unsigned32 res;
-      sim_fpu_32to (&wop, op);
-      sim_fpu_inv (&ans, &wop);
-      sim_fpu_to32 (&res, &ans);
-      result = res;
-      break;
-    }
-   case fmt_double:
-    {
-      sim_fpu wop;
-      sim_fpu ans;
-      unsigned64 res;
-      sim_fpu_64to (&wop, op);
-      sim_fpu_inv (&ans, &wop);
-      sim_fpu_to64 (&res, &ans);
-      result = res;
-      break;
-    }
-   default:
-    fprintf (stderr, "Bad switch\n");
-    abort ();
-  }
-
-#ifdef DEBUG
-  printf("DBG: Recip: returning 0x%s (format = %s)\n",pr_addr(result),DOFMT(fmt));
-#endif /* DEBUG */
-
-  return(result);
-}
-
-uword64
-SquareRoot(op,fmt)
-     uword64 op;
-     FP_formats fmt; 
-{
-  uword64 result = 0;
-
-#ifdef DEBUG
-  printf("DBG: SquareRoot: %s: op = 0x%s\n",DOFMT(fmt),pr_addr(op));
-#endif /* DEBUG */
-
-  /* The registers must specify FPRs valid for operands of type
-     "fmt". If they are not valid, the result is undefined. */
-
-  /* The format type should already have been checked: */
-  switch (fmt) {
-   case fmt_single:
-    {
-      sim_fpu wop;
-      sim_fpu ans;
-      unsigned32 res;
-      sim_fpu_32to (&wop, op);
-      sim_fpu_sqrt (&ans, &wop);
-      sim_fpu_to32 (&res, &ans);
-      result = res;
-      break;
-    }
-   case fmt_double:
-    {
-      sim_fpu wop;
-      sim_fpu ans;
-      unsigned64 res;
-      sim_fpu_64to (&wop, op);
-      sim_fpu_sqrt (&ans, &wop);
-      sim_fpu_to64 (&res, &ans);
-      result = res;
-      break;
-    }
-   default:
-    fprintf (stderr, "Bad switch\n");
-    abort ();
-  }
-
-#ifdef DEBUG
-  printf("DBG: SquareRoot: returning 0x%s (format = %s)\n",pr_addr(result),DOFMT(fmt));
-#endif /* DEBUG */
-
-  return(result);
-}
-
-#if 0
-uword64
-Max (uword64 op1,
-     uword64 op2,
-     FP_formats fmt)
-{
-  int cmp;
-  unsigned64 result;
-
-#ifdef DEBUG
-  printf("DBG: Max: %s: op1 = 0x%s : op2 = 0x%s\n",DOFMT(fmt),pr_addr(op1),pr_addr(op2));
-#endif /* DEBUG */
-
-  /* The registers must specify FPRs valid for operands of type
-     "fmt". If they are not valid, the result is undefined. */
-
-  /* The format type should already have been checked: */
-  switch (fmt)
-    {
-    case fmt_single:
-      {
-	sim_fpu wop1;
-	sim_fpu wop2;
-	sim_fpu_32to (&wop1, op1);
-	sim_fpu_32to (&wop2, op2);
-	cmp = sim_fpu_cmp (&wop1, &wop2);
-	break;
-      }
-    case fmt_double:
-      {
-	sim_fpu wop1;
-	sim_fpu wop2;
-	sim_fpu_64to (&wop1, op1);
-	sim_fpu_64to (&wop2, op2);
-	cmp = sim_fpu_cmp (&wop1, &wop2);
-	break;
-      }
-    default:
-      fprintf (stderr, "Bad switch\n");
-      abort ();
-    }
-  
-  switch (cmp)
-    {
-    case SIM_FPU_IS_SNAN:
-    case SIM_FPU_IS_QNAN:
-      result = op1;
-    case SIM_FPU_IS_NINF:
-    case SIM_FPU_IS_NNUMBER:
-    case SIM_FPU_IS_NDENORM:
-    case SIM_FPU_IS_NZERO:
-      result = op2; /* op1 - op2 < 0 */
-    case SIM_FPU_IS_PINF:
-    case SIM_FPU_IS_PNUMBER:
-    case SIM_FPU_IS_PDENORM:
-    case SIM_FPU_IS_PZERO:
-      result = op1; /* op1 - op2 > 0 */
-    default:
-      fprintf (stderr, "Bad switch\n");
-      abort ();
-    }
-
-#ifdef DEBUG
-  printf("DBG: Max: returning 0x%s (format = %s)\n",pr_addr(result),DOFMT(fmt));
-#endif /* DEBUG */
-
-  return(result);
-}
-#endif 
-
-#if 0
-uword64
-Min (uword64 op1,
-     uword64 op2,
-     FP_formats fmt)
-{
-  int cmp;
-  unsigned64 result;
-
-#ifdef DEBUG
-  printf("DBG: Min: %s: op1 = 0x%s : op2 = 0x%s\n",DOFMT(fmt),pr_addr(op1),pr_addr(op2));
-#endif /* DEBUG */
-
-  /* The registers must specify FPRs valid for operands of type
-     "fmt". If they are not valid, the result is undefined. */
-
-  /* The format type should already have been checked: */
-  switch (fmt)
-    {
-    case fmt_single:
-      {
-	sim_fpu wop1;
-	sim_fpu wop2;
-	sim_fpu_32to (&wop1, op1);
-	sim_fpu_32to (&wop2, op2);
-	cmp = sim_fpu_cmp (&wop1, &wop2);
-	break;
-      }
-    case fmt_double:
-      {
-	sim_fpu wop1;
-	sim_fpu wop2;
-	sim_fpu_64to (&wop1, op1);
-	sim_fpu_64to (&wop2, op2);
-	cmp = sim_fpu_cmp (&wop1, &wop2);
-	break;
-      }
-    default:
-      fprintf (stderr, "Bad switch\n");
-      abort ();
-    }
-  
-  switch (cmp)
-    {
-    case SIM_FPU_IS_SNAN:
-    case SIM_FPU_IS_QNAN:
-      result = op1;
-    case SIM_FPU_IS_NINF:
-    case SIM_FPU_IS_NNUMBER:
-    case SIM_FPU_IS_NDENORM:
-    case SIM_FPU_IS_NZERO:
-      result = op1; /* op1 - op2 < 0 */
-    case SIM_FPU_IS_PINF:
-    case SIM_FPU_IS_PNUMBER:
-    case SIM_FPU_IS_PDENORM:
-    case SIM_FPU_IS_PZERO:
-      result = op2; /* op1 - op2 > 0 */
-    default:
-      fprintf (stderr, "Bad switch\n");
-      abort ();
-    }
-
-#ifdef DEBUG
-  printf("DBG: Min: returning 0x%s (format = %s)\n",pr_addr(result),DOFMT(fmt));
-#endif /* DEBUG */
-
-  return(result);
-}
-#endif
-
-uword64
-convert (SIM_DESC sd,
-	 sim_cpu *cpu,
-	 address_word cia,
-	 int rm,
-	 uword64 op,
-	 FP_formats from,
-	 FP_formats to)
-{
-  sim_fpu wop;
-  sim_fpu_round round;
-  unsigned32 result32;
-  unsigned64 result64;
-
-#ifdef DEBUG
-#if 0 /* FIXME: doesn't compile */
-  printf("DBG: Convert: mode %s : op 0x%s : from %s : to %s : (PC = 0x%s)\n",RMMODE(rm),pr_addr(op),DOFMT(from),DOFMT(to),pr_addr(IPC));
-#endif
-#endif /* DEBUG */
-
-  switch (rm)
-    {
-    case FP_RM_NEAREST:
-      /* Round result to nearest representable value. When two
-	 representable values are equally near, round to the value
-	 that has a least significant bit of zero (i.e. is even). */
-      round = sim_fpu_round_near;
-      break;
-    case FP_RM_TOZERO:
-      /* Round result to the value closest to, and not greater in
-	 magnitude than, the result. */
-      round = sim_fpu_round_zero;
-      break;
-    case FP_RM_TOPINF:
-      /* Round result to the value closest to, and not less than,
-	 the result. */
-      round = sim_fpu_round_up;
-      break;
-      
-    case FP_RM_TOMINF:
-      /* Round result to the value closest to, and not greater than,
-	 the result. */
-      round = sim_fpu_round_down;
-      break;
-    default:
-      round = 0;
-      fprintf (stderr, "Bad switch\n");
-      abort ();
-    }
-  
-  /* Convert the input to sim_fpu internal format */
-  switch (from)
-    {
-    case fmt_double:
-      sim_fpu_64to (&wop, op);
-      break;
-    case fmt_single:
-      sim_fpu_32to (&wop, op);
-      break;
-    case fmt_word:
-      sim_fpu_i32to (&wop, op, round);
-      break;
-    case fmt_long:
-      sim_fpu_i64to (&wop, op, round);
-      break;
-    default:
-      fprintf (stderr, "Bad switch\n");
-      abort ();
-    }
-
-  /* Convert sim_fpu format into the output */
-  /* The value WOP is converted to the destination format, rounding
-     using mode RM. When the destination is a fixed-point format, then
-     a source value of Infinity, NaN or one which would round to an
-     integer outside the fixed point range then an IEEE Invalid
-     Operation condition is raised. */
-  switch (to)
-    {
-    case fmt_single:
-      sim_fpu_round_32 (&wop, round, 0);
-      sim_fpu_to32 (&result32, &wop);
-      result64 = result32;
-      break;
-    case fmt_double:
-      sim_fpu_round_64 (&wop, round, 0);
-      sim_fpu_to64 (&result64, &wop);
-      break;
-    case fmt_word:
-      sim_fpu_to32i (&result32, &wop, round);
-      result64 = result32;
-      break;
-    case fmt_long:
-      sim_fpu_to64i (&result64, &wop, round);
-      break;
-    default:
-      result64 = 0;
-      fprintf (stderr, "Bad switch\n");
-      abort ();
-    }
- 
-#ifdef DEBUG
-  printf("DBG: Convert: returning 0x%s (to format = %s)\n",pr_addr(result64),DOFMT(to));
-#endif /* DEBUG */
-
-  return(result64);
+  sim_io_eprintf(sd, "UNPREDICTABLE: PC = 0x%s\n", pr_addr (cia));
+  sim_engine_halt (SD, CPU, NULL, cia, sim_stopped, SIM_SIGABRT);
 }
 
 
@@ -3162,7 +2102,7 @@ decode_coproc (SIM_DESC sd,
 	      case 8:
 		/* 8 = BadVAddr            R4000   VR4100  VR4300 */
 		if (code == 0x00)
-		  GPR[rt] = COP0_BADVADDR;
+		  GPR[rt] = (signed_word) (signed_address) COP0_BADVADDR;
 		else
 		  COP0_BADVADDR = GPR[rt];
 		break;
@@ -3225,6 +2165,10 @@ decode_coproc (SIM_DESC sd,
 		/* 28 = TagLo              R4000   VR4100  VR4300 */
 		/* 29 = TagHi              R4000   VR4100  VR4300 */
 		/* 30 = ErrorEPC           R4000   VR4100  VR4300 */
+		if (STATE_VERBOSE_P(SD))
+		  sim_io_eprintf (SD, 
+				  "Warning: PC 0x%lx:interp.c decode_coproc DEADC0DE\n",
+				  (unsigned long)cia);
 		GPR[rt] = 0xDEADC0DE; /* CPR[0,rd] */
 		/* CPR[0,rd] = GPR[rt]; */
 	      default:

@@ -1,5 +1,5 @@
 /* Native support for linux, for GDB, the GNU debugger.
-   Copyright (C) 1996,1998 Free Software Foundation, Inc.
+   Copyright 1996, 1998, 2000 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,19 +21,25 @@
 #ifndef NM_LINUX_H
 #define NM_LINUX_H
 
-#include "nm-linux.h"
+#include "config/nm-linux.h"
 
 /* Return sizeof user struct to callers in less machine dependent routines */
 
 #define KERNEL_U_SIZE kernel_u_size()
-extern int kernel_u_size PARAMS ((void));
+extern int kernel_u_size (void);
+
+/* This is the amount to subtract from u.u_ar0
+   to get the offset in the core file of the register values.  */
+#define KERNEL_U_ADDR 0x0
 
 #define U_REGS_OFFSET 0
 
 #define REGISTER_U_ADDR(addr, blockend, regno) \
 	(addr) = m68k_linux_register_u_addr ((blockend),(regno));
 
-extern int
-m68k_linux_register_u_addr PARAMS ((int, int));
+extern int m68k_linux_register_u_addr (int, int);
+
+/* Override copies of {fetch,store}_inferior_registers in `infptrace.c'.  */
+#define FETCH_INFERIOR_REGISTERS
 
 #endif /* #ifndef NM_LINUX_H */

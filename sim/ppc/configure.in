@@ -190,15 +190,23 @@ fi])dnl
 
 
 AC_ARG_ENABLE(sim-float,
-[  --enable-sim-float			Specify whether to use host floating point or simulate.],
+[  --enable-sim-float			Specify whether the target has hard, soft, altivec or e500 floating point.],
 [case "${enableval}" in
   yes | hard)	sim_float="-DWITH_FLOATING_POINT=HARD_FLOATING_POINT";;
   no | soft)	sim_float="-DWITH_FLOATING_POINT=SOFT_FLOATING_POINT";;
+  altivec)      sim_float="-DWITH_ALTIVEC" ; sim_filter="${sim_filter},av" ;;
+  *spe*|*simd*) sim_float="-DWITH_E500" ; sim_filter="${sim_filter},e500" ;;
   *)		AC_MSG_ERROR("Unknown value $enableval passed to --enable-sim-float"); sim_float="";;
 esac
 if test x"$silent" != x"yes" && test x"$sim_float" != x""; then
   echo "Setting float flags = $sim_float" 6>&1
-fi],[sim_float=""])dnl
+fi],[
+case "${target}" in
+  *altivec*) sim_float="-DWITH_ALTIVEC" ; sim_filter="${sim_filter},av" ;;
+  *spe*|*simd*)	sim_float="-DWITH_E500" ; sim_filter="${sim_filter},e500" ;;
+  *) sim_float=""
+esac
+])dnl
 
 
 AC_ARG_ENABLE(sim-hardware,
@@ -291,7 +299,7 @@ case "$enableval" in
   no)		sim_inline="-DDEFAULT_INLINE=0";;
   0)		sim_inline="-DDEFAULT_INLINE=0";;
   yes | 2)	sim_inline="-DDEFAULT_INLINE=ALL_INLINE";;
-  1)		sim_inline="-DDEFAULT_INLINE=INLINE_LOCALS";;
+  1)		sim_inline="-DDEFAULT_INLINE=PSIM_INLINE_LOCALS";;
   *) for x in `echo "$enableval" | sed -e "s/,/ /g"`; do
        new_flag=""
        case "$x" in
@@ -310,7 +318,7 @@ esac
 if test x"$silent" != x"yes" && test x"$sim_inline" != x""; then
   echo "Setting inline flags = $sim_inline" 6>&1
 fi],[if test x"$GCC" != ""; then
-  sim_inline="-DDEFAULT_INLINE=INLINE_LOCALS"
+  sim_inline="-DDEFAULT_INLINE=PSIM_INLINE_LOCALS"
   if test x"$silent" != x"yes"; then
     echo "Setting inline flags = $sim_inline" 6>&1
   fi
@@ -689,6 +697,17 @@ else
   sim_targ_vals=""
 fi
 
+AC_MSG_CHECKING(for common simulator directory fpu implementation)
+if test -f "${srcdir}/../common/sim-fpu.c"; then
+  AC_MSG_RESULT(yes)
+  sim_fpu_cflags="-DHAVE_COMMON_FPU -I../common -I${srcdir}/../common"
+  sim_fpu="sim-fpu.o"
+else
+  AC_MSG_RESULT(no)
+  sim_fpu_cflags=
+  sim_fpu=
+fi
+
 dnl Check for exe extension
 AC_EXEEXT
 
@@ -740,6 +759,8 @@ AC_SUBST(sim_termio)
 AC_SUBST(sim_devzero)
 AC_SUBST(sim_callback)
 AC_SUBST(sim_targ_vals)
+AC_SUBST(sim_fpu_cflags)
+AC_SUBST(sim_fpu)
 
 AC_OUTPUT(Makefile,
 [case x$CONFIG_HEADERS in xconfig.h:config.in) echo > stamp-h ;; esac])

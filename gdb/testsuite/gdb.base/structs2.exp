@@ -1,4 +1,4 @@
-# Copyright (C) 1998 Free Software Foundation, Inc.
+# Copyright 1998, 1999 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -28,6 +28,12 @@ set prototypes 1
 set testfile "structs2"
 set srcfile ${testfile}.c
 set binfile ${objdir}/${subdir}/${testfile}
+
+# Create and source the file that provides information about the compiler
+# used to compile the test case.
+if [get_compiler_info ${binfile}] {
+    return -1;
+}
 
 # build the first test case
 if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug}] != "" } {
@@ -64,10 +70,16 @@ gdb_test "break param_reg" \
     "Breakpoint .* at .*" \
     "structs2 breakpoint set"
 
+if [test_compiler_info gcc-*-*] {
+  setup_xfail hppa*-* gcc/15860
+}
 gdb_test "continue" \
     ".*pr_char=120.*pr_uchar=130.*pr_short=32000.*pr_ushort=33000.*bkpt = 1.*" \
     "structs2 continue1"
 
+if [test_compiler_info gcc-*-*] {
+  setup_xfail hppa*-* gcc/15860
+}
 gdb_test "continue" \
     ".*pr_char=-126.*pr_uchar=120.*pr_short=-32536.*pr_ushort=32000.*bkpt = 1.*" \
     "structs2 continue2"

@@ -1,6 +1,6 @@
 /* Definitions for native support of irix5.
 
-   Copyright (C) 1993, 1998 Free Software Foundation, Inc.
+   Copyright 1993, 1996, 1998, 1999, 2000 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,29 +19,36 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-#include "nm-sysv4.h"
+#include "config/nm-sysv4.h"
 #undef IN_SOLIB_DYNSYM_RESOLVE_CODE
 
 #define TARGET_HAS_HARDWARE_WATCHPOINTS
 
-#define TARGET_CAN_USE_HARDWARE_WATCHPOINT(type, cnt, ot) 1
+/* TARGET_CAN_USE_HARDWARE_WATCHPOINT is now defined to go through
+   the target vector.  For Irix5, procfs_can_use_hw_watchpoint()
+   should be invoked.  */
 
 /* When a hardware watchpoint fires off the PC will be left at the
    instruction which caused the watchpoint.  It will be necessary for
    GDB to step over the watchpoint. */
 
 #define STOPPED_BY_WATCHPOINT(W) \
-     procfs_stopped_by_watchpoint(inferior_pid)
-extern int procfs_stopped_by_watchpoint PARAMS ((int));
-
-#define HAVE_NONSTEPPABLE_WATCHPOINT
+     procfs_stopped_by_watchpoint(inferior_ptid)
+extern int procfs_stopped_by_watchpoint (ptid_t);
 
 /* Use these macros for watchpoint insertion/deletion.  */
 /* type can be 0: write watch, 1: read watch, 2: access watch (read/write) */
 #define target_insert_watchpoint(ADDR, LEN, TYPE) \
-     procfs_set_watchpoint (inferior_pid, ADDR, LEN, TYPE, 0)
+     procfs_set_watchpoint (inferior_ptid, ADDR, LEN, TYPE, 0)
 #define target_remove_watchpoint(ADDR, LEN, TYPE) \
-     procfs_set_watchpoint (inferior_pid, ADDR, 0, 0, 0)
-extern int procfs_set_watchpoint PARAMS ((int, CORE_ADDR, int, int, int));
+     procfs_set_watchpoint (inferior_ptid, ADDR, 0, 0, 0)
+extern int procfs_set_watchpoint (ptid_t, CORE_ADDR, int, int, int);
 
 #define TARGET_REGION_SIZE_OK_FOR_HW_WATCHPOINT(SIZE) 1
+
+/* Override register locations in upage for SGI machines */
+#define REGISTER_U_ADDR(addr, blockend, regno) 		\
+  if (regno < PC_REGNUM)				\
+      addr = regno;					\
+  else							\
+      addr = regno + NSIG_HNDLRS;	/* Skip over signal handlers */

@@ -1,5 +1,8 @@
 /* Parser definitions for GDB.
-   Copyright (C) 1986, 1989, 1990, 1991 Free Software Foundation, Inc.
+
+   Copyright 1986, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
+   1997, 1998, 1999, 2000, 2002 Free Software Foundation, Inc.
+
    Modified from expread.y by the Department of Computer Science at the
    State University of New York at Buffalo.
 
@@ -23,14 +26,9 @@
 #if !defined (PARSER_DEFS_H)
 #define PARSER_DEFS_H 1
 
-struct std_regs
-  {
-    char *name;
-    int regnum;
-  };
+#include "doublest.h"
 
-extern struct std_regs *std_regs;
-extern unsigned num_std_regs;
+struct block;
 
 extern struct expression *expout;
 extern int expout_size;
@@ -40,6 +38,12 @@ extern int expout_ptr;
    for symbol names.  */
 
 extern struct block *expression_context_block;
+
+/* If expression_context_block is non-zero, then this is the PC within
+   the block that we want to evaluate expressions at.  When debugging
+   C or C++ code, we use this to find the exact line we're at, and
+   then look up the macro definitions active at that point.  */
+extern CORE_ADDR expression_context_pc;
 
 /* The innermost context required by the stack and register variables
    we've encountered so far. */
@@ -77,11 +81,26 @@ struct symtoken
     int is_a_field_of_this;
   };
 
+struct objc_class_str
+  {
+    struct stoken stoken;
+    struct type *type;
+    int class;
+  };
+
+
 /* For parsing of complicated types.
    An array should be preceded in the list by the size of the array.  */
 enum type_pieces
   {
-    tp_end = -1, tp_pointer, tp_reference, tp_array, tp_function
+    tp_end = -1, 
+    tp_pointer, 
+    tp_reference, 
+    tp_array, 
+    tp_function, 
+    tp_const, 
+    tp_volatile, 
+    tp_space_identifier
   };
 /* The stack can contain either an enum type_pieces or an int.  */
 union type_stack_elt
@@ -92,65 +111,77 @@ union type_stack_elt
 extern union type_stack_elt *type_stack;
 extern int type_stack_depth, type_stack_size;
 
-extern void write_exp_elt PARAMS ((union exp_element));
+extern void write_exp_elt (union exp_element);
 
-extern void write_exp_elt_opcode PARAMS ((enum exp_opcode));
+extern void write_exp_elt_opcode (enum exp_opcode);
 
-extern void write_exp_elt_sym PARAMS ((struct symbol *));
+extern void write_exp_elt_sym (struct symbol *);
 
-extern void write_exp_elt_longcst PARAMS ((LONGEST));
+extern void write_exp_elt_longcst (LONGEST);
 
-extern void write_exp_elt_dblcst PARAMS ((DOUBLEST));
+extern void write_exp_elt_dblcst (DOUBLEST);
 
-extern void write_exp_elt_type PARAMS ((struct type *));
+extern void write_exp_elt_type (struct type *);
 
-extern void write_exp_elt_intern PARAMS ((struct internalvar *));
+extern void write_exp_elt_intern (struct internalvar *);
 
-extern void write_exp_string PARAMS ((struct stoken));
+extern void write_exp_string (struct stoken);
 
-extern void write_exp_bitstring PARAMS ((struct stoken));
+extern void write_exp_bitstring (struct stoken);
 
-extern void write_exp_elt_block PARAMS ((struct block *));
+extern void write_exp_elt_block (struct block *);
 
-extern void write_exp_msymbol PARAMS ((struct minimal_symbol *,
-				       struct type *, struct type *));
+extern void write_exp_msymbol (struct minimal_symbol *,
+			       struct type *, struct type *);
 
-extern void write_dollar_variable PARAMS ((struct stoken str));
+extern void write_dollar_variable (struct stoken str);
 
-extern struct symbol *parse_nested_classes_for_hpacc PARAMS ((char *, int, char **, int *, char **));
+extern struct symbol *parse_nested_classes_for_hpacc (char *, int, char **,
+						      int *, char **);
 
-extern char *find_template_name_end PARAMS ((char *));
+extern char *find_template_name_end (char *);
 
-extern void
-start_arglist PARAMS ((void));
+extern void start_arglist (void);
 
-extern int
-end_arglist PARAMS ((void));
+extern int end_arglist (void);
 
-extern char *
-  copy_name PARAMS ((struct stoken));
+extern char *copy_name (struct stoken);
 
-extern void
-push_type PARAMS ((enum type_pieces));
+extern void push_type (enum type_pieces);
 
-extern void
-push_type_int PARAMS ((int));
+extern void push_type_int (int);
 
-extern enum type_pieces
-pop_type PARAMS ((void));
+extern void push_type_address_space (char *);
 
-extern int
-pop_type_int PARAMS ((void));
+extern enum type_pieces pop_type (void);
 
-extern int
-length_of_subexp PARAMS ((struct expression *, int));
+extern int pop_type_int (void);
 
-extern struct type *follow_types PARAMS ((struct type *));
+extern int length_of_subexp (struct expression *, int);
+
+extern int dump_subexp (struct expression *, struct ui_file *, int);
+
+extern int dump_subexp_body_standard (struct expression *, 
+				      struct ui_file *, int);
+
+extern void operator_length (struct expression *, int, int *, int *);
+
+extern void operator_length_standard (struct expression *, int, int *, int *);
+
+extern char *op_name_standard (enum exp_opcode);
+
+extern struct type *follow_types (struct type *);
+
+extern void null_post_parser (struct expression **, int);
 
 /* During parsing of a C expression, the pointer to the next character
    is in this variable.  */
 
 extern char *lexptr;
+
+/* After a token has been recognized, this variable points to it.  
+   Currently used only for error reporting.  */
+extern char *prev_lexptr;
 
 /* Tokens that refer to names do so with explicit pointer and length,
    so they can share the storage that lexptr is parsing.
@@ -202,10 +233,49 @@ struct op_print
     int right_assoc;
   };
 
-/* The generic method for targets to specify how their registers are
-   named.  The mapping can be derived from three sources:
-   REGISTER_NAME; std_regs; or a target specific alias hook. */
+/* Information needed to print, prefixify, and evaluate expressions for 
+   a given language.  */
 
-extern int target_map_name_to_register PARAMS ((char *, int));
+struct exp_descriptor
+  {
+    /* Print subexpression.  */
+    void (*print_subexp) (struct expression *, int *, struct ui_file *,
+			  enum precedence);
+
+    /* Returns number of exp_elements needed to represent an operator and
+       the number of subexpressions it takes.  */
+    void (*operator_length) (struct expression*, int, int*, int *);
+
+    /* Name of this operator for dumping purposes.  */
+    char *(*op_name) (enum exp_opcode);
+
+    /* Dump the rest of this (prefix) expression after the operator
+       itself has been printed.  See dump_subexp_body_standard in
+       (expprint.c).  */
+    int (*dump_subexp_body) (struct expression *, struct ui_file *, int);
+
+    /* Evaluate an expression.  */
+    struct value *(*evaluate_exp) (struct type *, struct expression *,
+				   int *, enum noside);
+  };
+
+
+/* Default descriptor containing standard definitions of all
+   elements.  */
+extern const struct exp_descriptor exp_descriptor_standard;
+
+/* Functions used by language-specific extended operators to (recursively)
+   print/dump subexpressions.  */
+
+extern void print_subexp (struct expression *, int *, struct ui_file *,
+			  enum precedence);
+
+extern void print_subexp_standard (struct expression *, int *, 
+				   struct ui_file *, enum precedence);
+
+/* Function used to avoid direct calls to fprintf
+   in the code generated by the bison parser.  */
+
+extern void parser_fprintf (FILE *, const char *, ...) ATTR_FORMAT (printf, 2 ,3);
 
 #endif /* PARSER_DEFS_H */

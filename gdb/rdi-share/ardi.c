@@ -154,7 +154,7 @@ static int wait_for_debug_message(int *rcode, int *debugID,
 
   unpack_message(BUFFERDATA((*packet)->pk_buffer), "%w%w%w%w%w", &reason, debugID,
                  OSinfo1, OSinfo2, status);
-  if (reason&0xffffff == ADP_HADPUnrecognised)
+  if ((reason&0xffffff) == ADP_HADPUnrecognised)
     return RDIError_UnimplementedMessage;
   if (reason != (unsigned ) *rcode) {
     if((reason&0xffffff) == ADP_HADPUnrecognised)
@@ -396,6 +396,7 @@ static void (*old_handler)();
 
 static bool boot_interrupted = FALSE;
 static volatile bool interrupt_request = FALSE;
+static volatile bool stop_request = FALSE;
 
 static void ardi_sigint_handler(int sig) {
 #ifdef DEBUG
@@ -1343,10 +1344,16 @@ static void interrupt_target( void )
                                     Packet *packet );
 #endif
 
+void angel_RDI_stop_request(void)
+{
+  stop_request = 1;
+}
+
 /* Core functionality for execute and step */
 static int angel_RDI_ExecuteOrStep(PointHandle *handle, word type, 
                                    unsigned ninstr)
 {
+  extern int (*deprecated_ui_loop_hook) (int);
   int err;
   adp_stopped_struct stopped_info;
   void* stateptr = (void *)&stopped_info;
@@ -1401,15 +1408,22 @@ static int angel_RDI_ExecuteOrStep(PointHandle *handle, word type,
   angel_DebugPrint("Waiting for program to finish...\n");
 #endif
 
+  interrupt_request = FALSE;
+  stop_request = FALSE;
+  
   signal(SIGINT, ardi_sigint_handler);
   while( executing )
   {
-      if (interrupt_request)
+    if (deprecated_ui_loop_hook)
+      deprecated_ui_loop_hook(0);
+    
+    if (interrupt_request || stop_request)
       {
         interrupt_target();
         interrupt_request = FALSE;
+        stop_request = FALSE;
       }
-      Adp_AsynchronousProcessing( async_block_on_nothing );
+    Adp_AsynchronousProcessing( async_block_on_nothing );
   }
   signal(SIGINT, SIG_IGN);
 
@@ -1828,7 +1842,7 @@ int angel_RDI_info(unsigned type, ARMword *arg1, ARMword *arg2) {
     len +=msgbuild(BUFFERDATA(packet->pk_buffer)+20, "%b%b%b%b%b", cpnum,
                    cpd->regdesc[cpnum].rmin, cpd->regdesc[cpnum].rmax,
                    cpd->regdesc[cpnum].nbytes, cpd->regdesc[cpnum].access);
-    if (cpd->regdesc[cpnum].access&0x3 == 0x3){
+    if ((cpd->regdesc[cpnum].access&0x3) == 0x3){
       len += msgbuild(BUFFERDATA(packet->pk_buffer)+25, "%b%b%b%b%b",
                       cpd->regdesc[cpnum].accessinst.cprt.read_b0,
                       cpd->regdesc[cpnum].accessinst.cprt.read_b1,

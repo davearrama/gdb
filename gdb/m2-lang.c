@@ -1,5 +1,6 @@
 /* Modula 2 language support routines for GDB, the GNU debugger.
-   Copyright 1992, 2000 Free Software Foundation, Inc.
+   Copyright 1992, 1993, 1994, 1995, 1996, 1998, 2000, 2002, 2003, 2004
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -26,9 +27,10 @@
 #include "language.h"
 #include "m2-lang.h"
 #include "c-lang.h"
+#include "valprint.h"
 
-extern void _initialize_m2_language PARAMS ((void));
-static struct type *m2_create_fundamental_type PARAMS ((struct objfile *, int));
+extern void _initialize_m2_language (void);
+static struct type *m2_create_fundamental_type (struct objfile *, int);
 static void m2_printstr (struct ui_file * stream, char *string,
 			 unsigned int length, int width,
 			 int force_ellipses);
@@ -43,10 +45,7 @@ static void m2_emit_char (int, struct ui_file *, int);
  */
 
 static void
-m2_emit_char (c, stream, quoter)
-     register int c;
-     struct ui_file *stream;
-     int quoter;
+m2_emit_char (int c, struct ui_file *stream, int quoter)
 {
 
   c &= 0xFF;			/* Avoid sign bit follies */
@@ -95,9 +94,7 @@ m2_emit_char (c, stream, quoter)
    be replaced with a true Modula version. */
 
 static void
-m2_printchar (c, stream)
-     int c;
-     struct ui_file *stream;
+m2_printchar (int c, struct ui_file *stream)
 {
   fputs_filtered ("'", stream);
   LA_EMIT_CHAR (c, stream, '\'');
@@ -112,20 +109,13 @@ m2_printchar (c, stream)
    be replaced with a true Modula version. */
 
 static void
-m2_printstr (stream, string, length, width, force_ellipses)
-     struct ui_file *stream;
-     char *string;
-     unsigned int length;
-     int width;
-     int force_ellipses;
+m2_printstr (struct ui_file *stream, char *string, unsigned int length,
+	     int width, int force_ellipses)
 {
-  register unsigned int i;
+  unsigned int i;
   unsigned int things_printed = 0;
   int in_quotes = 0;
   int need_comma = 0;
-  extern int inspect_it;
-  extern int repeat_count_threshold;
-  extern int print_max;
 
   if (length == 0)
     {
@@ -206,11 +196,9 @@ m2_printstr (stream, string, length, width, force_ellipses)
    by an experienced Modula programmer. */
 
 static struct type *
-m2_create_fundamental_type (objfile, typeid)
-     struct objfile *objfile;
-     int typeid;
+m2_create_fundamental_type (struct objfile *objfile, int typeid)
 {
-  register struct type *type = NULL;
+  struct type *type = NULL;
 
   switch (typeid)
     {
@@ -409,7 +397,7 @@ struct type *builtin_type_m2_card;
 struct type *builtin_type_m2_real;
 struct type *builtin_type_m2_bool;
 
-struct type **CONST_PTR (m2_builtin_types[]) =
+struct type **const (m2_builtin_types[]) =
 {
   &builtin_type_m2_char,
     &builtin_type_m2_int,
@@ -426,9 +414,12 @@ const struct language_defn m2_language_defn =
   m2_builtin_types,
   range_check_on,
   type_check_on,
+  case_sensitive_on,
+  array_row_major,
+  &exp_descriptor_standard,
   m2_parse,			/* parser */
   m2_error,			/* parser error function */
-  evaluate_subexp_standard,
+  null_post_parser,
   m2_printchar,			/* Print character constant */
   m2_printstr,			/* function to print string constant */
   m2_emit_char,			/* Function to print a single character */
@@ -436,21 +427,25 @@ const struct language_defn m2_language_defn =
   m2_print_type,		/* Print a type using appropriate syntax */
   m2_val_print,			/* Print a value using appropriate syntax */
   c_value_print,		/* Print a top-level value */
-  {"", "", "", ""},		/* Binary format info */
-  {"%loB", "", "o", "B"},	/* Octal format info */
-  {"%ld", "", "d", ""},		/* Decimal format info */
-  {"0%lXH", "0", "X", "H"},	/* Hex format info */
+  NULL,				/* Language specific skip_trampoline */
+  value_of_this,		/* value_of_this */
+  basic_lookup_symbol_nonlocal,	/* lookup_symbol_nonlocal */
+  basic_lookup_transparent_type,/* lookup_transparent_type */
+  NULL,				/* Language specific symbol demangler */
+  NULL,				/* Language specific class_name_from_physname */
   m2_op_print_tab,		/* expression operators for printing */
   0,				/* arrays are first-class (not c-style) */
   0,				/* String lower bound */
   &builtin_type_m2_char,	/* Type of string elements */
+  default_word_break_characters,
+  NULL, /* FIXME: la_language_arch_info.  */
   LANG_MAGIC
 };
 
 /* Initialization for Modula-2 */
 
 void
-_initialize_m2_language ()
+_initialize_m2_language (void)
 {
   /* Modula-2 "pervasive" types.  NOTE:  these can be redefined!!! */
   builtin_type_m2_int =

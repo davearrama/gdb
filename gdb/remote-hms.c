@@ -1,5 +1,6 @@
-/* Remote debugging interface for Hitachi HMS Monitor Version 1.0
-   Copyright 1995,1999 Free Software Foundation, Inc.
+/* Remote debugging interface for Renesas HMS Monitor Version 1.0
+   Copyright 1995, 1996, 1998, 1999, 2000, 2001
+   Free Software Foundation, Inc.
    Contributed by Cygnus Support.  Written by Steve Chamberlain
    (sac@cygnus.com).
 
@@ -25,14 +26,11 @@
 #include "target.h"
 #include "monitor.h"
 #include "serial.h"
+#include "regcache.h"
 
-static void hms_open PARAMS ((char *args, int from_tty));
+static void hms_open (char *args, int from_tty);
 static void
-hms_supply_register (regname, regnamelen, val, vallen)
-     char *regname;
-     int regnamelen;
-     char *val;
-     int vallen;
+hms_supply_register (char *regname, int regnamelen, char *val, int vallen)
 {
   int regno;
 
@@ -66,9 +64,9 @@ hms_supply_register (regname, regnamelen, val, vallen)
  * registers either. So, typing "info reg sp" becomes a "r30".
  */
 
-static char *hms_regnames[NUM_REGS] =
+static char *hms_regnames[] =
 {
-  "R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "CCR", "PC"
+  "R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "CCR", "PC", "", "", "", ""
 };
 
 /*
@@ -121,7 +119,7 @@ init_hms_cmds (void)
   hms_cmds.getreg.term_cmd = "\003";	/* getreg.term_cmd */
   hms_cmds.dump_registers = "r\r";	/* dump_registers */
   hms_cmds.register_pattern = "\\(\\w+\\)=\\([0-9a-fA-F]+\\)";	/* register_pattern */
-  hms_cmds.supply_register = hms_supply_register;	/* supply_register */
+  hms_cmds.supply_register = hms_supply_register;
   hms_cmds.load_routine = NULL;	/* load_routine (defaults to SRECs) */
   hms_cmds.load = "tl\r";	/* download command */
   hms_cmds.loadresp = NULL;	/* load response */
@@ -135,23 +133,23 @@ init_hms_cmds (void)
 }				/* init_hms-cmds */
 
 static void
-hms_open (args, from_tty)
-     char *args;
-     int from_tty;
+hms_open (char *args, int from_tty)
 {
   monitor_open (args, &hms_cmds, from_tty);
 }
 
 int write_dos_tick_delay;
 
+extern initialize_file_ftype _initialize_remote_hms; /* -Wmissing-prototypes */
+
 void
-_initialize_remote_hms ()
+_initialize_remote_hms (void)
 {
   init_hms_cmds ();
   init_monitor_ops (&hms_ops);
 
   hms_ops.to_shortname = "hms";
-  hms_ops.to_longname = "Hitachi Microsystems H8/300 debug monitor";
+  hms_ops.to_longname = "Renesas Microsystems H8/300 debug monitor";
   hms_ops.to_doc = "Debug via the HMS monitor.\n\
 Specify the serial device it is connected to (e.g. /dev/ttya).";
   hms_ops.to_open = hms_open;
