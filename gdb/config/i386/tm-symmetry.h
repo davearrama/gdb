@@ -1,7 +1,9 @@
 /* Target machine definitions for GDB on a Sequent Symmetry under dynix 3.0,
    with Weitek 1167 and i387 support.
-   Copyright 1986, 1987, 1989, 1991, 1992, 1993, 1994
-   Free Software Foundation, Inc.
+
+   Copyright 1986, 1987, 1989, 1991, 1992, 1993, 1994, 1995, 2003 Free
+   Software Foundation, Inc.
+
    Symmetry version by Jay Vosburgh (fubar@sequent.com).
 
    This file is part of GDB.
@@ -24,29 +26,20 @@
 #ifndef TM_SYMMETRY_H
 #define TM_SYMMETRY_H 1
 
+#include "regcache.h"
+#include "doublest.h"
+
 /* I don't know if this will work for cross-debugging, even if you do get
    a copy of the right include file.  */
 #include <machine/reg.h>
 
-#include "i386/tm-i386v.h"
-
-#undef START_INFERIOR_TRAPS_EXPECTED
-#define START_INFERIOR_TRAPS_EXPECTED 2
+#include "i386/tm-i386.h"
 
 /* Amount PC must be decremented by after a breakpoint.  This is often the
    number of bytes in BREAKPOINT but not always (such as now). */
 
 #undef DECR_PC_AFTER_BREAK
 #define DECR_PC_AFTER_BREAK 0
-
-#if 0
-/* --- this code can't be used unless we know we are running native,
-   since it uses host specific ptrace calls. */
-/* code for 80387 fpu.  Functions are from i386-dep.c, copied into
- * symm-dep.c.
- */
-#define FLOAT_INFO { i386_float_info(); }
-#endif
 
 /* Number of machine registers */
 
@@ -63,7 +56,7 @@
    break mysteriously for no apparent reason.  Also note that the st(0)...
    st(7) 387 registers are represented as st0...st7.  */
 
-#undef  REGISTER_NAMES
+#undef REGISTER_NAME
 #define REGISTER_NAMES {     "eax",  "edx",  "ecx",   "st0",  "st1", \
 			     "ebx",  "esi",  "edi",   "st2",  "st3", \
 			     "st4",  "st5",  "st6",   "st7",  "esp", \
@@ -222,30 +215,6 @@ switch (regno) { \
 #undef  REGISTER_BYTES
 #define REGISTER_BYTES ((10 * 4) + (8 * 10) + (31 * 4))
 
-/* Index within `registers' of the first byte of the space for
-   register N.  */
-
-#undef  REGISTER_BYTE
-#define REGISTER_BYTE(N) 		\
-(((N) < 3) ? ((N) * 4) :		\
-((N) < 5) ? ((((N) - 2) * 10) + 2) :	\
-((N) < 8) ? ((((N) - 5) * 4) + 32) :	\
-((N) < 14) ? ((((N) - 8) * 10) + 44) :	\
-    ((((N) - 14) * 4) + 104))
-
-/* Number of bytes of storage in the actual machine representation
- * for register N.  All registers are 4 bytes, except 387 st(0) - st(7),
- * which are 80 bits each. 
- */
-
-#undef  REGISTER_RAW_SIZE
-#define REGISTER_RAW_SIZE(N) \
-(((N) < 3) ? 4 :	\
-((N) < 5) ? 10 :	\
-((N) < 8) ? 4 :		\
-((N) < 14) ? 10 :	\
-    4)
-
 /* Nonzero if register N requires conversion
    from raw format to virtual format.  */
 
@@ -265,8 +234,8 @@ switch (regno) { \
 #undef REGISTER_CONVERT_TO_VIRTUAL
 #define REGISTER_CONVERT_TO_VIRTUAL(REGNUM,TYPE,FROM,TO) \
 { \
-  double val; \
-  floatformat_to_double (&floatformat_i387_ext, (FROM), &val); \
+  DOUBLEST val; \
+  floatformat_to_doublest (&floatformat_i387_ext, (FROM), &val); \
   store_floating ((TO), TYPE_LENGTH (TYPE), val); \
 }
 
@@ -276,8 +245,8 @@ switch (regno) { \
 #undef REGISTER_CONVERT_TO_RAW
 #define REGISTER_CONVERT_TO_RAW(TYPE,REGNUM,FROM,TO) \
 { \
-  double val = extract_floating ((FROM), TYPE_LENGTH (TYPE)); \
-  floatformat_from_double (&floatformat_i387_ext, &val, (TO)); \
+  DOUBLEST val = extract_floating ((FROM), TYPE_LENGTH (TYPE)); \
+  floatformat_from_doublest (&floatformat_i387_ext, &val, (TO)); \
 }
 
 /* Return the GDB type object for the "standard" data type
@@ -297,6 +266,7 @@ switch (regno) { \
    passes it on the stack.  gcc should be fixed in future versions to
    adopt native cc conventions.  */
 
+#undef  PUSH_ARGUMENTS
 #undef  STORE_STRUCT_RETURN
 #define STORE_STRUCT_RETURN(ADDR, SP) write_register(0, (ADDR))
 
@@ -304,8 +274,8 @@ switch (regno) { \
    a function return value of type TYPE, and copy that, in virtual format,
    into VALBUF.  */
 
-#undef  EXTRACT_RETURN_VALUE
-#define EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
+#undef  DEPRECATED_EXTRACT_RETURN_VALUE
+#define DEPRECATED_EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
   symmetry_extract_return_value(TYPE, REGBUF, VALBUF)
 
 /* The following redefines make backtracing through sigtramp work.

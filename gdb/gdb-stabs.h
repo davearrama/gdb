@@ -1,5 +1,6 @@
 /* Definitions for symbol-reading containing "stabs", for GDB.
-   Copyright 1992 Free Software Foundation, Inc.
+   Copyright 1992, 1993, 1995, 1996, 1997, 1999, 2000
+   Free Software Foundation, Inc.
    Contributed by Cygnus Support.  Written by John Gilmore.
 
    This file is part of GDB.
@@ -28,16 +29,7 @@
 #if !defined (GDBSTABS_H)
 #define GDBSTABS_H
 
-/* Offsets in the psymtab's section_offsets array for various kinds of
-   stabs symbols.  Every psymtab built from stabs will have these offsets
-   filled in by these guidelines, so that when actually reading symbols, the
-   proper offset can simply be selected and added to the symbol value.  */
-
-#define	SECT_OFF_TEXT	0
-#define	SECT_OFF_DATA	1
-#define	SECT_OFF_BSS	2
-#define	SECT_OFF_RODATA	3
-#define	SECT_OFF_MAX	16	/* Count of possible values */
+#define	SECT_OFF_MAX	64	/* Count of possible values */
 
 /* The stab_section_info chain remembers info from the ELF symbol table,
    while psymtabs are being built for the other symbol tables in the 
@@ -78,6 +70,9 @@ struct dbx_symfile_info
     asection *text_section;
     asection *data_section;
     asection *bss_section;
+
+    /* Pointer to the separate ".stab" section, if there is one.  */
+    asection *stab_section;
   };
 
 #define DBX_SYMFILE_INFO(o)	((o)->sym_stab_info)
@@ -91,5 +86,6 @@ struct dbx_symfile_info
 #define DBX_TEXT_SECTION(o)	(DBX_SYMFILE_INFO(o)->text_section)
 #define DBX_DATA_SECTION(o)	(DBX_SYMFILE_INFO(o)->data_section)
 #define DBX_BSS_SECTION(o)	(DBX_SYMFILE_INFO(o)->bss_section)
+#define DBX_STAB_SECTION(o)	(DBX_SYMFILE_INFO(o)->stab_section)
 
 #endif /* GDBSTABS_H */

@@ -1,5 +1,6 @@
 /* Read HP PA/Risc object files for GDB.
-   Copyright 1991, 1992, 1996, 1999 Free Software Foundation, Inc.
+   Copyright 1991, 1992, 1994, 1995, 1996, 1998, 1999, 2000, 2001, 2002
+   Free Software Foundation, Inc.
    Written by Fred Fish at Cygnus Support.
 
    This file is part of GDB.
@@ -36,38 +37,28 @@
 
 /* Various things we might complain about... */
 
-static void
-som_symfile_init PARAMS ((struct objfile *));
+static void som_symfile_init (struct objfile *);
 
-static void
-som_new_init PARAMS ((struct objfile *));
+static void som_new_init (struct objfile *);
 
-static void
-som_symfile_read PARAMS ((struct objfile *, int));
+static void som_symfile_read (struct objfile *, int);
 
-static void
-som_symfile_finish PARAMS ((struct objfile *));
+static void som_symfile_finish (struct objfile *);
 
-static void
-som_symtab_read PARAMS ((bfd *, struct objfile *,
-			 struct section_offsets *));
+static void som_symtab_read (bfd *, struct objfile *,
+			     struct section_offsets *);
 
-static void
-som_symfile_offsets PARAMS ((struct objfile *, struct section_addr_info *));
+static void som_symfile_offsets (struct objfile *, struct section_addr_info *);
 
 /* FIXME: These should really be in a common header somewhere */
 
-extern void
-hpread_build_psymtabs PARAMS ((struct objfile *, int));
+extern void hpread_build_psymtabs (struct objfile *, int);
 
-extern void
-hpread_symfile_finish PARAMS ((struct objfile *));
+extern void hpread_symfile_finish (struct objfile *);
 
-extern void
-hpread_symfile_init PARAMS ((struct objfile *));
+extern void hpread_symfile_init (struct objfile *);
 
-extern void
-do_pxdb PARAMS ((bfd *));
+extern void do_pxdb (bfd *);
 
 /*
 
@@ -89,10 +80,8 @@ do_pxdb PARAMS ((bfd *));
  */
 
 static void
-som_symtab_read (abfd, objfile, section_offsets)
-     bfd *abfd;
-     struct objfile *objfile;
-     struct section_offsets *section_offsets;
+som_symtab_read (bfd *abfd, struct objfile *objfile,
+		 struct section_offsets *section_offsets)
 {
   unsigned int number_of_symbols;
   int val, dynamic;
@@ -109,15 +98,17 @@ som_symtab_read (abfd, objfile, section_offsets)
 
   number_of_symbols = bfd_get_symcount (abfd);
 
+  /* FIXME (alloca): could be quite large. */
   buf = alloca (symsize * number_of_symbols);
   bfd_seek (abfd, obj_som_sym_filepos (abfd), SEEK_SET);
-  val = bfd_read (buf, symsize * number_of_symbols, 1, abfd);
+  val = bfd_bread (buf, symsize * number_of_symbols, abfd);
   if (val != symsize * number_of_symbols)
     error ("Couldn't read symbol dictionary!");
 
+  /* FIXME (alloca): could be quite large. */
   stringtab = alloca (obj_som_stringtab_size (abfd));
   bfd_seek (abfd, obj_som_str_filepos (abfd), SEEK_SET);
-  val = bfd_read (stringtab, obj_som_stringtab_size (abfd), 1, abfd);
+  val = bfd_bread (stringtab, obj_som_stringtab_size (abfd), abfd);
   if (val != obj_som_stringtab_size (abfd))
     error ("Can't read in HP string table.");
 
@@ -125,20 +116,13 @@ som_symtab_read (abfd, objfile, section_offsets)
      can do the right thing for ST_ENTRY vs ST_CODE symbols).
 
      There's nothing in the header which easily allows us to do
-     this.  The only reliable way I know of is to check for the
-     existance of a $SHLIB_INFO$ section with a non-zero size.  */
-  /* The code below is not a reliable way to check whether an
-   * executable is dynamic, so I commented it out - RT
-   * shlib_info = bfd_get_section_by_name (objfile->obfd, "$SHLIB_INFO$");
-   * if (shlib_info)
-   *   dynamic = (bfd_section_size (objfile->obfd, shlib_info) != 0);
-   * else
-   *   dynamic = 0;
-   */
-  /* I replaced the code with a simple check for text offset not being
-   * zero. Still not 100% reliable, but a more reliable way of asking
-   * "is this a dynamic executable?" than the above. RT
-   */
+     this.
+
+     This code used to rely upon the existence of a $SHLIB_INFO$
+     section to make this determination.  HP claims that it is
+     more accurate to check for a nonzero text offset, but they
+     have not provided any information about why that test is
+     more accurate.  */
   dynamic = (text_offset != 0);
 
   endbufp = buf + number_of_symbols;
@@ -165,9 +149,7 @@ som_symtab_read (abfd, objfile, section_offsets)
 	      symname = bufp->name.n_strx + stringtab;
 	      ms_type = mst_text;
 	      bufp->symbol_value += text_offset;
-#ifdef SMASH_TEXT_ADDRESS
-	      SMASH_TEXT_ADDRESS (bufp->symbol_value);
-#endif
+	      bufp->symbol_value = SMASH_TEXT_ADDRESS (bufp->symbol_value);
 	      break;
 
 	    case ST_ENTRY:
@@ -180,18 +162,14 @@ som_symtab_read (abfd, objfile, section_offsets)
 	      else
 		ms_type = mst_text;
 	      bufp->symbol_value += text_offset;
-#ifdef SMASH_TEXT_ADDRESS
-	      SMASH_TEXT_ADDRESS (bufp->symbol_value);
-#endif
+	      bufp->symbol_value = SMASH_TEXT_ADDRESS (bufp->symbol_value);
 	      break;
 
 	    case ST_STUB:
 	      symname = bufp->name.n_strx + stringtab;
 	      ms_type = mst_solib_trampoline;
 	      bufp->symbol_value += text_offset;
-#ifdef SMASH_TEXT_ADDRESS
-	      SMASH_TEXT_ADDRESS (bufp->symbol_value);
-#endif
+	      bufp->symbol_value = SMASH_TEXT_ADDRESS (bufp->symbol_value);
 	      break;
 
 	    case ST_DATA:
@@ -219,9 +197,7 @@ som_symtab_read (abfd, objfile, section_offsets)
 	      symname = bufp->name.n_strx + stringtab;
 	      ms_type = mst_file_text;
 	      bufp->symbol_value += text_offset;
-#ifdef SMASH_TEXT_ADDRESS
-	      SMASH_TEXT_ADDRESS (bufp->symbol_value);
-#endif
+	      bufp->symbol_value = SMASH_TEXT_ADDRESS (bufp->symbol_value);
 
 	    check_strange_names:
 	      /* Utah GCC 2.5, FSF GCC 2.6 and later generate correct local
@@ -251,33 +227,25 @@ som_symtab_read (abfd, objfile, section_offsets)
 	      symname = bufp->name.n_strx + stringtab;
 	      ms_type = mst_file_text;
 	      bufp->symbol_value += text_offset;
-#ifdef SMASH_TEXT_ADDRESS
-	      SMASH_TEXT_ADDRESS (bufp->symbol_value);
-#endif
+	      bufp->symbol_value = SMASH_TEXT_ADDRESS (bufp->symbol_value);
 	      break;
 
 	    case ST_ENTRY:
 	      symname = bufp->name.n_strx + stringtab;
-	      /* For a dynamic executable, ST_ENTRY symbols are
-	         the stubs, while the ST_CODE symbol is the real
-	         function.  */
-	      if (dynamic)
-		ms_type = mst_solib_trampoline;
-	      else
-		ms_type = mst_file_text;
+	      /* SS_LOCAL symbols in a shared library do not have
+		 export stubs, so we do not have to worry about
+		 using mst_file_text vs mst_solib_trampoline here like
+		 we do for SS_UNIVERSAL and SS_EXTERNAL symbols above.  */
+	      ms_type = mst_file_text;
 	      bufp->symbol_value += text_offset;
-#ifdef SMASH_TEXT_ADDRESS
-	      SMASH_TEXT_ADDRESS (bufp->symbol_value);
-#endif
+	      bufp->symbol_value = SMASH_TEXT_ADDRESS (bufp->symbol_value);
 	      break;
 
 	    case ST_STUB:
 	      symname = bufp->name.n_strx + stringtab;
 	      ms_type = mst_solib_trampoline;
 	      bufp->symbol_value += text_offset;
-#ifdef SMASH_TEXT_ADDRESS
-	      SMASH_TEXT_ADDRESS (bufp->symbol_value);
-#endif
+	      bufp->symbol_value = SMASH_TEXT_ADDRESS (bufp->symbol_value);
 	      break;
 
 
@@ -356,9 +324,7 @@ som_symtab_read (abfd, objfile, section_offsets)
    capability even for files compiled without -g.  */
 
 static void
-som_symfile_read (objfile, mainline)
-     struct objfile *objfile;
-     int mainline;
+som_symfile_read (struct objfile *objfile, int mainline)
 {
   bfd *abfd = objfile->obfd;
   struct cleanup *back_to;
@@ -366,7 +332,7 @@ som_symfile_read (objfile, mainline)
   do_pxdb (symfile_bfd_open (objfile->name));
 
   init_minimal_symbol_collection ();
-  back_to = make_cleanup ((make_cleanup_func) discard_minimal_symbols, 0);
+  back_to = make_cleanup_discard_minimal_symbols ();
 
   /* Read in the import list and the export list.  Currently
      the export list isn't used; the import list is used in
@@ -419,8 +385,7 @@ som_symfile_read (objfile, mainline)
    We reinitialize buildsym, since we may be reading stabs from a SOM file.  */
 
 static void
-som_new_init (ignore)
-     struct objfile *ignore;
+som_new_init (struct objfile *ignore)
 {
   stabsread_new_init ();
   buildsym_new_init ();
@@ -432,12 +397,11 @@ som_new_init (ignore)
    objfile struct from the global list of known objfiles. */
 
 static void
-som_symfile_finish (objfile)
-     struct objfile *objfile;
+som_symfile_finish (struct objfile *objfile)
 {
   if (objfile->sym_stab_info != NULL)
     {
-      mfree (objfile->md, objfile->sym_stab_info);
+      xmfree (objfile->md, objfile->sym_stab_info);
     }
   hpread_symfile_finish (objfile);
 }
@@ -445,8 +409,7 @@ som_symfile_finish (objfile)
 /* SOM specific initialization routine for reading symbols.  */
 
 static void
-som_symfile_init (objfile)
-     struct objfile *objfile;
+som_symfile_init (struct objfile *objfile)
 {
   /* SOM objects may be reordered, so set OBJF_REORDERED.  If we
      find this causes a significant slowdown in gdb then we could
@@ -460,22 +423,40 @@ som_symfile_init (objfile)
    Plain and simple for now.  */
 
 static void
-som_symfile_offsets (objfile, addrs)
-     struct objfile *objfile;
-     struct section_addr_info *addrs;
+som_symfile_offsets (struct objfile *objfile, struct section_addr_info *addrs)
 {
   int i;
+  CORE_ADDR text_addr;
 
   objfile->num_sections = SECT_OFF_MAX;
   objfile->section_offsets = (struct section_offsets *)
     obstack_alloc (&objfile->psymbol_obstack, SIZEOF_SECTION_OFFSETS);
 
+  /* FIXME: ezannoni 2000-04-20 The section names in SOM are not
+     .text, .data, etc, but $TEXT$, $DATA$,... We should initialize
+     SET_OFF_* from bfd. (See default_symfile_offsets()). But I don't
+     know the correspondence between SOM sections and GDB's idea of
+     section names. So for now we default to what is was before these
+     changes.*/
+  objfile->sect_index_text = 0;
+  objfile->sect_index_data = 1;
+  objfile->sect_index_bss = 2;
+  objfile->sect_index_rodata = 3;
+
   /* First see if we're a shared library.  If so, get the section
      offsets from the library, else get them from addrs.  */
   if (!som_solib_section_offsets (objfile, objfile->section_offsets))
     {
+      /* Note: Here is OK to compare with ".text" because this is the
+         name that gdb itself gives to that section, not the SOM
+         name. */
+      for (i = 0; i < SECT_OFF_MAX && addrs->other[i].name; i++)
+	if (strcmp (addrs->other[i].name, ".text") == 0)
+	  break;
+      text_addr = addrs->other[i].addr;
+
       for (i = 0; i < SECT_OFF_MAX; i++)
-	ANOFFSET (objfile->section_offsets, i) = addrs -> text_addr;
+	(objfile->section_offsets)->offsets[i] = text_addr;
     }
 }
 
@@ -486,8 +467,7 @@ som_symfile_offsets (objfile, addrs)
    with as "loc_indirect" vars.)
    Return value = number of import symbols read in. */
 int
-init_import_symbols (objfile)
-     struct objfile *objfile;
+init_import_symbols (struct objfile *objfile)
 {
   unsigned int import_list;
   unsigned int import_list_size;
@@ -596,7 +576,7 @@ init_import_symbols (objfile)
     }
 
   objfile->import_list_size = import_list_size;
-  free (string_buffer);
+  xfree (string_buffer);
   return import_list_size;
 }
 
@@ -607,8 +587,7 @@ init_import_symbols (objfile)
    with as "loc_indirect" vars.)
    Return value = number of import symbols read in. */
 int
-init_export_symbols (objfile)
-     struct objfile *objfile;
+init_export_symbols (struct objfile *objfile)
 {
   unsigned int export_list;
   unsigned int export_list_size;
@@ -728,7 +707,7 @@ init_export_symbols (objfile)
     }
 
   objfile->export_list_size = export_list_size;
-  free (string_buffer);
+  xfree (string_buffer);
   return export_list_size;
 }
 
@@ -748,7 +727,7 @@ static struct sym_fns som_sym_fns =
 };
 
 void
-_initialize_somread ()
+_initialize_somread (void)
 {
   add_symtab_fns (&som_sym_fns);
 }
