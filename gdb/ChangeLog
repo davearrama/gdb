@@ -1,37 +1,255 @@
-2004-09-07  Andrew Cagney  <cagney@gnu.org>
+2004-09-22  Jim Blandy  <jimb@redhat.com>
 
-	GDB 6.2.1 released.
-	* version.in: Bump to version 6.2.1.
+	* dwarf2loc.c (dwarf2_evaluate_loc_desc): Fix misapplied patch.
 
-2004-08-13  Mark Kettenis  <kettenis@gnu.org>
+2004-09-07  Jim Blandy  <jimb@redhat.com>
 
-	* i386-tdep.c (I386_MAX_INSN_LEN): New define.
-	(struct i386_insn): New structure.
-	(i386_match_insn): New function.
-	(i386_frame_setup_skip_insns): New variable.
-	(i386_analyze_frame_setup): Change to use i386_match_insn and the
-	array i386_frame_setup_insns of instructions that should be
-	skipped inside the frame setup sequence.
-	* NEWS: Mention improved i386 prologue analyzer in GDB 6.2.1.
+	* rs6000-tdep.c: #include "dwarf2expr.h".
+	(dwarf_piece_is_ev_upper_reg, dwarf_piece_is_gpr)
+	(e500_dwarf_simplify_register_pieces): New functions.
+	(rs6000_gdbarch_init): If the architecture is E500, register
+	e500_dwarf_simplify_register_pieces.
+	* Makefile.in (rs6000-tdep.o): Update dependencies.
 
-2004-08-12  Andrew Cagney  <cagney@gnu.org>
+	* gdbarch.sh (dwarf_simplify_register_pieces): New method.
+	Add forward declaration for 'struct dwarf_expr_piece'.
+	* gdbarch.c, gdbarch.h: Regenerated.
+	* dwarf2loc.c (dwarf2_evaluate_loc_desc): Try to simplify
+	multi-piece expression results before giving up.
+	* arch-utils.c (dwarf_never_simplify_pieces): New function.
+	* arch-utils.h (struct dwarf_expr_piece): Forward decl for struct
+	type, used in ...
+	(dwarf_never_simplify_pieces): New declaration.
 
-	* NEWS: Mention fixes in GDB 6.2.1.
-	* PROBLEMS: Remove mention of mips-irix.
+	* rs6000-tdep.c: #include "dwarf2-frame.h".
+	(rs6000_dwarf2_reg_to_regnum): Recognize 65 as another number for lr.
+	(rs6000_gdbarch_init): Hook in dwarf2_frame_sniffer.
+	* Makefile.in (rs6000-tdep.o): Update dependencies.
 
-2004-08-08  Mark Kettenis  <kettenis@gnu.org>
+	Merge changes from trunk:
 
-	* vax-tdep.c (vax_frame_this_id): Use frame_func_unwind instead of
-	frame_pc_unwind.
+	2004-08-24  Jim Blandy  <jimb@redhat.com>
 
-2004-08-07  Andrew Cagney  <cagney@gnu.org>
+	* dwarf2expr.h (struct dwarf_expr_context): New members
+	'num_pieces' and 'pieces', for returning the result of an
+	expression that uses DW_OP_piece.
+	(struct dwarf_expr_piece): New struct type.
+	* dwarf2expr.c (new_dwarf_expr_context): Initialize num_pieces and
+	pieces.
+	(free_dwarf_expr_context): Free pieces, if any.
+	(add_piece): New function.
+	(execute_stack_op): Implement DW_OP_piece.
+	* dwarf2loc.c (dwarf2_evaluate_loc_desc): If the result of the
+	expression is a list of pieces, print an error message.
+        (dwarf2_loc_desc_needs_frame): If the expression yields
+        pieces, and any piece is in a register, then we need a frame.
 
-	* doublest.c (floatformat_from_length): Fix tipo, "*" not "&".
+	* dwarf2loc.c (dwarf2_evaluate_loc_desc): Wait to fetch the top of
+	the stack until we've decided what sort of result the evaluation
+	has produced.  Use separate variables, with more specific names.
 
-	* doublest.c: Update copyright.
-	(floatformat_from_length): Call error when floatformat is NULL.
-	(extract_floating_by_length): Remove NULL fmt check.
-	(store_floating_by_length): Ditto.
+2004-09-01  Jim Blandy  <jimb@redhat.com>
+
+	Allow access to all 64 bits of the SPE GPR's in multi-threaded
+	programs.
+	* ppc-tdep.h (struct speregset): New struct type.
+	* ppc-linux-tdep.c: #include "gdb_assert.h".
+	(ppc_linux_supply_speregset, ppc_linux_collect_speregset): New
+	functions.
+	(ppc_linux_speregset): New structure.
+	(ppc_linux_init_abi): Describe how to pass the full 64-bit values
+	of the SPE GPRs across the thread-db interface.
+	* ppc-linux-nat.c (struct gdb_evrregset_t): Doc fix.
+	* Makefile.in (ppc-linux-tdep.o): Update dependencies.
+
+	Allow targets to specify an extended register set, to be passed
+	through libthread_db via its 'xregs' functions.
+	* gdbarch.sh (XREGS_REGSET, XREGS_SIZE, XREGS_NAME): New gdbarch
+	members.
+	* gdbarch.c, gdbarch.h: Regenerated.
+	* proc-service.c: #include "regset.h" and "regcache.h".
+	(ps_lgetxregsize, ps_lgetxregs, ps_lsetxregs): Fill in real
+	implementations of these functions.
+	* thread-db.c: #include "regset.h".
+	(td_thr_getxregsize_p, td_thr_getxregs_p, td_thr_setxregs_p): New
+	variables.
+	(thread_db_load): Initialize them.
+	(warned_xregs_not_implemented): New variable.
+	(thread_db_new_objfile): Clear it here.
+	(thread_db_fetch_registers, thread_db_store_registers): Supply and
+	collect the xregset, too, if the architecture says it has one, and
+	libthread_db seems to be able to support it.
+	* Makefile.in (proc-service.o, thread-db.o): Update dependencies.
+
+2004-08-25  Jim Blandy  <jimb@redhat.com>
+
+	Merge changes from trunk:
+	
+	2004-08-09  Jim Blandy  <jimb@redhat.com>
+
+	* rs6000-tdep.c (set_sim_regno, init_sim_regno_table,
+	rs6000_register_sim_regno): Doc fixes.
+
+	2004-08-04  Jim Blandy  <jimb@redhat.com>
+
+	* ppc-linux-nat.c (fetch_register): Replace 'gdb_assert (0)' with
+	a call to 'internal_error', with a more helpful error message.
+	* rs6000-tdep.c (e500_pseudo_register_read,
+	e500_pseudo_register_write, rs6000_store_return_value): Same.
+
+	Change the layout of the PowerPC E500 raw register cache to allow
+	the lower 32-bit halves of the GPRS to be their own raw registers,
+	not pseudoregisters.
+	* ppc-tdep.h (struct gdbarch_tdep): Remove ppc_gprs_pseudo_p flag;
+	add ppc_ev0_upper_regnum flag.
+	* rs6000-tdep.c: #include "reggroups.h".
+	(spe_register_p): Recognize the ev upper half registers as SPE
+	registers.
+	(init_sim_regno_table): Build gdb->sim mappings for the upper-half
+	registers.
+	(e500_move_ev_register): New function.
+	(e500_pseudo_register_read, e500_pseudo_register_write): The 'ev'
+	vector registers are the pseudo-registers now, formed by splicing
+	together the gprs and the upper-half registers.
+	(e500_register_reggroup_p): New function.
+	(P): Macro deleted.
+	(P8, A4): New macro.
+	(PPC_EV_REGS, PPC_GPRS_PSEUDO_REGS): Macros deleted.
+	(PPC_SPE_GP_REGS, PPC_SPE_UPPER_GP_REGS, PPC_EV_PSEUDO_REGS): New
+	macros.
+	(registers_e500): Rearrange register set so that the raw register
+	set contains 32-bit GPRs and upper-half registers, and the SPE
+	vector registers become pseudo-registers.
+	(rs6000_gdbarch_init): Don't initialize tdep->ppc_gprs_pseudo_p;
+	it has been deleted.  Initialize ppc_ev0_upper_regnum.  Many other
+	register numbers are now the same for the E500 as they are for
+	other PowerPC variants.  Register e500_register_reggroup_p as the
+	register group function for the E500.
+	* Makefile.in (rs6000-tdep.o): Update dependencies.
+
+	Adapt PPC E500 native support to the new raw regcache layout.
+	* ppc-linux-nat.c (struct gdb_evrregset_t): Doc fixes.
+	(read_spliced_spe_reg, write_spliced_spe_reg): Deleted.
+	(fetch_spe_register, store_spe_register): Handle fetching/storing
+	all the SPE registers at once, if regno == -1.  These now take
+	over the job of fetch_spe_registers and store_spe_registers.
+	(fetch_spe_registers, store_spe_registers): Deleted.
+	(fetch_ppc_registers, store_ppc_registers): Fetch/store gprs
+	unconditionally; they're always raw.  Fetch/store SPE upper half
+	registers, if present, instead of ev registers.
+	(fetch_register, store_register): Remove sanity checks: gprs are
+	never pseudo-registers now, so we never need to even mention any
+	registers that are ever pseudoregisters.
+
+	Use a fixed register numbering when communicating with the PowerPC
+	simulator.
+	* ppc-tdep.h (struct gdbarch_tdep): New member: 'sim_regno'.
+	* rs6000-tdep.c: #include "sim-regno.h" and "gdb/sim-ppc.h".
+	(set_sim_regno, init_sim_regno_table, rs6000_register_sim_regno): 
+	New functions.
+	(rs6000_gdbarch_init): Register rs6000_register_sim_regno.  Call
+	init_sim_regno_table.
+	* Makefile.in (gdb_sim_ppc_h): New variable.
+	(rs6000-tdep.o): Update dependencies.
+
+	2004-08-02  Andrew Cagney  <cagney@gnu.org>
+	
+	Replace DEPRECATED_REGISTER_RAW_SIZE with register_size.
+	* rs6000-tdep.c (rs6000_push_dummy_call)
+	(rs6000_extract_return_value): Use register_size.
+	...
+	* ppc-linux-nat.c (fetch_altivec_register, fetch_register)
+	(supply_vrregset, store_altivec_register, fill_vrregset): Ditto.
+
+	2004-07-20  Jim Blandy  <jimb@redhat.com>
+
+	* rs6000-tdep.c (rs6000_gdbarch_init): The register set used for
+	bfd_mach_ppc has no segment registers.
+
+	Include PowerPC SPR numbers for special-purpose registers.
+	* rs6000-tdep.c (struct reg): Add new member, 'spr_num'.
+	(R, R4, R8, R16, F, P, R32, R64, R0): Include value for
+	new member in initializer.
+	(S, S4, SN4, S64): New macros for defining special-purpose
+	registers.
+	(PPC_UISA_SPRS, PPC_UISA_NOFP_SPRS, PPC_OEA_SPRS, registers_power,
+	registers_403, registers_403GC, registers_505, registers_860,
+	registers_601, registers_602, registers_603, registers_604,
+	registers_750, registers_e500): Use them.
+
+	* rs6000-tdep.c (rs6000_gdbarch_init): Delete variable 'power';
+	replace references with expression used to initialize variable.
+
+	2004-07-16  Jim Blandy  <jimb@redhat.com>
+
+	* ppc-tdep.h (ppc_spr_asr): Add missing OEA SPR.
+        (ppc_spr_mi_dbcam, ppc_spr_mi_dbram0, ppc_spr_mi_dbram1)
+	(ppc_spr_md_cam, ppc_spr_md_ram0, ppc_spr_md_ram1): Add
+	missing MPC823 SPRs.
+	(ppc_spr_m_twb): Renamed from ppc_spr_md_twb; the old name was
+	incorrect.  (This was corrected in GDB's register name tables on
+	2004-07-14.)
+
+	* rs6000-tdep.c (registers_602): Correct register name: "esassr"
+	should be "esasrr" ("ESA Save and Restore Register").
+
+	2004-07-15  Jim Blandy  <jimb@redhat.com>
+
+	* ppc-tdep.h (struct gdbarch_tdep): New member: ppc_sr0_regnum.
+	* rs6000-tdep.c (rs6000_gdbarch_init): Initialize it.
+
+	2004-07-14  Jim Blandy  <jimb@redhat.com>
+
+	* rs6000-tdep.c (COMMON_UISA_NOFP_REGS): Delete; unused.
+
+	* ppc-tdep.h (ppc_num_vrs): New enum constant.
+
+	* ppc-tdep.h (ppc_num_srs): New enum constant.
+
+	* ppc-tdep.h (ppc_spr_mq, ppc_spr_xer, ppc_spr_rtcu, ppc_spr_rtcl)
+	(ppc_spr_lr, ppc_spr_ctr, ppc_spr_cnt, ppc_spr_dsisr, ppc_spr_dar)
+	(ppc_spr_dec, ppc_spr_sdr1, ppc_spr_srr0, ppc_spr_srr1)
+	(ppc_spr_eie, ppc_spr_eid, ppc_spr_nri, ppc_spr_sp, ppc_spr_cmpa)
+	(ppc_spr_cmpb, ppc_spr_cmpc, ppc_spr_cmpd, ppc_spr_icr)
+	(ppc_spr_der, ppc_spr_counta, ppc_spr_countb, ppc_spr_cmpe)
+	(ppc_spr_cmpf, ppc_spr_cmpg, ppc_spr_cmph, ppc_spr_lctrl1)
+	(ppc_spr_lctrl2, ppc_spr_ictrl, ppc_spr_bar, ppc_spr_vrsave)
+	(ppc_spr_sprg0, ppc_spr_sprg1, ppc_spr_sprg2, ppc_spr_sprg3)
+	(ppc_spr_ear, ppc_spr_tbl, ppc_spr_tbu, ppc_spr_pvr)
+	(ppc_spr_spefscr, ppc_spr_ibat0u, ppc_spr_ibat0l, ppc_spr_ibat1u)
+	(ppc_spr_ibat1l, ppc_spr_ibat2u, ppc_spr_ibat2l, ppc_spr_ibat3u)
+	(ppc_spr_ibat3l, ppc_spr_dbat0u, ppc_spr_dbat0l, ppc_spr_dbat1u)
+	(ppc_spr_dbat1l, ppc_spr_dbat2u, ppc_spr_dbat2l, ppc_spr_dbat3u)
+	(ppc_spr_dbat3l, ppc_spr_ic_cst, ppc_spr_ic_adr, ppc_spr_ic_dat)
+	(ppc_spr_dc_cst, ppc_spr_dc_adr, ppc_spr_dc_dat, ppc_spr_dpdr)
+	(ppc_spr_dpir, ppc_spr_immr, ppc_spr_mi_ctr, ppc_spr_mi_ap)
+	(ppc_spr_mi_epn, ppc_spr_mi_twc, ppc_spr_mi_rpn, ppc_spr_mi_cam)
+	(ppc_spr_mi_ram0, ppc_spr_mi_ram1, ppc_spr_md_ctr, ppc_spr_m_casid)
+	(ppc_spr_md_ap, ppc_spr_md_epn, ppc_spr_md_twb, ppc_spr_md_twc)
+	(ppc_spr_md_rpn, ppc_spr_m_tw, ppc_spr_md_dbcam, ppc_spr_md_dbram0)
+	(ppc_spr_md_dbram1, ppc_spr_ummcr0, ppc_spr_upmc1, ppc_spr_upmc2)
+	(ppc_spr_usia, ppc_spr_ummcr1, ppc_spr_upmc3, ppc_spr_upmc4)
+	(ppc_spr_zpr, ppc_spr_pid, ppc_spr_mmcr0, ppc_spr_pmc1)
+	(ppc_spr_sgr, ppc_spr_pmc2, ppc_spr_dcwr, ppc_spr_sia)
+	(ppc_spr_mmcr1, ppc_spr_pmc3, ppc_spr_pmc4, ppc_spr_sda)
+	(ppc_spr_tbhu, ppc_spr_tblu, ppc_spr_dmiss, ppc_spr_dcmp)
+	(ppc_spr_hash1, ppc_spr_hash2, ppc_spr_icdbdr, ppc_spr_imiss)
+	(ppc_spr_esr, ppc_spr_icmp, ppc_spr_dear, ppc_spr_rpa)
+	(ppc_spr_evpr, ppc_spr_cdbcr, ppc_spr_tsr, ppc_spr_602_tcr)
+	(ppc_spr_403_tcr, ppc_spr_ibr, ppc_spr_pit, ppc_spr_esasrr)
+	(ppc_spr_tbhi, ppc_spr_tblo, ppc_spr_srr2, ppc_spr_sebr)
+	(ppc_spr_srr3, ppc_spr_ser, ppc_spr_hid0, ppc_spr_dbsr)
+	(ppc_spr_hid1, ppc_spr_iabr, ppc_spr_dbcr, ppc_spr_iac1)
+	(ppc_spr_dabr, ppc_spr_iac2, ppc_spr_dac1, ppc_spr_dac2)
+	(ppc_spr_l2cr, ppc_spr_dccr, ppc_spr_ictc, ppc_spr_iccr)
+	(ppc_spr_thrm1, ppc_spr_pbl1, ppc_spr_thrm2, ppc_spr_pbu1)
+	(ppc_spr_thrm3, ppc_spr_pbl2, ppc_spr_fpecr, ppc_spr_lt)
+	(ppc_spr_pir, ppc_spr_pbu2): New enum constants for PowerPC
+	special-purpose register numbers.
+
+	* rs6000-tdep.c (registers_860): Correct register name.  (No PPC
+	manual mentions 'md_twb', but many mention 'm_twb', and at that
+	point in the register list.)
 
 2004-07-29  Andrew Cagney  <cagney@gnu.org>
 
