@@ -27,6 +27,8 @@ htmldir = $(prefix)/html
 
 SHELL = @SHELL@
 
+LN_S = @LN_S@
+
 INSTALL = @INSTALL@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_DATA = @INSTALL_DATA@
@@ -39,6 +41,10 @@ TEXIDIR=${gdbdir}/../texinfo
 
 # where to find makeinfo, preferably one designed for texinfo-2
 MAKEINFO=makeinfo
+
+# Note that texinfo 4.0's makeinfo --html can only generate a
+# single file, which would be too large, so continue to use
+# texi2html. -sts 2000-03-28
 
 MAKEHTML = texi2html
 MAKEHTMLFLAGS = -glossary -menu -split_chapter
@@ -83,7 +89,7 @@ TEXINDEX = texindex
 DVIPS = dvips
 
 # Main GDB manual's source files
-SFILES_INCLUDED = gdb-cfg.texi
+SFILES_INCLUDED = gdb-cfg.texi $(srcdir)/annotate.texi
 
 SFILES_LOCAL = $(srcdir)/gdb.texinfo GDBvn.texi $(SFILES_INCLUDED)
 
@@ -100,8 +106,10 @@ dvi: gdb.dvi gdbint.dvi stabs.dvi refcard.dvi
 ps: gdb.ps gdbint.ps stabs.ps refcard.ps
 html: gdb_toc.html gdbint_toc.html stabs_toc.html
 all-doc: info dvi ps
+diststuff: info
 
 install-info: info
+	$(SHELL) $(srcdir)/../../mkinstalldirs $(infodir)
 	for i in *.info* ; do \
 		$(INSTALL_DATA) $$i $(infodir)/$$i ; \
 	done
@@ -194,7 +202,8 @@ GDBvn.texi : ${gdbdir}/Makefile.in
 # not one for their binary config---which may not be specifically
 # defined anyways).
 gdb-cfg.texi: ${srcdir}/${DOC_CONFIG}-cfg.texi
-	ln -s ${srcdir}/${DOC_CONFIG}-cfg.texi gdb-cfg.texi || \
+	(test "$$LN_S" = "ln -s" && \
+	  ln -s ${srcdir}/${DOC_CONFIG}-cfg.texi gdb-cfg.texi) || \
 	ln ${srcdir}/${DOC_CONFIG}-cfg.texi gdb-cfg.texi || \
 	cp ${srcdir}/${DOC_CONFIG}-cfg.texi gdb-cfg.texi
 
@@ -210,7 +219,7 @@ gdb-cfg.texi: ${srcdir}/${DOC_CONFIG}-cfg.texi
 # GDB MANUAL: TeX dvi file
 gdb.dvi: ${SFILES_DOC}
 	if [ ! -f ./GDBvn.texi ]; then \
-		ln -s $(srcdir)/GDBvn.texi . || \
+		(test "$$LN_S" = "ln -s" && ln -s $(srcdir)/GDBvn.texi .) || \
 		ln $(srcdir)/GDBvn.texi . || \
 		cp $(srcdir)/GDBvn.texi . ; else true; fi
 	$(SET_TEXINPUTS) $(TEX) gdb.texinfo
@@ -245,7 +254,7 @@ gdb.info: ${SFILES_DOC}
 # in main sourcedir.
 links2roff: $(SFILES_INCLUDED)
 	if [ ! -f gdb.texinfo ]; then \
-		ln -s $(SFILES_INCLUDED) . || \
+		(test "$$LN_S" = "ln -s" && ln -s $(SFILES_INCLUDED) .) || \
 		ln $(SFILES_INCLUDED)    . || \
 		cp $(SFILES_INCLUDED)    . ; \
 	fi
@@ -261,7 +270,8 @@ rluser.texinfo: ${READLINE_DIR}/rluser.texinfo
 		${READLINE_DIR}/rluser.texinfo > ./rluser.texinfo
 
 inc-hist.texinfo: ${READLINE_DIR}/inc-hist.texinfo
-	ln -s ${READLINE_DIR}/inc-hist.texinfo . || \
+	(test "$$LN_S" = "ln -s" && \
+	 ln -s ${READLINE_DIR}/inc-hist.texinfo .) || \
 	ln ${READLINE_DIR}/inc-hist.texinfo . || \
 	cp ${READLINE_DIR}/inc-hist.texinfo .
 
