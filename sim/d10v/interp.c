@@ -99,8 +99,6 @@ lookup_hash (ins, size)
     {
       if (h->next == NULL)
 	{
-	  (*d10v_callback->printf_filtered)
-	    (d10v_callback, "ERROR: Illegal instruction %x at PC %x\n", ins, PC);
 	  State.exception = SIGILL;
 	  State.pc_changed = 1; /* Don't increment the PC. */
 	  return NULL;
@@ -965,6 +963,32 @@ sim_resume (sd, step, siggnal)
   if (step)
     sim_stop (sd);
 
+  switch (siggnal)
+    {
+    case 0:
+      break;
+#ifdef SIGBUS
+    case SIGBUS:
+#endif
+    case SIGSEGV:
+      SET_BPC (PC);
+      SET_BPSW (PSW);
+      SET_HW_PSW ((PSW & (PSW_F0_BIT | PSW_F1_BIT | PSW_C_BIT)));
+      JMP (AE_VECTOR_START);
+      SLOT_FLUSH ();
+      break;
+    case SIGILL:
+      SET_BPC (PC);
+      SET_BPSW (PSW);
+      SET_HW_PSW ((PSW & (PSW_F0_BIT | PSW_F1_BIT | PSW_C_BIT)));
+      JMP (RIE_VECTOR_START);
+      SLOT_FLUSH ();
+      break;
+    default:
+      /* just ignore it */
+      break;
+    }
+
   do
     {
       iaddr = imem_addr ((uint32)PC << 2);
@@ -1053,15 +1077,12 @@ sim_resume (sd, step, siggnal)
     State.exception = SIGTRAP;
 }
 
-int
-sim_trace (sd)
-     SIM_DESC sd;
+void
+sim_set_trace (void)
 {
 #ifdef DEBUG
   d10v_debug = DEBUG;
 #endif
-  sim_resume (sd, 0, 0);
-  return 1;
 }
 
 void
@@ -1231,7 +1252,8 @@ sim_create_inferior (sd, abfd, argv, env)
       set_imap_register (1, 0x1000);
       set_dmap_register (0, 0x2000);
       set_dmap_register (1, 0x2000);
-      set_dmap_register (2, 0x0000); /* Old DMAP, Value is not 0x2000 */
+      set_dmap_register (2, 0x2000); /* DMAP2 initial internal value is
+					0x2000 on the new board. */
       set_dmap_register (3, 0x0000);
     }
 
@@ -1265,6 +1287,15 @@ sim_stop_reason (sd, reason, sigrc)
     case SIG_D10V_EXIT:			/* exit trap */
       *reason = sim_exited;
       *sigrc = GPR (0);
+      break;
+
+    case SIG_D10V_BUS:
+      *reason = sim_stopped;
+#ifdef SIGBUS
+      *sigrc = SIGBUS;
+#else
+      *sigrc = SIGSEGV;
+#endif
       break;
 
     default:				/* some signal */
