@@ -1,3 +1,25 @@
+/* This testcase is part of GDB, the GNU debugger.
+
+   Copyright 1993, 1994, 1995, 1998, 1999, 2000, 2001, 2004
+   Free Software Foundation, Inc.
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+ 
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+
+   Please email any bugs, comments, and/or additions to this file to:
+   bug-gdb@prep.ai.mit.edu  */
+
 /* Support program for testing gdb's ability to call functions
    in the inferior, pass appropriate arguments to those functions,
    and get the returned result. */
@@ -133,7 +155,12 @@ int    t_structs_i (struct struct1 tstruct) { return (tstruct.i); }
 long   t_structs_l (struct struct1 tstruct) { return (tstruct.l); }
 float  t_structs_f (struct struct1 tstruct) { return (tstruct.f); }
 double t_structs_d (struct struct1 tstruct) { return (tstruct.d); }
-char  *t_structs_a (struct struct1 tstruct) { return (tstruct.a); }
+char  *t_structs_a (struct struct1 tstruct)
+{
+  static char buf[8];
+  strcpy (buf, tstruct.a);
+  return buf;
+}
 #else
 char   t_structs_c (tstruct) struct struct1 tstruct; { return (tstruct.c); }
 short  t_structs_s (tstruct) struct struct1 tstruct; { return (tstruct.s); }
@@ -141,7 +168,12 @@ int    t_structs_i (tstruct) struct struct1 tstruct; { return (tstruct.i); }
 long   t_structs_l (tstruct) struct struct1 tstruct; { return (tstruct.l); }
 float  t_structs_f (tstruct) struct struct1 tstruct; { return (tstruct.f); }
 double t_structs_d (tstruct) struct struct1 tstruct; { return (tstruct.d); }
-char  *t_structs_a (tstruct) struct struct1 tstruct; { return (tstruct.a); }
+char  *t_structs_a (tstruct) struct struct1 tstruct;
+{
+  static char buf[8];
+  strcpy (buf, tstruct.a);
+  return buf;
+}
 #endif
 
 /* Test that calling functions works if there are a lot of arguments.  */
@@ -170,21 +202,6 @@ cmp10 (i0, i1, i2, i3, i4, i5, i6, i7, i8, i9)
   return
     (i0 == 0) && (i1 == 1) && (i2 == 2) && (i3 == 3) && (i4 == 4) &&
     (i5 == 5) && (i6 == 6) && (i7 == 7) && (i8 == 8) && (i9 == 9);
-}
-
-
-/* Gotta have a main to be able to generate a linked, runnable
-   executable, and also provide a useful place to set a breakpoint. */
-extern void * malloc() ;
-int main ()
-{
-#ifdef usestubs
-  set_debug_traps();
-  breakpoint();
-#endif
-  malloc(1);
-  t_structs_c(struct_val1);
-  return 0 ;
 }
 
 /* Functions that expect specific values to be passed and return 
@@ -252,12 +269,13 @@ long long_arg1, long_arg2;
   return ((long_arg1 == long_val1) && (long_arg2 == long_val2));
 }
 
-#ifdef PROTOTYPES
-int t_float_values (float float_arg1, float float_arg2)
-#else
+/* NOTE: THIS FUNCTION MUST NOT BE PROTOTYPED!!!!!
+   There must be one version of "t_float_values" (this one)
+   that is not prototyped, and one (if supported) that is (following).
+   That way GDB can be tested against both cases.  */
+   
 int t_float_values (float_arg1, float_arg2)
 float float_arg1, float_arg2;
-#endif
 {
   return ((float_arg1 - float_val1) < DELTA
 	  && (float_arg1 - float_val1) > -DELTA
@@ -266,13 +284,13 @@ float float_arg1, float_arg2;
 }
 
 int
-#ifdef PROTOTYPES
-t_float_values2 (float float_arg1, float float_arg2)
-#else
+#ifdef NO_PROTOTYPES
 /* In this case we are just duplicating t_float_values, but that is the
    easiest way to deal with either ANSI or non-ANSI.  */
 t_float_values2 (float_arg1, float_arg2)
      float float_arg1, float_arg2;
+#else
+t_float_values2 (float float_arg1, float float_arg2)
 #endif
 {
   return ((float_arg1 - float_val1) < DELTA
@@ -356,4 +374,20 @@ int a, b;
 #endif
 {
   return ((*func_arg1)(a, b));
+}
+
+
+/* Gotta have a main to be able to generate a linked, runnable
+   executable, and also provide a useful place to set a breakpoint. */
+
+int main ()
+{
+#ifdef usestubs
+  set_debug_traps();
+  breakpoint();
+#endif
+  malloc(1);
+  t_double_values(double_val1, double_val2);
+  t_structs_c(struct_val1);
+  return 0 ;
 }
