@@ -1,5 +1,8 @@
 /* Simulate breakpoints by patching locations in the target system, for GDB.
-   Copyright 1990, 1991, 1995 Free Software Foundation, Inc.
+
+   Copyright 1990, 1991, 1992, 1993, 1995, 1997, 1998, 1999, 2000,
+   2002 Free Software Foundation, Inc.
+
    Contributed by Cygnus Support.  Written by John Gilmore.
 
    This file is part of GDB.
@@ -21,58 +24,13 @@
 
 #include "defs.h"
 
-/* This file is only useful if BREAKPOINT is set.  If not, we punt.  */
+/* This file is only useful if BREAKPOINT_FROM_PC is set.  If not, we
+   punt.  */
 
 #include "symtab.h"
 #include "breakpoint.h"
 #include "inferior.h"
 #include "target.h"
-
-
-/* Use the program counter to determine the contents and size
-   of a breakpoint instruction.  If no target-dependent macro
-   BREAKPOINT_FROM_PC has been defined to implement this function,
-   assume that the breakpoint doesn't depend on the PC, and
-   use the values of the BIG_BREAKPOINT and LITTLE_BREAKPOINT macros.
-   Return a pointer to a string of bytes that encode a breakpoint
-   instruction, stores the length of the string to *lenptr,
-   and optionally adjust the pc to point to the correct memory location
-   for inserting the breakpoint.  */
-
-unsigned char *
-memory_breakpoint_from_pc (pcptr, lenptr)
-     CORE_ADDR *pcptr;
-     int *lenptr;
-{
-  /* {BIG_,LITTLE_}BREAKPOINT is the sequence of bytes we insert for a
-     breakpoint.  On some machines, breakpoints are handled by the
-     target environment and we don't have to worry about them here.  */
-#ifdef BIG_BREAKPOINT
-  if (TARGET_BYTE_ORDER == BIG_ENDIAN)
-    {
-      static unsigned char big_break_insn[] = BIG_BREAKPOINT;
-      *lenptr = sizeof (big_break_insn);
-      return big_break_insn;
-    }
-#endif
-#ifdef LITTLE_BREAKPOINT
-  if (TARGET_BYTE_ORDER != BIG_ENDIAN)
-    {
-      static unsigned char little_break_insn[] = LITTLE_BREAKPOINT;
-      *lenptr = sizeof (little_break_insn);
-      return little_break_insn;
-    }
-#endif
-#ifdef BREAKPOINT
-  {
-    static unsigned char break_insn[] = BREAKPOINT;
-    *lenptr = sizeof (break_insn);
-    return break_insn;
-  }
-#endif
-  *lenptr = 0;
-  return NULL;
-}
 
 
 /* Insert a breakpoint on targets that don't have any better breakpoint
@@ -84,12 +42,10 @@ memory_breakpoint_from_pc (pcptr, lenptr)
    is accomplished via BREAKPOINT_MAX).  */
 
 int
-default_memory_insert_breakpoint (addr, contents_cache)
-     CORE_ADDR addr;
-     char *contents_cache;
+default_memory_insert_breakpoint (CORE_ADDR addr, char *contents_cache)
 {
   int val;
-  unsigned char *bp;
+  const unsigned char *bp;
   int bplen;
 
   /* Determine appropriate breakpoint contents and size for this address.  */
@@ -109,11 +65,9 @@ default_memory_insert_breakpoint (addr, contents_cache)
 
 
 int
-default_memory_remove_breakpoint (addr, contents_cache)
-     CORE_ADDR addr;
-     char *contents_cache;
+default_memory_remove_breakpoint (CORE_ADDR addr, char *contents_cache)
 {
-  unsigned char *bp;
+  const unsigned char *bp;
   int bplen;
 
   /* Determine appropriate breakpoint contents and size for this address.  */
@@ -125,26 +79,14 @@ default_memory_remove_breakpoint (addr, contents_cache)
 }
 
 
-#if !defined(MEMORY_INSERT_BREAKPOINT)
-#define MEMORY_INSERT_BREAKPOINT(addr, contents_cache) \
-  default_memory_insert_breakpoint(addr, contents_cache)
-#endif
 int
-memory_insert_breakpoint (addr, contents_cache)
-     CORE_ADDR addr;
-     char *contents_cache;
+memory_insert_breakpoint (CORE_ADDR addr, char *contents_cache)
 {
   return MEMORY_INSERT_BREAKPOINT(addr, contents_cache);
 }
 
-#if !defined(MEMORY_REMOVE_BREAKPOINT)
-#define MEMORY_REMOVE_BREAKPOINT(addr, contents_cache) \
-  default_memory_remove_breakpoint(addr, contents_cache)
-#endif
 int
-memory_remove_breakpoint (addr, contents_cache)
-     CORE_ADDR addr;
-     char *contents_cache;
+memory_remove_breakpoint (CORE_ADDR addr, char *contents_cache)
 {
   return MEMORY_REMOVE_BREAKPOINT(addr, contents_cache);
 }

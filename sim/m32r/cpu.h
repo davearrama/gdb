@@ -2,9 +2,9 @@
 
 THIS FILE IS MACHINE GENERATED WITH CGEN.
 
-Copyright (C) 1996, 1997, 1998, 1999 Free Software Foundation, Inc.
+Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003 Free Software Foundation, Inc.
 
-This file is part of the GNU Simulators.
+This file is part of the GNU simulators.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -50,14 +50,14 @@ typedef struct {
 #define SET_H_CR(index, x) \
 do { \
 m32rbf_h_cr_set_handler (current_cpu, (index), (x));\
-} while (0)
+;} while (0)
   /* accumulator */
   DI h_accum;
 #define GET_H_ACCUM() m32rbf_h_accum_get_handler (current_cpu)
 #define SET_H_ACCUM(x) \
 do { \
 m32rbf_h_accum_set_handler (current_cpu, (x));\
-} while (0)
+;} while (0)
   /* condition bit */
   BI h_cond;
 #define GET_H_COND() CPU (h_cond)
@@ -68,7 +68,7 @@ m32rbf_h_accum_set_handler (current_cpu, (x));\
 #define SET_H_PSW(x) \
 do { \
 m32rbf_h_psw_set_handler (current_cpu, (x));\
-} while (0)
+;} while (0)
   /* backup psw */
   UQI h_bpsw;
 #define GET_H_BPSW() CPU (h_bpsw)
@@ -124,43 +124,47 @@ union sem_fields {
     int empty;
   } fmt_empty;
   struct { /*  */
+    UINT f_uimm8;
+  } sfmt_clrpsw;
+  struct { /*  */
     UINT f_uimm4;
   } sfmt_trap;
   struct { /*  */
     IADDR i_disp24;
-    unsigned char out_h_gr_14;
+    unsigned char out_h_gr_SI_14;
   } sfmt_bl24;
   struct { /*  */
     IADDR i_disp8;
-    unsigned char out_h_gr_14;
+    unsigned char out_h_gr_SI_14;
   } sfmt_bl8;
   struct { /*  */
     SI* i_dr;
     UINT f_hi16;
+    UINT f_r1;
     unsigned char out_dr;
   } sfmt_seth;
   struct { /*  */
-    SI* i_sr;
-    UINT f_r1;
-    unsigned char in_sr;
-  } sfmt_mvtc;
-  struct { /*  */
-    SI* i_dr;
-    UINT f_r2;
-    unsigned char out_dr;
-  } sfmt_mvfc;
-  struct { /*  */
     ADDR i_uimm24;
     SI* i_dr;
+    UINT f_r1;
     unsigned char out_dr;
   } sfmt_ld24;
   struct { /*  */
     SI* i_sr;
+    UINT f_r2;
     unsigned char in_sr;
-    unsigned char out_h_gr_14;
+    unsigned char out_h_gr_SI_14;
   } sfmt_jl;
   struct { /*  */
+    SI* i_sr;
+    INT f_simm16;
+    UINT f_r2;
+    UINT f_uimm3;
+    unsigned char in_sr;
+  } sfmt_bset;
+  struct { /*  */
     SI* i_dr;
+    UINT f_r1;
     UINT f_uimm5;
     unsigned char in_dr;
     unsigned char out_dr;
@@ -168,12 +172,15 @@ union sem_fields {
   struct { /*  */
     SI* i_dr;
     INT f_simm8;
+    UINT f_r1;
     unsigned char in_dr;
     unsigned char out_dr;
   } sfmt_addi;
   struct { /*  */
     SI* i_src1;
     SI* i_src2;
+    UINT f_r1;
+    UINT f_r2;
     unsigned char in_src1;
     unsigned char in_src2;
     unsigned char out_src2;
@@ -182,12 +189,16 @@ union sem_fields {
     SI* i_src1;
     SI* i_src2;
     INT f_simm16;
+    UINT f_r1;
+    UINT f_r2;
     unsigned char in_src1;
     unsigned char in_src2;
   } sfmt_st_d;
   struct { /*  */
     SI* i_dr;
     SI* i_sr;
+    UINT f_r1;
+    UINT f_r2;
     unsigned char in_sr;
     unsigned char out_dr;
     unsigned char out_sr;
@@ -196,12 +207,16 @@ union sem_fields {
     IADDR i_disp16;
     SI* i_src1;
     SI* i_src2;
+    UINT f_r1;
+    UINT f_r2;
     unsigned char in_src1;
     unsigned char in_src2;
   } sfmt_beq;
   struct { /*  */
     SI* i_dr;
     SI* i_sr;
+    UINT f_r1;
+    UINT f_r2;
     UINT f_uimm16;
     unsigned char in_sr;
     unsigned char out_dr;
@@ -210,12 +225,16 @@ union sem_fields {
     SI* i_dr;
     SI* i_sr;
     INT f_simm16;
+    UINT f_r1;
+    UINT f_r2;
     unsigned char in_sr;
     unsigned char out_dr;
   } sfmt_add3;
   struct { /*  */
     SI* i_dr;
     SI* i_sr;
+    UINT f_r1;
+    UINT f_r2;
     unsigned char in_dr;
     unsigned char in_sr;
     unsigned char out_dr;
@@ -618,6 +637,49 @@ struct scache {
   f_r1 = EXTRACT_MSB0_UINT (insn, 16, 4, 4); \
   f_op2 = EXTRACT_MSB0_UINT (insn, 16, 8, 4); \
   f_uimm4 = EXTRACT_MSB0_UINT (insn, 16, 12, 4); \
+
+#define EXTRACT_IFMT_CLRPSW_VARS \
+  UINT f_op1; \
+  UINT f_r1; \
+  UINT f_uimm8; \
+  unsigned int length;
+#define EXTRACT_IFMT_CLRPSW_CODE \
+  length = 2; \
+  f_op1 = EXTRACT_MSB0_UINT (insn, 16, 0, 4); \
+  f_r1 = EXTRACT_MSB0_UINT (insn, 16, 4, 4); \
+  f_uimm8 = EXTRACT_MSB0_UINT (insn, 16, 8, 8); \
+
+#define EXTRACT_IFMT_BSET_VARS \
+  UINT f_op1; \
+  UINT f_bit4; \
+  UINT f_uimm3; \
+  UINT f_op2; \
+  UINT f_r2; \
+  INT f_simm16; \
+  unsigned int length;
+#define EXTRACT_IFMT_BSET_CODE \
+  length = 4; \
+  f_op1 = EXTRACT_MSB0_UINT (insn, 32, 0, 4); \
+  f_bit4 = EXTRACT_MSB0_UINT (insn, 32, 4, 1); \
+  f_uimm3 = EXTRACT_MSB0_UINT (insn, 32, 5, 3); \
+  f_op2 = EXTRACT_MSB0_UINT (insn, 32, 8, 4); \
+  f_r2 = EXTRACT_MSB0_UINT (insn, 32, 12, 4); \
+  f_simm16 = EXTRACT_MSB0_INT (insn, 32, 16, 16); \
+
+#define EXTRACT_IFMT_BTST_VARS \
+  UINT f_op1; \
+  UINT f_bit4; \
+  UINT f_uimm3; \
+  UINT f_op2; \
+  UINT f_r2; \
+  unsigned int length;
+#define EXTRACT_IFMT_BTST_CODE \
+  length = 2; \
+  f_op1 = EXTRACT_MSB0_UINT (insn, 16, 0, 4); \
+  f_bit4 = EXTRACT_MSB0_UINT (insn, 16, 4, 1); \
+  f_uimm3 = EXTRACT_MSB0_UINT (insn, 16, 5, 3); \
+  f_op2 = EXTRACT_MSB0_UINT (insn, 16, 8, 4); \
+  f_r2 = EXTRACT_MSB0_UINT (insn, 16, 12, 4); \
 
 /* Collection of various things for the trace handler to use.  */
 

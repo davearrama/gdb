@@ -1,22 +1,25 @@
-/*  This file is part of the program psim.
+/* The common simulator framework for GDB, the GNU Debugger.
 
-    Copyright (C) 1994-1998, Andrew Cagney <cagney@highland.com.au>
+   Copyright 2002 Free Software Foundation, Inc.
 
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+   Contributed by Andrew Cagney and Red Hat.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
- 
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
- 
-    */
+   This file is part of GDB.
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place - Suite 330,
+   Boston, MA 02111-1307, USA.  */
 
 
 #ifndef HW_DEVICE_H
@@ -172,7 +175,7 @@ typedef unsigned (hw_reset_method)
    node is described as the bus owner and is responisble for
    co-ordinating bus operations. On the bus, a SPACE:ADDR pair is used
    to specify an address.  A device that is both a bus owner (parent)
-   and bus client (child) are refered to as a bridging device.
+   and bus client (child) are referred to as a bridging device.
 
    A child performing a data (DMA) transfer will pass its request to
    the bus owner (the devices parent).  The bus owner will then either

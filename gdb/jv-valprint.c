@@ -1,5 +1,5 @@
 /* Support for printing Java values for GDB, the GNU debugger.
-   Copyright 1997-2000 Free Software Foundation, Inc.
+   Copyright 1997, 1998, 1999, 2000 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -30,6 +30,7 @@
 #include "jv-lang.h"
 #include "c-lang.h"
 #include "annotate.h"
+#include "gdb_string.h"
 
 /* Local functions */
 
@@ -41,11 +42,8 @@ static void java_print_value_fields (struct type * type, char *valaddr,
 
 
 int
-java_value_print (val, stream, format, pretty)
-     value_ptr val;
-     struct ui_file *stream;
-     int format;
-     enum val_prettyprint pretty;
+java_value_print (struct value *val, struct ui_file *stream, int format,
+		  enum val_prettyprint pretty)
 {
   struct type *type;
   CORE_ADDR address;
@@ -93,14 +91,16 @@ java_value_print (val, stream, format, pretty)
 
       if (el_type == NULL)
 	{
-	  CORE_ADDR element, next_element;
+	  CORE_ADDR element;
+	  CORE_ADDR next_element = -1; /* dummy initial value */
 
 	  address += JAVA_OBJECT_SIZE + 4;	/* Skip object header and length. */
 
 	  while (i < length && things_printed < print_max)
 	    {
-	      char buf[TARGET_PTR_BIT / HOST_CHAR_BIT];
+	      char *buf;
 
+	      buf = alloca (TARGET_PTR_BIT / HOST_CHAR_BIT);
 	      fputs_filtered (", ", stream);
 	      wrap_here (n_spaces (2));
 
@@ -110,14 +110,22 @@ java_value_print (val, stream, format, pretty)
 		{
 		  read_memory (address, buf, sizeof (buf));
 		  address += TARGET_PTR_BIT / HOST_CHAR_BIT;
-		  element = extract_address (buf, sizeof (buf));
+		  /* FIXME: cagney/2003-05-24: Bogus or what.  It
+                     pulls a host sized pointer out of the target and
+                     then extracts that as an address (while assuming
+                     that the address is unsigned)!  */
+		  element = extract_unsigned_integer (buf, sizeof (buf));
 		}
 
 	      for (reps = 1; i + reps < length; reps++)
 		{
 		  read_memory (address, buf, sizeof (buf));
 		  address += TARGET_PTR_BIT / HOST_CHAR_BIT;
-		  next_element = extract_address (buf, sizeof (buf));
+		  /* FIXME: cagney/2003-05-24: Bogus or what.  It
+                     pulls a host sized pointer out of the target and
+                     then extracts that as an address (while assuming
+                     that the address is unsigned)!  */
+		  next_element = extract_unsigned_integer (buf, sizeof (buf));
 		  if (next_element != element)
 		    break;
 		}
@@ -138,8 +146,8 @@ java_value_print (val, stream, format, pretty)
 	}
       else
 	{
-	  value_ptr v = allocate_value (el_type);
-	  value_ptr next_v = allocate_value (el_type);
+	  struct value *v = allocate_value (el_type);
+	  struct value *next_v = allocate_value (el_type);
 
 	  VALUE_ADDRESS (v) = address + JAVA_OBJECT_SIZE + 4;
 	  VALUE_ADDRESS (next_v) = VALUE_ADDRESS (v);
@@ -151,7 +159,7 @@ java_value_print (val, stream, format, pretty)
 
 	      if (i > 0)
 		{
-		  value_ptr tmp;
+		  struct value *tmp;
 
 		  tmp = next_v;
 		  next_v = v;
@@ -199,29 +207,31 @@ java_value_print (val, stream, format, pretty)
 
   if (TYPE_CODE (type) == TYPE_CODE_PTR
       && TYPE_TARGET_TYPE (type)
-      && TYPE_NAME (TYPE_TARGET_TYPE (type))
-    && strcmp (TYPE_NAME (TYPE_TARGET_TYPE (type)), "java.lang.String") == 0
+      && TYPE_TAG_NAME (TYPE_TARGET_TYPE (type))
+      && strcmp (TYPE_TAG_NAME (TYPE_TARGET_TYPE (type)),
+		 "java.lang.String") == 0
       && (format == 0 || format == 's')
-      && address != 0)
+      && address != 0
+      && value_as_address (val) != 0)
     {
-      value_ptr data_val;
+      struct value *data_val;
       CORE_ADDR data;
-      value_ptr boffset_val;
+      struct value *boffset_val;
       unsigned long boffset;
-      value_ptr count_val;
+      struct value *count_val;
       unsigned long count;
-      value_ptr mark;
+      struct value *mark;
 
       mark = value_mark ();	/* Remember start of new values */
 
       data_val = value_struct_elt (&val, NULL, "data", NULL, NULL);
-      data = value_as_pointer (data_val);
+      data = value_as_address (data_val);
 
       boffset_val = value_struct_elt (&val, NULL, "boffset", NULL, NULL);
-      boffset = value_as_pointer (boffset_val);
+      boffset = value_as_address (boffset_val);
 
       count_val = value_struct_elt (&val, NULL, "count", NULL, NULL);
-      count = value_as_pointer (count_val);
+      count = value_as_address (count_val);
 
       value_free_to_mark (mark);	/* Release unnecessary values */
 
@@ -241,15 +251,9 @@ java_value_print (val, stream, format, pretty)
    should not print, or zero if called from top level.  */
 
 static void
-java_print_value_fields (type, valaddr, address, stream,
-			 format, recurse, pretty)
-     struct type *type;
-     char *valaddr;
-     CORE_ADDR address;
-     struct ui_file *stream;
-     int format;
-     int recurse;
-     enum val_prettyprint pretty;
+java_print_value_fields (struct type *type, char *valaddr, CORE_ADDR address,
+			 struct ui_file *stream, int format, int recurse,
+			 enum val_prettyprint pretty)
 {
   int i, len, n_baseclasses;
 
@@ -305,7 +309,6 @@ java_print_value_fields (type, valaddr, address, stream,
     fprintf_filtered (stream, "<No data fields>");
   else
     {
-      extern int inspect_it;
       int fields_seen = 0;
 
       for (i = n_baseclasses; i < len; i++)
@@ -376,7 +379,7 @@ java_print_value_fields (type, valaddr, address, stream,
 
 	  if (!TYPE_FIELD_STATIC (type, i) && TYPE_FIELD_PACKED (type, i))
 	    {
-	      value_ptr v;
+	      struct value *v;
 
 	      /* Bitfields require special handling, especially due to byte
 	         order problems.  */
@@ -401,7 +404,7 @@ java_print_value_fields (type, valaddr, address, stream,
 		}
 	      else if (TYPE_FIELD_STATIC (type, i))
 		{
-		  value_ptr v = value_static_field (type, i);
+		  struct value *v = value_static_field (type, i);
 		  if (v == NULL)
 		    fputs_filtered ("<optimized out>", stream);
 		  else
@@ -450,18 +453,11 @@ java_print_value_fields (type, valaddr, address, stream,
    The PRETTY parameter controls prettyprinting.  */
 
 int
-java_val_print (type, valaddr, embedded_offset, address, stream, format,
-		deref_ref, recurse, pretty)
-     struct type *type;
-     char *valaddr;
-     CORE_ADDR address;
-     struct ui_file *stream;
-     int format;
-     int deref_ref;
-     int recurse;
-     enum val_prettyprint pretty;
+java_val_print (struct type *type, char *valaddr, int embedded_offset,
+		CORE_ADDR address, struct ui_file *stream, int format,
+		int deref_ref, int recurse, enum val_prettyprint pretty)
 {
-  register unsigned int i = 0;	/* Number of characters printed */
+  unsigned int i = 0;	/* Number of characters printed */
   struct type *target_type;
   CORE_ADDR addr;
 
@@ -480,7 +476,8 @@ java_val_print (type, valaddr, embedded_offset, address, stream, format,
 	  /* Print the unmangled name if desired.  */
 	  /* Print vtable entry - we only get here if we ARE using
 	     -fvtable_thunks.  (Otherwise, look under TYPE_CODE_STRUCT.) */
-	  print_address_demangle (extract_address (valaddr, TYPE_LENGTH (type)),
+	  /* Extract an address, assume that it is unsigned.  */
+	  print_address_demangle (extract_unsigned_integer (valaddr, TYPE_LENGTH (type)),
 				  stream, demangle);
 	  break;
 	}
@@ -510,18 +507,17 @@ java_val_print (type, valaddr, embedded_offset, address, stream, format,
       return i;
 
     case TYPE_CODE_CHAR:
-      format = format ? format : output_format;
-      if (format)
-	print_scalar_formatted (valaddr, type, format, 0, stream);
-      else
-	LA_PRINT_CHAR ((int) unpack_long (type, valaddr), stream);
-      break;
-
     case TYPE_CODE_INT:
-      /* Can't just call c_val_print because that print bytes as C chars. */
+      /* Can't just call c_val_print because that prints bytes as C
+	 chars.  */
       format = format ? format : output_format;
       if (format)
 	print_scalar_formatted (valaddr, type, format, 0, stream);
+      else if (TYPE_CODE (type) == TYPE_CODE_CHAR
+	       || (TYPE_CODE (type) == TYPE_CODE_INT
+		   && TYPE_LENGTH (type) == 2
+		   && strcmp (TYPE_NAME (type), "char") == 0))
+	LA_PRINT_CHAR ((int) unpack_long (type, valaddr), stream);
       else
 	val_print_type_code_int (type, valaddr, stream);
       break;

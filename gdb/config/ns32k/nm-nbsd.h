@@ -1,5 +1,6 @@
 /* Native-dependent definitions for ns32k running NetBSD, for GDB.
-   Copyright 1986, 1987, 1989, 1992, 1994 Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1989, 1992, 1994, 2000
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -22,16 +23,11 @@
 #define NM_NBSD_H
 
 /* Get generic NetBSD native definitions. */
-#include "nm-nbsd.h"
-
-#if 0
-#define FLOAT_INFO	{ extern ns32k_float_info(); ns32k_float_info(); }
-#endif
+#include "config/nm-nbsd.h"
 
 #define REGISTER_U_ADDR(addr, blockend, regno) \
 	(addr) = ns32k_register_u_addr ((blockend),(regno));
 
-extern int
-ns32k_register_u_addr PARAMS ((int, int));
+extern int ns32k_register_u_addr (int, int);
 
 #endif /* NM_NBSD_H */

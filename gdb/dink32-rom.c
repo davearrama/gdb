@@ -1,6 +1,6 @@
 /* Remote debugging interface for DINK32 (PowerPC) ROM monitor for
    GDB, the GNU debugger.
-   Copyright 1997 Free Software Foundation, Inc.
+   Copyright 1997, 1999, 2000, 2001 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -26,15 +26,12 @@
 #include "serial.h"
 #include "symfile.h" /* For generic_load() */
 #include "inferior.h" /* For write_pc() */
+#include "regcache.h"
 
-static void dink32_open PARAMS ((char *args, int from_tty));
+static void dink32_open (char *args, int from_tty);
 
 static void
-dink32_supply_register (regname, regnamelen, val, vallen)
-     char *regname;
-     int regnamelen;
-     char *val;
-     int vallen;
+dink32_supply_register (char *regname, int regnamelen, char *val, int vallen)
 {
   int regno = 0;
 
@@ -100,20 +97,15 @@ dink32_supply_register (regname, regnamelen, val, vallen)
 }
 
 static void
-dink32_load (monops, filename, from_tty)
-     struct monitor_ops *monops;
-     char *filename;
-     int from_tty;
+dink32_load (struct monitor_ops *monops, char *filename, int from_tty)
 {
-  extern int inferior_pid;
-
   generic_load (filename, from_tty);
 
   /* Finally, make the PC point at the start address */
   if (exec_bfd)
     write_pc (bfd_get_start_address (exec_bfd));
 
-  inferior_pid = 0;		/* No process now */
+  inferior_ptid = null_ptid;		/* No process now */
 }
 
 
@@ -122,7 +114,7 @@ dink32_load (monops, filename, from_tty)
    different names than GDB does, and don't support all the registers
    either.  */
 
-static char *dink32_regnames[NUM_REGS] =
+static char *dink32_regnames[] =
 {
   "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
   "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
@@ -145,15 +137,15 @@ static char *dink32_inits[] =
 static struct monitor_ops dink32_cmds;
 
 static void
-dink32_open (args, from_tty)
-     char *args;
-     int from_tty;
+dink32_open (char *args, int from_tty)
 {
   monitor_open (args, &dink32_cmds, from_tty);
 }
 
+extern initialize_file_ftype _initialize_dink32_rom; /* -Wmissing-prototypes */
+
 void
-_initialize_dink32_rom ()
+_initialize_dink32_rom (void)
 {
   dink32_cmds.flags = MO_HEX_PREFIX | MO_GETMEM_NEEDS_RANGE | MO_FILL_USES_ADDR | MO_HANDLE_NL | MO_32_REGS_PAIRED | MO_SETREG_INTERACTIVE | MO_SETMEM_INTERACTIVE | MO_GETMEM_16_BOUNDARY | MO_CLR_BREAK_1_BASED | MO_SREC_ACK | MO_SREC_ACK_ROTATE;
   dink32_cmds.init = dink32_inits;

@@ -1,6 +1,6 @@
 /*  This file is part of the program psim.
 
-    Copyright (C) 1994-1997, Andrew Cagney <cagney@highland.com.au>
+    Copyright 1994, 1995, 1996, 1997, 2003 Andrew Cagney
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -469,7 +469,7 @@ deliver_hardware_interrupt(void *data)
       unsigned_word cia = cpu_get_program_counter(processor);
       unsigned_word nia = perform_oea_interrupt(processor,
 						cia, 0x00900, 0, 0, 0, 0);
-      TRACE(trace_interrupts, ("decrementer interrupt - cia=0x%lx time=0x%lx\n",
+      TRACE(trace_interrupts, ("decrementer interrupt - cia 0x%lx, time %ld\n",
 			       (unsigned long)cia,
 			       (unsigned long)event_queue_time(psim_event_queue(cpu_system(processor)))
 			       ));
@@ -522,7 +522,7 @@ external_interrupt(cpu *processor,
 {
   interrupts *ints = cpu_interrupts(processor);
   if (is_asserted) {
-    if (!ints->pending_interrupts & external_interrupt_pending) {
+    if (!(ints->pending_interrupts & external_interrupt_pending)) {
       ints->pending_interrupts |= external_interrupt_pending;
       if (cpu_registers(processor)->msr & msr_external_interrupt_enable)
 	schedule_hardware_interrupt_delivery(processor);

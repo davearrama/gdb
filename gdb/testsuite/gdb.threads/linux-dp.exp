@@ -1,4 +1,4 @@
-# Copyright (C) 1999 Free Software Foundation, Inc.
+# Copyright 1999, 2001, 2002, 2003 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -50,7 +50,7 @@ set testfile "linux-dp"
 set srcfile ${testfile}.c
 set binfile ${objdir}/${subdir}/${testfile}
 if {[gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug libs=-lpthread}] != ""} {
-    gdb_suppress_entire_file "Testcase compile failed, so all tests in this file will automatically fail."
+    return -1
 }
 
 gdb_start
@@ -64,14 +64,26 @@ gdb_test "info threads" "" "info threads 1"
 
 # Try stepping over the thread creation function.
 gdb_breakpoint [gdb_get_line_number "linuxthreads.exp: create philosopher"]
+set expect_manager -1
 for {set i 0} {$i < 5} {incr i} {
     gdb_continue_to_breakpoint "about to create philosopher: $i"
     send_gdb "next\n"
     gdb_expect {
-	-re "\\\[New .*\\\].*$gdb_prompt $" {
+	-re "\\\[New .*\\\].*\\\[New .*\\\].*$gdb_prompt $" {
+	    # Two threads are created the first time in LinuxThreads,
+	    # where the second is the manager thread.  In NPTL, there is none.
+	    if {$i == 0} {
+		set expect_manager 1
+	    }
 	    pass "create philosopher: $i"
 	}
-	-re "Program received signal.*(Unknown signal|SIGUSR).*$gdb_prompt $" {
+	-re "\\\[New .*\\\].*$gdb_prompt $" {
+	    if {$i == 0} {
+		set expect_manager 0
+	    }
+	    pass "create philosopher: $i"
+	}
+	-re "Program received signal.*(Unknown signal|SIGUSR|Real-time event).*$gdb_prompt $" {
 	    # It would be nice if we could catch the message that GDB prints
 	    # when it first notices that the thread library doesn't support
 	    # debugging, or if we could explicitly ask GDB somehow.
@@ -87,15 +99,25 @@ for {set i 0} {$i < 5} {incr i} {
     }
 }
 
+if {$expect_manager} {
+    set nthreads 7
+} else {
+    set nthreads 6
+}
+
 # Run until there are some threads.
 gdb_breakpoint [gdb_get_line_number "linuxthreads.exp: info threads 2"]
 gdb_continue_to_breakpoint "main thread's sleep"
-gdb_test "info threads" "7 Thread .*6 Thread .*5 Thread .*4 Thread .*3 Thread .*2 Thread .*1 Thread .*" "info threads 2"
+set info_threads_ptn ""
+for {set i $nthreads} {$i > 0} {incr i -1} {
+    append info_threads_ptn "$i Thread .*"
+}
+gdb_test "info threads" $info_threads_ptn "info threads 2"
 
 # Try setting a thread-specific breakpoint.
 gdb_breakpoint "print_philosopher thread 5"
 gdb_continue_to_breakpoint "thread 5's print"
-gdb_test "where" "print_philosopher.*philosopher.*pthread_start_thread.*" \
+gdb_test "where" "print_philosopher.*philosopher.* from .*libpthread.*" \
 	"first thread-specific breakpoint hit"
 
 # Make sure it's catching the right thread.  Try hitting the
@@ -146,9 +168,15 @@ proc select_thread {thread} {
 ### Return true if the thread had a stack which was not only
 ### acceptable, but interesting.  SEEN should be an array in which
 ### SEEN(N) exists iff we have found philosopher number N before.
+
+set main_seen 0
+set manager_seen 0
+
 proc check_philosopher_stack {thread seen_name} {
     global gdb_prompt
     upvar $seen_name seen
+    global main_seen
+    global expect_manager manager_seen
 
     set name "philosopher is distinct: $thread"
     set interesting 0
@@ -166,9 +194,27 @@ proc check_philosopher_stack {thread seen_name} {
 	    }
 	    set interesting 1
 	}
+	-re ".* in __pthread_manager \\(.*$gdb_prompt $" {
+	    if {$manager_seen == 1} {
+		fail "manager thread is distinct: $thread"
+	    } else {
+		set manager_seen 1
+		pass "manager thread is distinct: $thread"
+	    }
+	    set interesting 1
+	}
 	-re "pthread_start_thread.*\r\n$gdb_prompt $" {
 	    ## Maybe the thread hasn't started yet.
 	    pass $name
+	}
+	-re ".* in main \\(.*$gdb_prompt $" {
+	    if {$main_seen == 1} {
+		fail "main is distinct: $thread"
+	    } else {
+		set main_seen 1
+		pass "main is distinct: $thread"
+	    }
+	    set interesting 1
 	}
 	-re " in \\?\\?.*\r\n$gdb_prompt $" {
 	    ## Sometimes we can't get a backtrace.  I'm going to call
@@ -191,7 +237,8 @@ proc check_philosopher_stack {thread seen_name} {
 
 set any_interesting 0
 array set seen {}
-for {set i 3} {$i <= 7} {incr i} {
+unset seen
+for {set i 1} {$i <= $nthreads} {incr i} {
     if [check_philosopher_stack $i seen] {
 	set any_interesting 1
     }
@@ -201,4 +248,10 @@ if {$any_interesting} {
     pass "found an interesting thread"
 } else {
     fail "found an interesting thread"
+}
+
+if {$manager_seen == $expect_manager} {
+    pass "manager thread found (not found) when expected"
+} else {
+    fail "manager thread found (not found) when expected"
 }

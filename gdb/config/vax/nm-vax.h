@@ -18,10 +18,12 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
+#define AP_REGNUM 12	/* XXXJRT */
+
 #define REGISTER_U_ADDR(addr, blockend, regno)		\
 { addr = blockend - 0110 + regno * 4;			\
   if (regno == PC_REGNUM) addr = blockend - 8;		\
   if (regno == PS_REGNUM) addr = blockend - 4;		\
-  if (regno == FP_REGNUM) addr = blockend - 0120;	\
+  if (regno == DEPRECATED_FP_REGNUM) addr = blockend - 0120;	\
   if (regno == AP_REGNUM) addr = blockend - 0124;	\
   if (regno == SP_REGNUM) addr = blockend - 20; }

@@ -1,5 +1,6 @@
 /* Include file for stabs debugging format support functions.
-   Copyright 1986-1991, 1992, 1993 Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995,
+   1996, 1997, 1999, 2000, 2001, 2002, 2003 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,6 +19,8 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
+struct objfile;
+
 /* Definitions, prototypes, etc for stabs debugging format support
    functions.
 
@@ -30,12 +33,6 @@
 #define	EXTERN extern
 #endif
 
-/* Convert stab register number (from `r' declaration) to a gdb REGNUM.  */
-
-#ifndef STAB_REG_TO_REGNUM
-#define STAB_REG_TO_REGNUM(VALUE) (VALUE)
-#endif
-
 /* Hash table of global symbols whose values are not known yet.
    They are chained thru the SYMBOL_VALUE_CHAIN, since we don't
    have the correct data for that slot yet.
@@ -46,8 +43,8 @@
 
 EXTERN struct symbol *global_sym_chain[HASHSIZE];
 
-extern void common_block_start PARAMS ((char *, struct objfile *));
-extern void common_block_end PARAMS ((struct objfile *));
+extern void common_block_start (char *, struct objfile *);
+extern void common_block_end (struct objfile *);
 
 /* Kludge for xcoffread.c */
 
@@ -133,44 +130,22 @@ EXTERN int n_this_object_header_files;
 
 EXTERN int n_allocated_this_object_header_files;
 
-extern struct complaint unknown_symtype_complaint;
-extern struct complaint unknown_symchar_complaint;
+extern void cleanup_undefined_types (void);
 
-extern struct type *
-  read_type PARAMS ((char **, struct objfile *));
+extern long read_number (char **, int);
 
-extern void
-cleanup_undefined_types PARAMS ((void));
+extern struct symbol *define_symbol (CORE_ADDR, char *, int, int,
+				     struct objfile *);
 
-extern struct type **
-  dbx_lookup_type PARAMS ((int[2]));
+extern void stabsread_init (void);
 
-extern long
-read_number PARAMS ((char **, int));
+extern void stabsread_new_init (void);
 
-extern void
-add_undefined_type PARAMS ((struct type *));
+extern void start_stabs (void);
 
-extern struct symbol *
-  define_symbol PARAMS ((CORE_ADDR, char *, int, int, struct objfile *));
+extern void end_stabs (void);
 
-extern void
-stabsread_init PARAMS ((void));
-
-extern void
-stabsread_new_init PARAMS ((void));
-
-extern void
-start_stabs PARAMS ((void));
-
-extern void
-end_stabs PARAMS ((void));
-
-extern void
-finish_global_stabs PARAMS ((struct objfile * objfile));
-
-
-EXTERN int os9k_stabs;
+extern void finish_global_stabs (struct objfile *objfile);
 
 /* COFF files can have multiple .stab sections, if they are linked
    using --split-by-reloc.  This linked list is used to pass the
@@ -187,56 +162,46 @@ struct stab_section_list
 /* Functions exported by dbxread.c.  These are not in stabsread.c because
    they are only used by some stabs readers.  */
 
-extern struct partial_symtab *
-  end_psymtab PARAMS ((struct partial_symtab * pst,
-		       char **include_list,
-		       int num_includes,
-		       int capping_symbol_offset,
-		       CORE_ADDR capping_text,
-		       struct partial_symtab ** dependency_list,
-		       int number_dependencies,
-		       int textlow_not_set));
+extern struct partial_symtab *end_psymtab (struct partial_symtab *pst,
+					   char **include_list,
+					   int num_includes,
+					   int capping_symbol_offset,
+					   CORE_ADDR capping_text,
+					   struct partial_symtab
+					   **dependency_list,
+					   int number_dependencies,
+					   int textlow_not_set);
 
-extern void
-process_one_symbol PARAMS ((int, int, CORE_ADDR, char *,
-			    struct section_offsets *, struct objfile *));
+extern void process_one_symbol (int, int, CORE_ADDR, char *,
+				struct section_offsets *, struct objfile *);
 
-extern void elfstab_build_psymtabs
-  PARAMS ((struct objfile * objfile,
-	   int mainline,
-	   file_ptr staboff, unsigned int stabsize,
-	   file_ptr stabstroffset,
-	   unsigned int stabstrsize));
+extern void elfstab_build_psymtabs (struct objfile *objfile,
+				    int mainline,
+				    asection *stabsect,
+				    file_ptr stabstroffset,
+				    unsigned int stabstrsize);
 
 extern void coffstab_build_psymtabs
-  PARAMS ((struct objfile * objfile,
-	   int mainline,
-	   CORE_ADDR textaddr, unsigned int textsize,
-	   struct stab_section_list * stabs,
-	   file_ptr stabstroffset,
-	   unsigned int stabstrsize));
+  (struct objfile *objfile,
+   int mainline,
+   CORE_ADDR textaddr, unsigned int textsize,
+   struct stab_section_list *stabs,
+   file_ptr stabstroffset, unsigned int stabstrsize);
 
 extern void stabsect_build_psymtabs
-  PARAMS ((struct objfile * objfile,
-	   int mainline,
-	   char *stab_name,
-	   char *stabstr_name,
-	   char *text_name));
+  (struct objfile *objfile,
+   int mainline, char *stab_name, char *stabstr_name, char *text_name);
 
-extern void elfstab_offset_sections PARAMS ((struct objfile *,
-					     struct partial_symtab *));
+extern void elfstab_offset_sections (struct objfile *,
+				     struct partial_symtab *);
+extern int symbol_reference_defined (char **);
 
-extern void process_later
-  PARAMS ((struct symbol *, char *,
-	   int (*f) PARAMS ((struct objfile *, struct symbol *, char *))));
+extern void ref_add (int, struct symbol *, char *, CORE_ADDR);
 
-extern int symbol_reference_defined PARAMS ((char **));
+extern struct symbol *ref_search (int);
 
-extern void ref_add PARAMS ((int, struct symbol *, char *, CORE_ADDR));
+extern void free_header_files (void);
 
-extern struct symbol *ref_search PARAMS ((int));
-
-extern int resolve_cfront_continuation
-  PARAMS ((struct objfile * objfile, struct symbol * sym, char *p));
+extern void init_header_files (void);
 
 #undef EXTERN

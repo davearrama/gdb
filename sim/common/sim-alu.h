@@ -1,23 +1,25 @@
-/*  This file is part of the program psim.
+/* The common simulator framework for GDB, the GNU Debugger.
 
-    Copyright (C) 1994-1996, Andrew Cagney <cagney@highland.com.au>
-    Copyright (C) 1997, Free Software Foundation, Inc.
+   Copyright 2002 Free Software Foundation, Inc.
 
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+   Contributed by Andrew Cagney and Red Hat.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
- 
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
- 
-    */
+   This file is part of GDB.
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place - Suite 330,
+   Boston, MA 02111-1307, USA.  */
 
 
 #ifndef _SIM_ALU_H_
@@ -36,7 +38,7 @@
 
    Code using this module includes it into sim-main.h and then, as a
    convention, defines macro's ALU*_END that records the result of any
-   aritmetic performed.  Ex:
+   arithmetic performed.  Ex:
 
    	#include "sim-alu.h"
 	#define ALU32_END(RES) \
@@ -73,7 +75,7 @@
 	ALU*_RESULT: Generic ALU result output.
 
    	ALU*_HAD_OVERFLOW: Returns a nonzero value if signed overflow
-   	occured.
+   	occurred.
 
 	ALU*_OVERFLOW_RESULT: If the macro ALU*_HAD_OVERFLOW is being
 	used this is the most efficient result available.  Ex:
@@ -84,8 +86,8 @@
 		(RES) = ALU16_OVERFLOW_RESULT
    
    	ALU*_HAD_CARRY_BORROW: Returns a nonzero value if unsigned
-   	overflow or underflow (also refered to as carry and borrow)
-   	occured.
+   	overflow or underflow (also referred to as carry and borrow)
+   	occurred.
 
 	ALU*_CARRY_BORROW_RESULT: If the macro ALU*_HAD_CARRY_BORROW is being
 	used this is the most efficient result available.  Ex:
@@ -132,7 +134,7 @@
 
 
 
-/* Twos complement aritmetic - addition/subtraction - carry/borrow
+/* Twos complement arithmetic - addition/subtraction - carry/borrow
    (or you thought you knew the answer to 0-0)
 
    
@@ -154,9 +156,9 @@
    UMAXn: The upper bound of an unsigned N bit value (the lower
    bound is always zero).
 
-   Un: UMAXn + 1.  Unsigned arrithmetic is computed `modulo (Un)'.  
+   Un: UMAXn + 1.  Unsigned arithmetic is computed `modulo (Un)'.  
 
-   X[p]: Is bit P of X.  X[0] denotes the least signifant bit.
+   X[p]: Is bit P of X.  X[0] denotes the least significant bit.
 
    ~X[p]: Is the inversion of bit X[p]. Also equal to 1-X[p],
    (1+X[p])mod(2).
@@ -167,7 +169,7 @@
 
 
    Overflow/Overflow indicates an error in computation of signed
-   arrithmetic.  i.e. given X,Y in [MINn..MAXn]; overflow
+   arithmetic.  i.e. given X,Y in [MINn..MAXn]; overflow
    indicates that the result X+Y > MAXn or X+Y < MIN_INTx.
 
    Hardware traditionally implements overflow by computing the XOR of
@@ -179,7 +181,7 @@
    Addition - Overflow - method 1:
 
 
-   Overflow occures when the sign (most significant bit) of the two N
+   Overflow occurs when the sign (most significant bit) of the two N
    bit operands is identical but different to the sign of the result:
 
                 Rn = (Xn + Yn)
@@ -191,7 +193,7 @@
 
 
    The two N bit operands are sign extended to M>N bits and then
-   added.  Overflow occures when SIGN_BIT<n> and SIGN_BIT<m> do not
+   added.  Overflow occurs when SIGN_BIT<n> and SIGN_BIT<m> do not
    match.
   
    		Rm = (SEXTn (Xn) + SEXTn (Yn))
@@ -203,7 +205,7 @@
 
 
    The two N bit operands are sign extended to M>N bits and then
-   added.  Overflow occures when the result is outside of the sign
+   added.  Overflow occurs when the result is outside of the sign
    extended range [MINn .. MAXn].
 
 
@@ -235,7 +237,7 @@
    Addition - Carry - Introduction:
 
 
-   Carry (poorly named) indicates that an overflow occured for
+   Carry (poorly named) indicates that an overflow occurred for
    unsigned N bit addition.  i.e. given X, Y in [0..UMAXn] then
    carry indicates X+Y > UMAXn or X+Y >= Un.
 
@@ -293,7 +295,7 @@
 
    Given two signed N bit numbers, a carry can be detected by treating
    the numbers as N bit unsigned and adding them using M>N unsigned
-   arrithmetic.  Carry is indicated by bit (1 << N) being set (result
+   arithmetic.  Carry is indicated by bit (1 << N) being set (result
    >= 2**N).
 
 
@@ -314,29 +316,29 @@
 		0 <= X < Un, 0 <= Y < Un
 	==>	X + Y < 2 Un
 
-   Consider Y when carry occures:
+   Consider Y when carry occurs:
 
 		X + Y >= Un, Y < Un
-	==>	(Un - X) <= Y < Un               # re-arange
+	==>	(Un - X) <= Y < Un               # rearrange
 	==>	Un <= X + Y < Un + X < 2 Un      # add Xn
 	==>	0 <= (X + Y) mod Un < X mod Un
 
-   or when carry as occured:
+   or when carry as occurred:
 
                (X + Y) mod Un < X mod Un
 
-   Consider Y when carry does not occure:
+   Consider Y when carry does not occur:
 
 		X + Y < Un
 	have	X < Un, Y >= 0
 	==>	X <= X + Y < Un
 	==>     X mod Un <= (X + Y) mod Un
 
-   or when carry has not occured:
+   or when carry has not occurred:
 
 	        ! ( (X + Y) mod Un < X mod Un)
 
-   hence we get carry by computing in N bit unsigned arrithmetic.
+   hence we get carry by computing in N bit unsigned arithmetic.
 
                 carry <- (Xn + Yn) < Xn
 
@@ -360,7 +362,7 @@
 	==>	X + ~Y + 1		# -Y = ~Y + 1
 
    In addition to the result, the equation produces Carry-out.  For
-   succeeding extended prrcision calculations, the more general
+   succeeding extended precision calculations, the more general
    equation can be used:
 
 		C[p]:R[p]  =  X[p] + ~Y[p] + C[p-1]
@@ -416,7 +418,7 @@
 
 
    Treating Xn and Yn as unsigned values then a borrow (unsigned
-   underflow) occures when:
+   underflow) occurs when:
 
 		B = Xn < Yn
 	==>	C = Xn >= Yn
@@ -491,7 +493,7 @@ do {									\
 
 /* 32 bit target expressions:
 
-   Since most hosts do not support 64 (> 32) bit arrithmetic, carry
+   Since most hosts do not support 64 (> 32) bit arithmetic, carry
    method 4 and overflow method 4 are used. */
 
 #define ALU32_BEGIN(VAL) \
@@ -518,7 +520,7 @@ alu32_v = 0
 /* 64 bit target expressions:
 
    Even though the host typically doesn't support native 64 bit
-   arrithmetic, it is still used. */
+   arithmetic, it is still used. */
 
 #define ALU64_BEGIN(VAL) \
 unsigned64 alu64_r = (VAL); \

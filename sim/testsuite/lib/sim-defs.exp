@@ -154,8 +154,8 @@ proc sim_run { prog sim_opts prog_opts redir options } {
 # as[(mach-list)]: <assembler options>
 # ld[(mach-list)]: <linker options>
 # sim[(mach-list)]: <simulator options>
-# output[(mach-list)]: program output pattern to match with string-match
-# xerror[(mach-list)]: program is expected to return with a "failure" exit code
+# output: program output pattern to match with string-match
+# xerror: program is expected to return with a "failure" exit code
 # If `output' is not specified, the program must output "pass" if !xerror or
 # "fail" if xerror.
 # The parens in "optname()" are optional if the specification is for all machs.
@@ -164,6 +164,7 @@ proc run_sim_test { name requested_machs } {
     global subdir srcdir
     global SIMFLAGS
     global opts
+    global cpu_option
 
     if [string match "*/*" $name] {
 	set file $name
@@ -177,13 +178,27 @@ proc run_sim_test { name requested_machs } {
 	unresolved $subdir/$name
 	return
     }
-    set opts(as) {}
-    set opts(ld) {}
-    set opts(sim) {}
-    set opts(output) {}
-    set opts(mach) {}
-    set opts(timeout) {}
+    # Clear default options
+    set opts(as) ""
+    set opts(ld) ""
+    set opts(sim) ""
+    set opts(output) ""
+    set opts(mach) ""
+    set opts(timeout) ""
     set opts(xerror) "no"
+
+    # Clear any machine specific options specified in a previous test case
+    foreach m $requested_machs {
+	if [info exists opts(as,$m)] {
+	    unset opts(as,$m)
+	}
+	if [info exists opts(ld,$m)] {
+	    unset opts(ld,$m)
+	}
+	if [info exists opts(sim,$m)] {
+	    unset opts(sim,$m)
+	}
+    }
 
     foreach i $opt_array {
 	set opt_name [lindex $i 0]
@@ -231,11 +246,15 @@ proc run_sim_test { name requested_machs } {
 	    set opts(as,$mach) $opts(as)
 	}
 
-	set comp_output [target_assemble $sourcefile ${name}.o "$opts(as,$mach) -I$srcdir/$subdir"]
+	set as_options "$opts(as,$mach) -I$srcdir/$subdir"
+	if [info exists cpu_option] {
+	    set as_options "$as_options $cpu_option=$mach"
+	}
+	set comp_output [target_assemble $sourcefile ${name}.o "$as_options"]
 
 	if ![string match "" $comp_output] {
 	    verbose -log "$comp_output" 3
-	    fail "$mach $testname"
+	    fail "$mach $testname (assembling)"
 	    continue
 	}
 
@@ -247,7 +266,7 @@ proc run_sim_test { name requested_machs } {
 
 	if ![string match "" $comp_output] {
 	    verbose -log "$comp_output" 3
-	    fail "$mach $testname"
+	    fail "$mach $testname (linking)"
 	    continue
 	}
 
@@ -273,22 +292,22 @@ proc run_sim_test { name requested_machs } {
 		} else {
 		    verbose -log "output:  $output" 3
 		    verbose -log "pattern: $opts(output)" 3
-		    fail "$mach $testname"
+		    fail "$mach $testname (execution)"
 		}
 	    } else {
 		verbose -log "`pass' return code when expecting failure" 3
-		fail "$mach $testname"
+		fail "$mach $testname (execution)"
 	    }
 	} elseif { "$status" == "fail" } {
 	    if { "$opts(xerror)" == "no" } {
-		fail "$mach $testname"
+		fail "$mach $testname (execution)"
 	    } else {
 		if [string match $opts(output) $output] {
 		    pass "$mach $testname"
 		} else {
 		    verbose -log "output:  $output" 3
 		    verbose -log "pattern: $opts(output)" 3
-		    fail "$mach $testname"
+		    fail "$mach $testname (execution)"
 		}
 	    }
 	} else {
@@ -312,20 +331,20 @@ proc slurp_options { file } {
     # whitespace is ignored anywhere except within the options list;
     # option names are alphabetic only
     set pat "^#${ws}(\[a-zA-Z\]*)\\(?(\[^):\]*)\\)?$ws:${ws}(.*)$ws\$"
-    # Allow comment as first line of file.
-    set firstline 1
+    # Allow arbitrary lines until the first option is seen.
+    set seen_opt 0
     while { [gets $f line] != -1 } {
 	set line [string trim $line]
 	# Whitespace here is space-tab.
 	if [regexp $pat $line xxx opt_name opt_machs opt_val] {
 	    # match!
 	    lappend opt_array [list $opt_name $opt_machs $opt_val]
+	    set seen_opt 1
 	} else {
-	    if { ! $firstline } {
+	    if { $seen_opt } {
 		break
 	    }
 	}
-	set firstline 0
     }
     close $f
     return $opt_array

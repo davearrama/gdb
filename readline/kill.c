@@ -7,7 +7,7 @@
 
    The GNU Readline Library is free software; you can redistribute it
    and/or modify it under the terms of the GNU General Public License
-   as published by the Free Software Foundation; either version 1, or
+   as published by the Free Software Foundation; either version 2, or
    (at your option) any later version.
 
    The GNU Readline Library is distributed in the hope that it will be
@@ -18,7 +18,7 @@
    The GNU General Public License is often shipped with GNU software, and
    is generally kept in a file called COPYING or LICENSE.  If you do not
    have a copy of the license, write to the Free Software Foundation,
-   675 Mass Ave, Cambridge, MA 02139, USA. */
+   59 Temple Place, Suite 330, Boston, MA 02111 USA. */
 #define READLINE_LIBRARY
 
 #if defined (HAVE_CONFIG_H)
@@ -46,17 +46,8 @@
 #include "readline.h"
 #include "history.h"
 
-extern int _rl_last_command_was_kill;
-extern int rl_editing_mode;
-extern int rl_explicit_arg;
-extern Function *rl_last_func;
-
-extern void _rl_init_argument ();
-extern int _rl_set_mark_at_pos ();
-extern void _rl_fix_point ();
-extern void _rl_abort_internal ();
-
-extern char *xmalloc (), *xrealloc ();
+#include "rlprivate.h"
+#include "xmalloc.h"
 
 /* **************************************************************** */
 /*								    */
@@ -78,6 +69,11 @@ static int rl_kill_index;
 
 /* How many slots we have in the kill ring. */
 static int rl_kill_ring_length;
+
+static int _rl_copy_to_kill_ring PARAMS((char *, int));
+static int region_kill_internal PARAMS((int));
+static int _rl_copy_word_as_kill PARAMS((int, int));
+static int rl_yank_nth_arg_internal PARAMS((int, int, int));
 
 /* How to say that you only want to save a certain amount
    of kill material. */
@@ -138,7 +134,7 @@ _rl_copy_to_kill_ring (text, append)
   if (_rl_last_command_was_kill && rl_editing_mode != vi_mode)
     {
       old = rl_kill_ring[slot];
-      new = xmalloc (1 + strlen (old) + strlen (text));
+      new = (char *)xmalloc (1 + strlen (old) + strlen (text));
 
       if (append)
 	{
@@ -205,18 +201,21 @@ int
 rl_kill_word (count, key)
      int count, key;
 {
-  int orig_point = rl_point;
+  int orig_point;
 
   if (count < 0)
     return (rl_backward_kill_word (-count, key));
   else
     {
+      orig_point = rl_point;
       rl_forward_word (count, key);
 
       if (rl_point != orig_point)
 	rl_kill_text (orig_point, rl_point);
 
       rl_point = orig_point;
+      if (rl_editing_mode == emacs_mode)
+	rl_mark = rl_point;
     }
   return 0;
 }
@@ -226,16 +225,20 @@ int
 rl_backward_kill_word (count, ignore)
      int count, ignore;
 {
-  int orig_point = rl_point;
+  int orig_point;
 
   if (count < 0)
     return (rl_kill_word (-count, ignore));
   else
     {
+      orig_point = rl_point;
       rl_backward_word (count, ignore);
 
       if (rl_point != orig_point)
 	rl_kill_text (orig_point, rl_point);
+
+      if (rl_editing_mode == emacs_mode)
+	rl_mark = rl_point;
     }
   return 0;
 }
@@ -246,16 +249,19 @@ int
 rl_kill_line (direction, ignore)
      int direction, ignore;
 {
-  int orig_point = rl_point;
+  int orig_point;
 
   if (direction < 0)
     return (rl_backward_kill_line (1, ignore));
   else
     {
+      orig_point = rl_point;
       rl_end_of_line (1, ignore);
       if (orig_point != rl_point)
 	rl_kill_text (orig_point, rl_point);
       rl_point = orig_point;
+      if (rl_editing_mode == emacs_mode)
+	rl_mark = rl_point;
     }
   return 0;
 }
@@ -266,18 +272,22 @@ int
 rl_backward_kill_line (direction, ignore)
      int direction, ignore;
 {
-  int orig_point = rl_point;
+  int orig_point;
 
   if (direction < 0)
     return (rl_kill_line (1, ignore));
   else
     {
       if (!rl_point)
-	ding ();
+	rl_ding ();
       else
 	{
+	  orig_point = rl_point;
 	  rl_beg_of_line (1, ignore);
-	  rl_kill_text (orig_point, rl_point);
+	  if (rl_point != orig_point)
+	    rl_kill_text (orig_point, rl_point);
+	  if (rl_editing_mode == emacs_mode)
+	    rl_mark = rl_point;
 	}
     }
   return 0;
@@ -291,6 +301,7 @@ rl_kill_full_line (count, ignore)
   rl_begin_undo_group ();
   rl_point = 0;
   rl_kill_text (rl_point, rl_end);
+  rl_mark = 0;
   rl_end_undo_group ();
   return 0;
 }
@@ -308,7 +319,7 @@ rl_unix_word_rubout (count, key)
   int orig_point;
 
   if (rl_point == 0)
-    ding ();
+    rl_ding ();
   else
     {
       orig_point = rl_point;
@@ -325,6 +336,8 @@ rl_unix_word_rubout (count, key)
 	}
 
       rl_kill_text (orig_point, rl_point);
+      if (rl_editing_mode == emacs_mode)
+	rl_mark = rl_point;
     }
   return 0;
 }
@@ -340,11 +353,13 @@ rl_unix_line_discard (count, key)
      int count, key;
 {
   if (rl_point == 0)
-    ding ();
+    rl_ding ();
   else
     {
       rl_kill_text (rl_point, 0);
       rl_point = 0;
+      if (rl_editing_mode == emacs_mode)
+	rl_mark = rl_point;
     }
   return 0;
 }
@@ -357,16 +372,13 @@ region_kill_internal (delete)
 {
   char *text;
 
-  if (rl_mark == rl_point)
+  if (rl_mark != rl_point)
     {
-      _rl_last_command_was_kill++;
-      return 0;
+      text = rl_copy_text (rl_point, rl_mark);
+      if (delete)
+	rl_delete_text (rl_point, rl_mark);
+      _rl_copy_to_kill_ring (text, rl_point < rl_mark);
     }
-
-  text = rl_copy_text (rl_point, rl_mark);
-  if (delete)
-    rl_delete_text (rl_point, rl_mark);
-  _rl_copy_to_kill_ring (text, rl_point < rl_mark);
 
   _rl_last_command_was_kill++;
   return 0;
@@ -385,10 +397,12 @@ int
 rl_kill_region (count, ignore)
      int count, ignore;
 {
-  int r;
+  int r, npoint;
 
+  npoint = (rl_point < rl_mark) ? rl_point : rl_mark;
   r = region_kill_internal (1);
   _rl_fix_point (1);
+  rl_point = npoint;
   return r;
 }
 
@@ -503,7 +517,9 @@ rl_yank_nth_arg_internal (count, ignore, history_skip)
 {
   register HIST_ENTRY *entry;
   char *arg;
-  int i;
+  int i, pos;
+
+  pos = where_history ();
 
   if (history_skip)
     {
@@ -512,29 +528,25 @@ rl_yank_nth_arg_internal (count, ignore, history_skip)
     }
 
   entry = previous_history ();
-  if (entry)
+
+  history_set_pos (pos);
+
+  if (entry == 0)
     {
-      if (history_skip)
-	{
-	  for (i = 0; i < history_skip; i++)
-	    next_history ();
-	}
-      next_history ();
-    }
-  else
-    {
-      ding ();
+      rl_ding ();
       return -1;
     }
 
   arg = history_arg_extract (count, count, entry->line);
   if (!arg || !*arg)
     {
-      ding ();
+      rl_ding ();
       return -1;
     }
 
   rl_begin_undo_group ();
+
+  _rl_set_mark_at_pos (rl_point);
 
 #if defined (VI_MODE)
   /* Vi mode always inserts a space before yanking the argument, and it
@@ -572,6 +584,8 @@ rl_yank_last_arg (count, key)
   static int explicit_arg_p = 0;
   static int count_passed = 1;
   static int direction = 1;
+  static int undo_needed = 0;
+  int retval;
 
   if (rl_last_func != rl_yank_last_arg)
     {
@@ -582,23 +596,26 @@ rl_yank_last_arg (count, key)
     }
   else
     {
-      rl_do_undo ();
+      if (undo_needed)
+	rl_do_undo ();
       if (count < 1)
         direction = -direction;
       history_skip += direction;
       if (history_skip < 0)
 	history_skip = 0;
-      count_passed = count;
     }
  
   if (explicit_arg_p)
-    return (rl_yank_nth_arg_internal (count, key, history_skip));
+    retval = rl_yank_nth_arg_internal (count_passed, key, history_skip);
   else
-    return (rl_yank_nth_arg_internal ('$', key, history_skip));
+    retval = rl_yank_nth_arg_internal ('$', key, history_skip);
+
+  undo_needed = retval == 0;
+  return retval;
 }
 
 /* A special paste command for users of Cygnus's cygwin32. */
-#if defined (__CYGWIN32__)
+#if defined (__CYGWIN__)
 #include <windows.h>
 
 int
@@ -618,12 +635,13 @@ rl_paste_from_clipboard (count, key)
       if (ptr)
 	{
 	  len = ptr - data;
-	  ptr = xmalloc (len + 1);
+	  ptr = (char *)xmalloc (len + 1);
 	  ptr[len] = '\0';
 	  strncpy (ptr, data, len);
 	}
       else
         ptr = data;
+      _rl_set_mark_at_pos (rl_point);
       rl_insert_text (ptr);
       if (ptr != data)
 	free (ptr);
@@ -631,4 +649,4 @@ rl_paste_from_clipboard (count, key)
     }
   return (0);
 }
-#endif /* __CYGWIN32__ */
+#endif /* __CYGWIN__ */

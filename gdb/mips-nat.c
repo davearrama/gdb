@@ -1,5 +1,6 @@
 /* Low level DECstation interface to ptrace, for GDB when running native.
-   Copyright 1988, 1989, 1991, 1992, 1995 Free Software Foundation, Inc.
+   Copyright 1988, 1989, 1991, 1992, 1993, 1995, 1996, 1999, 2000, 2001
+   Free Software Foundation, Inc.
    Contributed by Alessandro Forin(af@cs.cmu.edu) at CMU
    and by Per Bothner(bothner@cs.wisc.edu) at U.Wisconsin.
 
@@ -23,6 +24,7 @@
 #include "defs.h"
 #include "inferior.h"
 #include "gdbcore.h"
+#include "regcache.h"
 #include <sys/ptrace.h>
 #include <sys/types.h>
 #include <sys/param.h>
@@ -49,40 +51,41 @@
 /* Map gdb internal register number to ptrace ``address''.
    These ``addresses'' are defined in DECstation <sys/ptrace.h> */
 
-#define REGISTER_PTRACE_ADDR(regno) \
-   (regno < 32 ? 		GPR_BASE + regno \
-  : regno == PC_REGNUM ?	PC	\
-  : regno == CAUSE_REGNUM ?	CAUSE	\
-  : regno == HI_REGNUM ?	MMHI	\
-  : regno == LO_REGNUM ?	MMLO	\
-  : regno == FCRCS_REGNUM ?	FPC_CSR	\
-  : regno == FCRIR_REGNUM ?	FPC_EIR	\
-  : regno >= FP0_REGNUM ?	FPR_BASE + (regno - FP0_REGNUM) \
-  : 0)
+static int
+register_ptrace_addr (int regno)
+{
+  return (regno < 32 ? GPR_BASE + regno
+	  : regno == mips_regnum (current_gdbarch)->pc ? PC
+	  : regno == mips_regnum (current_gdbarch)->cause ? CAUSE
+	  : regno == mips_regnum (current_gdbarch)->hi ? MMHI
+	  : regno == mips_regnum (current_gdbarch)->lo ? MMLO
+	  : regno == mips_regnum (current_gdbarch)->fp_control_status ? FPC_CSR
+	  : regno == mips_regnum (current_gdbarch)->fp_implementation_revision ? FPC_EIR
+	  : regno >= FP0_REGNUM ? FPR_BASE + (regno - FP0_REGNUM)
+	  : 0);
+}
 
-static char zerobuf[MAX_REGISTER_RAW_SIZE] =
-{0};
-
-static void fetch_core_registers PARAMS ((char *, unsigned, int, CORE_ADDR));
+static void fetch_core_registers (char *, unsigned, int, CORE_ADDR);
 
 /* Get all registers from the inferior */
 
 void
-fetch_inferior_registers (regno)
-     int regno;
+fetch_inferior_registers (int regno)
 {
-  register unsigned int regaddr;
-  char buf[MAX_REGISTER_RAW_SIZE];
-  register int i;
+  unsigned int regaddr;
+  char buf[MAX_REGISTER_SIZE];
+  int i;
+  char zerobuf[MAX_REGISTER_SIZE];
+  memset (zerobuf, 0, MAX_REGISTER_SIZE);
 
-  registers_fetched ();
+  deprecated_registers_fetched ();
 
   for (regno = 1; regno < NUM_REGS; regno++)
     {
-      regaddr = REGISTER_PTRACE_ADDR (regno);
-      for (i = 0; i < REGISTER_RAW_SIZE (regno); i += sizeof (int))
+      regaddr = register_ptrace_addr (regno);
+      for (i = 0; i < DEPRECATED_REGISTER_RAW_SIZE (regno); i += sizeof (int))
 	{
-	  *(int *) &buf[i] = ptrace (PT_READ_U, inferior_pid,
+	  *(int *) &buf[i] = ptrace (PT_READ_U, PIDGET (inferior_ptid),
 				     (PTRACE_ARG3_TYPE) regaddr, 0);
 	  regaddr += sizeof (int);
 	}
@@ -91,7 +94,7 @@ fetch_inferior_registers (regno)
 
   supply_register (ZERO_REGNUM, zerobuf);
   /* Frame ptr reg must appear to be 0; it is faked by stack handling code. */
-  supply_register (FP_REGNUM, zerobuf);
+  supply_register (DEPRECATED_FP_REGNUM, zerobuf);
 }
 
 /* Store our register values back into the inferior.
@@ -99,22 +102,23 @@ fetch_inferior_registers (regno)
    Otherwise, REGNO specifies which register (so we can save time).  */
 
 void
-store_inferior_registers (regno)
-     int regno;
+store_inferior_registers (int regno)
 {
-  register unsigned int regaddr;
+  unsigned int regaddr;
   char buf[80];
 
   if (regno > 0)
     {
       if (regno == ZERO_REGNUM || regno == PS_REGNUM
-	  || regno == BADVADDR_REGNUM || regno == CAUSE_REGNUM
-	  || regno == FCRIR_REGNUM || regno == FP_REGNUM
+	  || regno == mips_regnum (current_gdbarch)->badvaddr
+	  || regno == mips_regnum (current_gdbarch)->cause
+	  || regno == mips_regnum (current_gdbarch)->fp_implementation_revision
+	  || regno == DEPRECATED_FP_REGNUM
 	  || (regno >= FIRST_EMBED_REGNUM && regno <= LAST_EMBED_REGNUM))
 	return;
-      regaddr = REGISTER_PTRACE_ADDR (regno);
+      regaddr = register_ptrace_addr (regno);
       errno = 0;
-      ptrace (PT_WRITE_U, inferior_pid, (PTRACE_ARG3_TYPE) regaddr,
+      ptrace (PT_WRITE_U, PIDGET (inferior_ptid), (PTRACE_ARG3_TYPE) regaddr,
 	      read_register (regno));
       if (errno != 0)
 	{
@@ -136,19 +140,19 @@ store_inferior_registers (regno)
    This routine returns true on success. */
 
 int
-get_longjmp_target (pc)
-     CORE_ADDR *pc;
+get_longjmp_target (CORE_ADDR *pc)
 {
   CORE_ADDR jb_addr;
-  char buf[TARGET_PTR_BIT / TARGET_CHAR_BIT];
+  char *buf;
 
+  buf = alloca (TARGET_PTR_BIT / TARGET_CHAR_BIT);
   jb_addr = read_register (A0_REGNUM);
 
   if (target_read_memory (jb_addr + JB_PC * JB_ELEMENT_SIZE, buf,
 			  TARGET_PTR_BIT / TARGET_CHAR_BIT))
     return 0;
 
-  *pc = extract_address (buf, TARGET_PTR_BIT / TARGET_CHAR_BIT);
+  *pc = extract_unsigned_integer (buf, TARGET_PTR_BIT / TARGET_CHAR_BIT);
 
   return 1;
 }
@@ -167,16 +171,17 @@ get_longjmp_target (pc)
  */
 
 static void
-fetch_core_registers (core_reg_sect, core_reg_size, which, reg_addr)
-     char *core_reg_sect;
-     unsigned core_reg_size;
-     int which;
-     CORE_ADDR reg_addr;
+fetch_core_registers (char *core_reg_sect, unsigned core_reg_size, int which,
+		      CORE_ADDR reg_addr)
 {
-  register int regno;
-  register unsigned int addr;
+  int regno;
+  unsigned int addr;
   int bad_reg = -1;
-  register reg_ptr = -reg_addr;	/* Original u.u_ar0 is -reg_addr. */
+  reg_ptr = -reg_addr;	/* Original u.u_ar0 is -reg_addr. */
+
+  char zerobuf[MAX_REGISTER_SIZE];
+  memset (zerobuf, 0, MAX_REGISTER_SIZE);
+
 
   /* If u.u_ar0 was an absolute address in the core file, relativize it now,
      so we can use it as an offset into core_reg_sect.  When we're done,
@@ -210,16 +215,14 @@ fetch_core_registers (core_reg_sect, core_reg_size, which, reg_addr)
     }
   supply_register (ZERO_REGNUM, zerobuf);
   /* Frame ptr reg must appear to be 0; it is faked by stack handling code. */
-  supply_register (FP_REGNUM, zerobuf);
+  supply_register (DEPRECATED_FP_REGNUM, zerobuf);
 }
 
 /* Return the address in the core dump or inferior of register REGNO.
    BLOCKEND is the address of the end of the user structure.  */
 
 CORE_ADDR
-register_addr (regno, blockend)
-     int regno;
-     CORE_ADDR blockend;
+register_addr (int regno, CORE_ADDR blockend)
 {
   CORE_ADDR addr;
 
@@ -245,7 +248,7 @@ static struct core_fns mips_core_fns =
 };
 
 void
-_initialize_core_mips ()
+_initialize_core_mips (void)
 {
   add_core_fns (&mips_core_fns);
 }
