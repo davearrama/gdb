@@ -1,5 +1,7 @@
 /* Top level stuff for GDB, the GNU debugger.
-   Copyright 1986-1995, 1999-2000 Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995,
+   1996, 1997, 1998, 1999, 2000, 2001, 2002
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -22,7 +24,8 @@
 #include "top.h"
 #include "target.h"
 #include "inferior.h"
-#include "call-cmds.h"
+#include "symfile.h"
+#include "gdbcore.h"
 
 #include "getopt.h"
 
@@ -33,11 +36,6 @@
 #include "gdb_string.h"
 #include "event-loop.h"
 #include "ui-out.h"
-#if defined (TUI) || defined (GDBTK)
-/* FIXME: cagney/2000-01-31: This #include is to allow older code such
-   as that found in the TUI to continue to build. */
-#include "tui/tui-file.h"
-#endif
 
 /* If nonzero, display time usage both at startup and for each command.  */
 
@@ -52,6 +50,9 @@ int display_space;
    version, the usual command_loop is substituted by and event loop which
    processes UI events asynchronously. */
 int event_loop_p = 1;
+
+/* Has an interpreter been specified and if so, which. */
+char *interpreter_p;
 
 /* Whether this is the command line version or not */
 int tui_version = 0;
@@ -79,13 +80,7 @@ static void print_gdb_help (struct ui_file *);
 /* These two are used to set the external editor commands when gdb is farming
    out files to be edited by another program. */
 
-extern int enable_external_editor;
 extern char *external_editor_command;
-
-#ifdef __CYGWIN__
-#include <windows.h>		/* for MAX_PATH */
-#include <sys/cygwin.h>		/* for cygwin32_conv_to_posix_path */
-#endif
 
 /* Call command_loop.  If it happens to return, pass that through as a
    non-zero return status. */
@@ -100,7 +95,7 @@ captured_command_loop (void *data)
   /* FIXME: cagney/1999-11-05: A correct command_loop() implementaton
      would clean things up (restoring the cleanup chain) to the state
      they were just prior to the call.  Technically, this means that
-     the do_cleanups() below is redundant.  Unfortunatly, many FUNC's
+     the do_cleanups() below is redundant.  Unfortunately, many FUNCs
      are not that well behaved.  do_cleanups should either be replaced
      with a do_cleanups call (to cover the problem) or an assertion
      check to detect bad FUNCs code. */
@@ -128,6 +123,7 @@ captured_main (void *data)
   int count;
   static int quiet = 0;
   static int batch = 0;
+  static int set_args = 0;
 
   /* Pointers to various arguments from command line.  */
   char *symarg = NULL;
@@ -161,6 +157,15 @@ captured_main (void *data)
 
   long time_at_startup = get_run_time ();
 
+#if defined (HAVE_SETLOCALE) && defined (HAVE_LC_MESSAGES)
+  setlocale (LC_MESSAGES, "");
+#endif
+#if defined (HAVE_SETLOCALE)
+  setlocale (LC_CTYPE, "");
+#endif
+  bindtextdomain (PACKAGE, LOCALEDIR);
+  textdomain (PACKAGE);
+
   START_PROGRESS (argv[0], 0);
 
 #ifdef MPW
@@ -192,20 +197,10 @@ captured_main (void *data)
   getcwd (gdb_dirbuf, sizeof (gdb_dirbuf));
   current_directory = gdb_dirbuf;
 
-#if defined (TUI) || defined (GDBTK)
-  /* Older code uses the tui_file and fputs_unfiltered_hook().  It
-     should be using a customized UI_FILE object and re-initializing
-     within its own _initialize function.  */
-  gdb_stdout = tui_fileopen (stdout);
-  gdb_stderr = tui_fileopen (stderr);
-  gdb_stdlog = gdb_stdout;	/* for moment */
-  gdb_stdtarg = gdb_stderr;	/* for moment */
-#else
   gdb_stdout = stdio_fileopen (stdout);
   gdb_stderr = stdio_fileopen (stderr);
   gdb_stdlog = gdb_stderr;	/* for moment */
   gdb_stdtarg = gdb_stderr;	/* for moment */
-#endif
 
   /* initialize error() */
   error_init ();
@@ -252,6 +247,8 @@ captured_main (void *data)
       {"e", required_argument, 0, 'e'},
       {"core", required_argument, 0, 'c'},
       {"c", required_argument, 0, 'c'},
+      {"pid", required_argument, 0, 'p'},
+      {"p", required_argument, 0, 'p'},
       {"command", required_argument, 0, 'x'},
       {"version", no_argument, &print_version, 1},
       {"x", required_argument, 0, 'x'},
@@ -275,6 +272,7 @@ captured_main (void *data)
       {"windows", no_argument, &use_windows, 1},
       {"statistics", no_argument, 0, 13},
       {"write", no_argument, &write_files, 1},
+      {"args", no_argument, &set_args, 1},
 /* Allow machine descriptions to add more options... */
 #ifdef ADDITIONAL_OPTIONS
       ADDITIONAL_OPTIONS
@@ -288,7 +286,7 @@ captured_main (void *data)
 
 	c = getopt_long_only (argc, argv, "",
 			      long_options, &option_index);
-	if (c == EOF)
+	if (c == EOF || set_args)
 	  break;
 
 	/* Long option that takes an argument.  */
@@ -330,6 +328,10 @@ captured_main (void *data)
 	  case 'c':
 	    corearg = optarg;
 	    break;
+	  case 'p':
+	    /* "corearg" is shared by "--core" and "--pid" */
+	    corearg = optarg;
+	    break;
 	  case 'x':
 	    cmdarg[ncmd++] = optarg;
 	    if (ncmd >= cmdsize)
@@ -342,37 +344,27 @@ captured_main (void *data)
 #ifdef GDBTK
 	  case 'z':
 	    {
-	      extern int gdbtk_test PARAMS ((char *));
+extern int gdbtk_test (char *);
 	      if (!gdbtk_test (optarg))
 		{
-		  fprintf_unfiltered (gdb_stderr, "%s: unable to load tclcommand file \"%s\"",
+		  fprintf_unfiltered (gdb_stderr, _("%s: unable to load tclcommand file \"%s\""),
 				      argv[0], optarg);
 		  exit (1);
 		}
 	      break;
 	    }
 	  case 'y':
-	    {
-	      /*
-	       * This enables the edit/button in the main window, even
-	       * when IDE_ENABLED is set to false. In this case you must
-	       * use --tclcommand to specify a tcl/script to be called,
-	       * Tcl/Variable to store the edit/command is:
-	       * external_editor
-	       */
-	      enable_external_editor = 1;
-	      break;
-	    }
+	    /* Backwards compatibility only.  */
+	    break;
 	  case 'w':
 	    {
-	      /*
-	       * if editor command is enabled, both flags are set
-	       */
-	      enable_external_editor = 1;
 	      external_editor_command = xstrdup (optarg);
 	      break;
 	    }
 #endif /* GDBTK */
+	  case 'i':
+	    interpreter_p = optarg;
+	    break;
 	  case 'd':
 	    dirarg[ndir++] = optarg;
 	    if (ndir >= dirsize)
@@ -401,10 +393,11 @@ captured_main (void *data)
 
 		fprintf_unfiltered
 		  (gdb_stderr,
-		   "warning: could not set baud rate to `%s'.\n", optarg);
+		   _("warning: could not set baud rate to `%s'.\n"), optarg);
 	      else
 		baud_rate = i;
 	    }
+            break;
 	  case 'l':
 	    {
 	      int i;
@@ -418,7 +411,7 @@ captured_main (void *data)
 
 		fprintf_unfiltered
 		  (gdb_stderr,
-		 "warning: could not set timeout limit to `%s'.\n", optarg);
+		 _("warning: could not set timeout limit to `%s'.\n"), optarg);
 	      else
 		remote_timeout = i;
 	    }
@@ -429,7 +422,7 @@ captured_main (void *data)
 #endif
 	  case '?':
 	    fprintf_unfiltered (gdb_stderr,
-			"Use `%s --help' for a complete list of options.\n",
+			_("Use `%s --help' for a complete list of options.\n"),
 				argv[0]);
 	    exit (1);
 	  }
@@ -452,33 +445,49 @@ captured_main (void *data)
       use_windows = 0;
 #endif
 
-    /* OK, that's all the options.  The other arguments are filenames.  */
-    count = 0;
-    for (; optind < argc; optind++)
-      switch (++count)
-	{
-	case 1:
-	  symarg = argv[optind];
-	  execarg = argv[optind];
-	  break;
-	case 2:
-	  corearg = argv[optind];
-	  break;
-	case 3:
-	  fprintf_unfiltered (gdb_stderr,
-			  "Excess command line arguments ignored. (%s%s)\n",
-			  argv[optind], (optind == argc - 1) ? "" : " ...");
-	  break;
-	}
+    if (set_args)
+      {
+	/* The remaining options are the command-line options for the
+	   inferior.  The first one is the sym/exec file, and the rest
+	   are arguments.  */
+	if (optind >= argc)
+	  {
+	    fprintf_unfiltered (gdb_stderr,
+				_("%s: `--args' specified but no program specified\n"),
+				argv[0]);
+	    exit (1);
+	  }
+	symarg = argv[optind];
+	execarg = argv[optind];
+	++optind;
+	set_inferior_args_vector (argc - optind, &argv[optind]);
+      }
+    else
+      {
+	/* OK, that's all the options.  The other arguments are filenames.  */
+	count = 0;
+	for (; optind < argc; optind++)
+	  switch (++count)
+	    {
+	    case 1:
+	      symarg = argv[optind];
+	      execarg = argv[optind];
+	      break;
+	    case 2:
+	      /* The documentation says this can be a "ProcID" as well. 
+	         We will try it as both a corefile and a pid.  */
+	      corearg = argv[optind];
+	      break;
+	    case 3:
+	      fprintf_unfiltered (gdb_stderr,
+				  _("Excess command line arguments ignored. (%s%s)\n"),
+				  argv[optind], (optind == argc - 1) ? "" : " ...");
+	      break;
+	    }
+      }
     if (batch)
       quiet = 1;
   }
-
-#if defined(TUI)
-  /* Should this be moved to tui-top.c:_initialize_tui()? */
-  if (tui_version)
-    init_ui_hook = tuiInit;
-#endif
 
   /* Initialize all files.  Give the interpreter a chance to take
      control of the console via the init_ui_hook()) */
@@ -516,27 +525,13 @@ captured_main (void *data)
   quit_pre_print = error_pre_print;
 
   /* We may get more than one warning, don't double space all of them... */
-  warning_pre_print = "\nwarning: ";
+  warning_pre_print = _("\nwarning: ");
 
   /* Read and execute $HOME/.gdbinit file, if it exists.  This is done
      *before* all the command line arguments are processed; it sets
      global parameters, which are independent of what file you are
      debugging or what directory you are in.  */
-#ifdef __CYGWIN32__
-  {
-    char *tmp = getenv ("HOME");
-
-    if (tmp != NULL)
-      {
-	homedir = (char *) alloca (MAX_PATH + 1);
-	cygwin32_conv_to_posix_path (tmp, homedir);
-      }
-    else
-      homedir = NULL;
-  }
-#else
   homedir = getenv ("HOME");
-#endif
   if (homedir)
     {
       homeinit = (char *) alloca (strlen (homedir) +
@@ -571,7 +566,7 @@ captured_main (void *data)
 
   for (i = 0; i < ndir; i++)
     catch_command_errors (directory_command, dirarg[i], 0, RETURN_MASK_ALL);
-  free ((PTR) dirarg);
+  xfree (dirarg);
 
   if (execarg != NULL
       && symarg != NULL
@@ -580,15 +575,15 @@ captured_main (void *data)
       /* The exec file and the symbol-file are the same.  If we can't
          open it, better only print one error message.
          catch_command_errors returns non-zero on success! */
-      if (catch_command_errors (exec_file_command, execarg, !batch, RETURN_MASK_ALL))
-	catch_command_errors (symbol_file_command, symarg, 0, RETURN_MASK_ALL);
+      if (catch_command_errors (exec_file_attach, execarg, !batch, RETURN_MASK_ALL))
+	catch_command_errors (symbol_file_add_main, symarg, 0, RETURN_MASK_ALL);
     }
   else
     {
       if (execarg != NULL)
-	catch_command_errors (exec_file_command, execarg, !batch, RETURN_MASK_ALL);
+	catch_command_errors (exec_file_attach, execarg, !batch, RETURN_MASK_ALL);
       if (symarg != NULL)
-	catch_command_errors (symbol_file_command, symarg, 0, RETURN_MASK_ALL);
+	catch_command_errors (symbol_file_add_main, symarg, 0, RETURN_MASK_ALL);
     }
 
   /* After the symbol file has been read, print a newline to get us
@@ -598,16 +593,24 @@ captured_main (void *data)
     printf_filtered ("\n");
   error_pre_print = "\n";
   quit_pre_print = error_pre_print;
-  warning_pre_print = "\nwarning: ";
+  warning_pre_print = _("\nwarning: ");
 
   if (corearg != NULL)
     {
-      if (catch_command_errors (core_file_command, corearg, !batch, RETURN_MASK_ALL) == 0)
+      /* corearg may be either a corefile or a pid.
+	 If its first character is a digit, try attach first
+	 and then corefile.  Otherwise try corefile first. */
+
+      if (isdigit (corearg[0]))
 	{
-	  /* See if the core file is really a PID. */
-	  if (isdigit (corearg[0]))
-	    catch_command_errors (attach_command, corearg, !batch, RETURN_MASK_ALL);
+	  if (catch_command_errors (attach_command, corearg, 
+				    !batch, RETURN_MASK_ALL) == 0)
+	    catch_command_errors (core_file_command, corearg, 
+				  !batch, RETURN_MASK_ALL);
 	}
+      else /* Can't be a pid, better be a corefile. */
+	catch_command_errors (core_file_command, corearg, 
+			      !batch, RETURN_MASK_ALL);
     }
 
   if (ttyarg != NULL)
@@ -620,7 +623,7 @@ captured_main (void *data)
   /* Error messages should no longer be distinguished with extra output. */
   error_pre_print = NULL;
   quit_pre_print = NULL;
-  warning_pre_print = "warning: ";
+  warning_pre_print = _("warning: ");
 
   /* Read the .gdbinit file in the current directory, *if* it isn't
      the same as the $HOME/.gdbinit file (it should exist, also).  */
@@ -653,7 +656,7 @@ captured_main (void *data)
 #endif
       catch_command_errors (source_command, cmdarg[i], !batch, RETURN_MASK_ALL);
     }
-  free ((PTR) cmdarg);
+  xfree (cmdarg);
 
   /* Read in the old history after all the command files have been read. */
   init_history ();
@@ -679,7 +682,7 @@ captured_main (void *data)
     {
       long init_time = get_run_time () - time_at_startup;
 
-      printf_unfiltered ("Startup time: %ld.%06ld\n",
+      printf_unfiltered (_("Startup time: %ld.%06ld\n"),
 			 init_time / 1000000, init_time % 1000000);
     }
 
@@ -689,18 +692,11 @@ captured_main (void *data)
       extern char **environ;
       char *lim = (char *) sbrk (0);
 
-      printf_unfiltered ("Startup size: data size %ld\n",
+      printf_unfiltered (_("Startup size: data size %ld\n"),
 			 (long) (lim - (char *) &environ));
 #endif
     }
 
-  /* The default command loop. 
-     The WIN32 Gui calls this main to set up gdb's state, and 
-     has its own command loop. */
-#if !defined _WIN32 || defined __GNUC__
-  /* GUIs generally have their own command loop, mainloop, or
-     whatever.  This is a good place to gain control because many
-     error conditions will end up here via longjmp(). */
 #if 0
   /* FIXME: cagney/1999-11-06: The original main loop was like: */
   while (1)
@@ -736,7 +732,6 @@ captured_main (void *data)
     {
       catch_errors (captured_command_loop, 0, "", RETURN_MASK_ALL);
     }
-#endif
   /* No exit -- exit is through quit_command.  */
 }
 
@@ -758,64 +753,69 @@ main (int argc, char **argv)
 static void
 print_gdb_help (struct ui_file *stream)
 {
-  fputs_unfiltered ("\
+  fputs_unfiltered (_("\
 This is the GNU debugger.  Usage:\n\n\
-    gdb [options] [executable-file [core-file or process-id]]\n\n\
+    gdb [options] [executable-file [core-file or process-id]]\n\
+    gdb [options] --args executable-file [inferior-arguments ...]\n\n\
 Options:\n\n\
-", stream);
-  fputs_unfiltered ("\
+"), stream);
+  fputs_unfiltered (_("\
+  --args             Arguments after executable-file are passed to inferior\n\
+"), stream);
+  fputs_unfiltered (_("\
   --[no]async        Enable (disable) asynchronous version of CLI\n\
-", stream);
-  fputs_unfiltered ("\
+"), stream);
+  fputs_unfiltered (_("\
   -b BAUDRATE        Set serial port baud rate used for remote debugging.\n\
   --batch            Exit after processing options.\n\
   --cd=DIR           Change current directory to DIR.\n\
   --command=FILE     Execute GDB commands from FILE.\n\
   --core=COREFILE    Analyze the core dump COREFILE.\n\
-", stream);
-  fputs_unfiltered ("\
+  --pid=PID          Attach to running process PID.\n\
+"), stream);
+  fputs_unfiltered (_("\
   --dbx              DBX compatibility mode.\n\
   --directory=DIR    Search for source files in DIR.\n\
   --epoch            Output information used by epoch emacs-GDB interface.\n\
   --exec=EXECFILE    Use EXECFILE as the executable.\n\
   --fullname         Output information used by emacs-GDB interface.\n\
   --help             Print this message.\n\
-", stream);
-  fputs_unfiltered ("\
+"), stream);
+  fputs_unfiltered (_("\
   --interpreter=INTERP\n\
                      Select a specific interpreter / user interface\n\
-", stream);
-  fputs_unfiltered ("\
+"), stream);
+  fputs_unfiltered (_("\
   --mapped           Use mapped symbol files if supported on this system.\n\
   --nw		     Do not use a window interface.\n\
-  --nx               Do not read ", stream);
+  --nx               Do not read "), stream);
   fputs_unfiltered (gdbinit, stream);
-  fputs_unfiltered (" file.\n\
+  fputs_unfiltered (_(" file.\n\
   --quiet            Do not print version number on startup.\n\
   --readnow          Fully read symbol files on first access.\n\
-", stream);
-  fputs_unfiltered ("\
+"), stream);
+  fputs_unfiltered (_("\
   --se=FILE          Use FILE as symbol file and executable file.\n\
   --symbols=SYMFILE  Read symbols from SYMFILE.\n\
   --tty=TTY          Use TTY for input/output by the program being debugged.\n\
-", stream);
+"), stream);
 #if defined(TUI)
-  fputs_unfiltered ("\
+  fputs_unfiltered (_("\
   --tui              Use a terminal user interface.\n\
-", stream);
+"), stream);
 #endif
-  fputs_unfiltered ("\
+  fputs_unfiltered (_("\
   --version          Print version information and then exit.\n\
   -w                 Use a window interface.\n\
   --write            Set writing into executable and core files.\n\
   --xdb              XDB compatibility mode.\n\
-", stream);
+"), stream);
 #ifdef ADDITIONAL_OPTION_HELP
   fputs_unfiltered (ADDITIONAL_OPTION_HELP, stream);
 #endif
-  fputs_unfiltered ("\n\
+  fputs_unfiltered (_("\n\
 For more information, type \"help\" from within GDB, or consult the\n\
 GDB manual (available as on-line info or a printed manual).\n\
 Report bugs to \"bug-gdb@gnu.org\".\
-", stream);
+"), stream);
 }
