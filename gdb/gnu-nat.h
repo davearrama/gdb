@@ -1,5 +1,5 @@
 /* Common things used by the various *gnu-nat.c files
-   Copyright (C) 1995, 1996 Free Software Foundation, Inc.
+   Copyright 1995, 1996, 1997, 1999, 2000 Free Software Foundation, Inc.
 
    Written by Miles Bader <miles@gnu.ai.mit.edu>
 
@@ -96,6 +96,6 @@ extern int gnu_debug_flag;
 
 #define debug(msg, args...) \
  do { if (gnu_debug_flag) \
-        fprintf_unfiltered (gdb_stdlog, "%s: " msg "\r\n", __FUNCTION__ , ##args); } while (0)
+        fprintf_unfiltered (gdb_stdlog, "%s:%d: " msg "\r\n", __FILE__ , __LINE__ , ##args); } while (0)
 
 #endif /* __GNU_NAT_H__ */

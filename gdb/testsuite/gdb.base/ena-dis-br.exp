@@ -1,4 +1,4 @@
-#   Copyright (C) 1997, 1998, 1999 Free Software Foundation, Inc.
+#   Copyright 1997, 1998, 1999 Free Software Foundation, Inc.
 
 
 # This program is free software; you can redistribute it and/or modify
@@ -36,30 +36,6 @@ set binfile ${objdir}/${subdir}/${testfile}
 
 if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug}] != "" } {
      gdb_suppress_entire_file "Testcase compile failed, so all tests in this file will automatically fail."
-}
-
-proc rerun_to_main {} {
-  global gdb_prompt
-
-  if [target_info exists use_gdb_stub] {
-    gdb_run_cmd
-    gdb_expect {
-      -re ".*Breakpoint .*main .*$gdb_prompt $"\
-	      {pass "rerun to main" ; return 0}
-      -re "$gdb_prompt $"\
-	      {fail "rerun to main" ; return 0}
-      timeout {fail "(timeout) rerun to main" ; return 0}
-    }
-  } else {
-    send_gdb "run\n"
-    gdb_expect {
-      -re "Starting program.*$gdb_prompt $"\
-	      {pass "rerun to main" ; return 0}
-      -re "$gdb_prompt $"\
-	      {fail "rerun to main" ; return 0}
-      timeout {fail "(timeout) rerun to main" ; return 0}
-    }
-  }
 }
 
 gdb_exit

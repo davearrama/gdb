@@ -1,5 +1,6 @@
 /* Remote debugging interface for Hitachi HMS Monitor Version 1.0
-   Copyright 1995,1999 Free Software Foundation, Inc.
+   Copyright 1995, 1996, 1998, 1999, 2000, 2001
+   Free Software Foundation, Inc.
    Contributed by Cygnus Support.  Written by Steve Chamberlain
    (sac@cygnus.com).
 
@@ -25,14 +26,11 @@
 #include "target.h"
 #include "monitor.h"
 #include "serial.h"
+#include "regcache.h"
 
-static void hms_open PARAMS ((char *args, int from_tty));
+static void hms_open (char *args, int from_tty);
 static void
-hms_supply_register (regname, regnamelen, val, vallen)
-     char *regname;
-     int regnamelen;
-     char *val;
-     int vallen;
+hms_supply_register (char *regname, int regnamelen, char *val, int vallen)
 {
   int regno;
 
@@ -66,9 +64,9 @@ hms_supply_register (regname, regnamelen, val, vallen)
  * registers either. So, typing "info reg sp" becomes a "r30".
  */
 
-static char *hms_regnames[NUM_REGS] =
+static char *hms_regnames[] =
 {
-  "R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "CCR", "PC"
+  "R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "CCR", "PC", "", "", "", ""
 };
 
 /*
@@ -135,9 +133,7 @@ init_hms_cmds (void)
 }				/* init_hms-cmds */
 
 static void
-hms_open (args, from_tty)
-     char *args;
-     int from_tty;
+hms_open (char *args, int from_tty)
 {
   monitor_open (args, &hms_cmds, from_tty);
 }
@@ -145,7 +141,7 @@ hms_open (args, from_tty)
 int write_dos_tick_delay;
 
 void
-_initialize_remote_hms ()
+_initialize_remote_hms (void)
 {
   init_hms_cmds ();
   init_monitor_ops (&hms_ops);
