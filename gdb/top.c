@@ -144,6 +144,10 @@ static void complete_command PARAMS ((char *, int));
 
 static void do_nothing PARAMS ((int));
 
+static void show_debug PARAMS ((char *, int));
+
+static void set_debug PARAMS ((char *, int));
+
 #ifdef SIGHUP
 /* NOTE 1999-04-29: This function will be static again, once we modify
    gdb to use the event loop as the default command loop and we merge
@@ -255,6 +259,10 @@ struct cmd_list_element *setprintlist;
 
 struct cmd_list_element *showprintlist;
 
+struct cmd_list_element *setdebuglist;
+
+struct cmd_list_element *showdebuglist;
+
 struct cmd_list_element *setchecklist;
 
 struct cmd_list_element *showchecklist;
@@ -308,7 +316,25 @@ int baud_rate = -1;
 
 /* Timeout limit for response from target. */
 
-int remote_timeout = 20;	/* Set default to 20 */
+/* The default value has been changed many times over the years.  It 
+   was originally 5 seconds.  But that was thought to be a long time 
+   to sit and wait, so it was changed to 2 seconds.  That was thought
+   to be plenty unless the connection was going through some terminal 
+   server or multiplexer or other form of hairy serial connection.
+
+   In mid-1996, remote_timeout was moved from remote.c to top.c and 
+   it began being used in other remote-* targets.  It appears that the
+   default was changed to 20 seconds at that time, perhaps because the
+   Hitachi E7000 ICE didn't always respond in a timely manner.
+
+   But if 5 seconds is a long time to sit and wait for retransmissions,
+   20 seconds is far worse.  This demonstrates the difficulty of using 
+   a single variable for all protocol timeouts.
+
+   As remote.c is used much more than remote-e7000.c, it was changed 
+   back to 2 seconds in 1999. */
+
+int remote_timeout = 2;
 
 /* Non-zero tells remote* modules to output debugging info.  */
 
@@ -451,7 +477,7 @@ void (*call_command_hook) PARAMS ((struct cmd_list_element * c, char *cmd,
 /* Called after a `set' command has finished.  Is only run if the
    `set' command succeeded.  */
 
-void (*set_hook) PARAMS ((struct cmd_list_element *c));
+void (*set_hook) (struct cmd_list_element * c);
 
 /* Called when the current thread changes.  Argument is thread id.  */
 
@@ -460,12 +486,11 @@ void (*context_hook) PARAMS ((int id));
 /* Takes control from error ().  Typically used to prevent longjmps out of the
    middle of the GUI.  Usually used in conjunction with a catch routine.  */
 
-NORETURN void (*error_hook)
-PARAMS ((void)) ATTR_NORETURN;
+NORETURN void (*error_hook) (void) ATTR_NORETURN;
 
 
-/* Generally one should use catch_errors rather than manipulating these
-   directly.  The exception is main().  */
+/* One should use catch_errors rather than manipulating these
+   directly.  */
 #if defined(HAVE_SIGSETJMP)
 #define SIGJMP_BUF		sigjmp_buf
 #define SIGSETJMP(buf)		sigsetjmp(buf, 1)
@@ -476,13 +501,10 @@ PARAMS ((void)) ATTR_NORETURN;
 #define SIGLONGJMP(buf,val)	longjmp(buf,val)
 #endif
 
-/* Where to go for return_to_top_level (RETURN_ERROR).  */
-static SIGJMP_BUF error_return;
-/* Where to go for return_to_top_level (RETURN_QUIT).  */
-static SIGJMP_BUF quit_return;
+/* Where to go for return_to_top_level.  */
+static SIGJMP_BUF *catch_return;
 
-/* Return for reason REASON.  This generally gets back to the command
-   loop, but can be caught via catch_errors.  */
+/* Return for reason REASON to the nearest containing catch_errors().  */
 
 NORETURN void
 return_to_top_level (reason)
@@ -513,8 +535,11 @@ return_to_top_level (reason)
 	break;
       }
 
-  (NORETURN void) SIGLONGJMP
-    (reason == RETURN_ERROR ? error_return : quit_return, 1);
+  /* Jump to the containing catch_errors() call, communicating REASON
+     to that call via setjmp's return value.  Note that REASON can't
+     be zero, by definition in defs.h. */
+
+  (NORETURN void) SIGLONGJMP (*catch_return, (int) reason);
 }
 
 /* Call FUNC with arg ARGS, catching any errors.  If there is no
@@ -544,13 +569,6 @@ return_to_top_level (reason)
    code also randomly used a SET_TOP_LEVEL macro that directly
    initialize the longjmp buffers. */
 
-/* MAYBE: cagney/1999-11-05: Since the SET_TOP_LEVEL macro has been
-   eliminated it is now possible to use the stack to directly store
-   each longjmp buffer.  The global code would just need to update a
-   pointer (onto the stack - ulgh!?) indicating the current longjmp
-   buffers. It would certainly improve the performance of the longjmp
-   code since the memcpy's would be eliminated. */
-
 /* MAYBE: cagney/1999-11-05: Should the catch_erros and cleanups code
    be consolidated into a single file instead of being distributed
    between utils.c and top.c? */
@@ -562,61 +580,89 @@ catch_errors (func, args, errstring, mask)
      char *errstring;
      return_mask mask;
 {
-  SIGJMP_BUF saved_error;
-  SIGJMP_BUF saved_quit;
-  SIGJMP_BUF tmp_jmp;
+  SIGJMP_BUF *saved_catch;
+  SIGJMP_BUF catch;
   int val;
   struct cleanup *saved_cleanup_chain;
   char *saved_error_pre_print;
   char *saved_quit_pre_print;
 
-  saved_cleanup_chain = save_cleanups ();
+  /* Return value from SIGSETJMP(): enum return_reason if error or
+     quit caught, 0 otherwise. */
+  int caught;
+
+  /* Override error/quit messages during FUNC. */
+
   saved_error_pre_print = error_pre_print;
   saved_quit_pre_print = quit_pre_print;
 
   if (mask & RETURN_MASK_ERROR)
-    {
-      memcpy ((char *) saved_error, (char *) error_return, sizeof (SIGJMP_BUF));
-      error_pre_print = errstring;
-    }
+    error_pre_print = errstring;
   if (mask & RETURN_MASK_QUIT)
-    {
-      memcpy (saved_quit, quit_return, sizeof (SIGJMP_BUF));
-      quit_pre_print = errstring;
-    }
+    quit_pre_print = errstring;
 
-  if (SIGSETJMP (tmp_jmp) == 0)
-    {
-      if (mask & RETURN_MASK_ERROR)
-	memcpy (error_return, tmp_jmp, sizeof (SIGJMP_BUF));
-      if (mask & RETURN_MASK_QUIT)
-	memcpy (quit_return, tmp_jmp, sizeof (SIGJMP_BUF));
-      val = (*func) (args);
-      /* FIXME: cagney/1999-11-05: A correct FUNC implementaton will
-         clean things up (restoring the cleanup chain) to the state
-         they were just prior to the call.  Technically, this means
-         that the below restore_cleanups call is redundant.
-         Unfortunatly, many FUNC's are not that well behaved.
-         restore_cleanups should either be replaced with a do_cleanups
-         call (to cover the problem) or an assertion check to detect
-         bad FUNCs code. */
-    }
-  else
-    val = 0;
+  /* Prevent error/quit during FUNC from calling cleanups established
+     prior to here. */
+
+  saved_cleanup_chain = save_cleanups ();
+
+  /* Call FUNC, catching error/quit events. */
+
+  saved_catch = catch_return;
+  catch_return = &catch;
+  caught = SIGSETJMP (catch);
+  if (!caught)
+    val = (*func) (args);
+  catch_return = saved_catch;
+
+  /* FIXME: cagney/1999-11-05: A correct FUNC implementaton will
+     clean things up (restoring the cleanup chain) to the state they
+     were just prior to the call.  Unfortunatly, many FUNC's are not
+     that well behaved.  This could be fixed by adding either a
+     do_cleanups call (to cover the problem) or an assertion check to
+     detect bad FUNCs code. */
+
+  /* Restore the cleanup chain and error/quit messages to their
+     original states. */
 
   restore_cleanups (saved_cleanup_chain);
 
-  if (mask & RETURN_MASK_ERROR)
-    {
-      memcpy (error_return, saved_error, sizeof (SIGJMP_BUF));
-      error_pre_print = saved_error_pre_print;
-    }
   if (mask & RETURN_MASK_QUIT)
-    {
-      memcpy (quit_return, saved_quit, sizeof (SIGJMP_BUF));
-      quit_pre_print = saved_quit_pre_print;
-    }
-  return val;
+    quit_pre_print = saved_quit_pre_print;
+  if (mask & RETURN_MASK_ERROR)
+    error_pre_print = saved_error_pre_print;
+
+  /* Return normally if no error/quit event occurred. */
+
+  if (!caught)
+    return val;
+
+  /* If the caller didn't request that the event be caught, relay the
+     event to the next containing catch_errors(). */
+
+  if (!(mask & RETURN_MASK (caught)))
+    return_to_top_level (caught);
+
+  /* Tell the caller that an event was caught.
+
+     FIXME: nsd/2000-02-22: When MASK is RETURN_MASK_ALL, the caller
+     can't tell what type of event occurred.
+
+     A possible fix is to add a new interface, catch_event(), that
+     returns enum return_reason after catching an error or a quit.
+
+     When returning normally, i.e. without catching an error or a
+     quit, catch_event() could return RETURN_NORMAL, which would be
+     added to enum return_reason.  FUNC would return information
+     exclusively via ARGS.
+
+     Alternatively, normal catch_event() could return FUNC's return
+     value.  The caller would need to be aware of potential overlap
+     with enum return_reason, which could be publicly restricted to
+     negative values to simplify return value processing in FUNC and
+     in the caller. */
+
+  return 0;
 }
 
 struct captured_command_args
@@ -643,7 +689,7 @@ do_captured_command (void *data)
 }
 
 int
-catch_command_errors (catch_command_errors_ftype *command,
+catch_command_errors (catch_command_errors_ftype * command,
 		      char *arg, int from_tty, return_mask mask)
 {
   struct captured_command_args args;
@@ -781,6 +827,17 @@ gdb_init (argv0)
 #ifdef UI_OUT
   /* Install the default UI */
   uiout = cli_out_new (gdb_stdout);
+#endif
+
+#ifdef UI_OUT
+  /* All the interpreters should have had a look at things by now.
+     Initialize the selected interpreter. */
+  if (interpreter_p && !init_ui_hook)
+    {
+      fprintf_unfiltered (gdb_stderr, "Interpreter `%s' unrecognized.\n",
+			  interpreter_p);
+      exit (1);
+    }
 #endif
 
   if (init_ui_hook)
@@ -1424,6 +1481,7 @@ execute_command (p, from_tty)
   register struct cmd_list_element *c;
   register enum language flang;
   static int warned = 0;
+  char *line;
   /* FIXME: These should really be in an appropriate header file */
   extern void serial_log_command PARAMS ((const char *));
 
@@ -1444,6 +1502,7 @@ execute_command (p, from_tty)
   if (*p)
     {
       char *arg;
+      line = p;
 
       c = lookup_cmd (&p, cmdlist, "", 0, 1);
 
@@ -1471,6 +1530,9 @@ execute_command (p, from_tty)
       /* If this command has been hooked, run the hook first. */
       if (c->hook)
 	execute_user_command (c->hook, (char *) 0);
+
+      if (c->flags & DEPRECATED_WARN_USER)
+	deprecated_cmd_warning (&line);
 
       if (c->class == class_user)
 	execute_user_command (c, arg);
@@ -1771,6 +1833,12 @@ char *gdb_completer_word_break_characters =
 char *gdb_completer_command_word_break_characters =
 " \t\n!@#$%^&*()+=|~`}{[]\"';:?/>.<,";
 
+/* When completing on file names, we remove from the list of word
+   break characters any characters that are commonly used in file
+   names, such as '-', '+', '~', etc.  Otherwise, readline displays
+   incorrect completion candidates.  */
+char *gdb_completer_file_name_break_characters = " \t\n*|\"';:?/><";
+
 /* Characters that can be used to quote completion strings.  Note that we
    can't include '"' because the gdb C parser treats such quoted sequences
    as strings. */
@@ -1825,6 +1893,11 @@ filename_completer (text, word)
 	  return_val[return_val_used++] = p;
 	  break;
 	}
+      /* We need to set subsequent_name to a non-zero value before the
+	 continue line below, because otherwise, if the first file seen
+	 by GDB is a backup file whose name ends in a `~', we will loop
+	 indefinitely.  */
+      subsequent_name = 1;
       /* Like emacs, don't complete on old versions.  Especially useful
          in the "source" command.  */
       if (p[strlen (p) - 1] == '~')
@@ -1854,7 +1927,6 @@ filename_completer (text, word)
 	    free (p);
 	  }
       }
-      subsequent_name = 1;
     }
 #if 0
   /* There is no way to do this just long enough to affect quote inserting
@@ -2056,6 +2128,9 @@ line_completion_function (text, matches, line_buffer, point)
 		      /* It is a normal command; what comes after it is
 		         completed by the command's completer function.  */
 		      list = (*c->completer) (p, word);
+		      if (c->completer == filename_completer)
+			rl_completer_word_break_characters =
+			  gdb_completer_file_name_break_characters;
 		    }
 		}
 	      else
@@ -2102,6 +2177,9 @@ line_completion_function (text, matches, line_buffer, point)
 		{
 		  /* It is a normal command.  */
 		  list = (*c->completer) (p, word);
+		  if (c->completer == filename_completer)
+		    rl_completer_word_break_characters =
+		      gdb_completer_file_name_break_characters;
 		}
 	    }
 	}
@@ -2842,24 +2920,24 @@ free_command_lines (lptr)
 
 /* Add an element to the list of info subcommands.  */
 
-void
+struct cmd_list_element *
 add_info (name, fun, doc)
      char *name;
      void (*fun) PARAMS ((char *, int));
      char *doc;
 {
-  add_cmd (name, no_class, fun, doc, &infolist);
+  return add_cmd (name, no_class, fun, doc, &infolist);
 }
 
 /* Add an alias to the list of info subcommands.  */
 
-void
+struct cmd_list_element *
 add_info_alias (name, oldname, abbrev_flag)
      char *name;
      char *oldname;
      int abbrev_flag;
 {
-  add_alias_cmd (name, oldname, 0, abbrev_flag, &infolist);
+  return add_alias_cmd (name, oldname, 0, abbrev_flag, &infolist);
 }
 
 /* The "info" command is defined as a prefix, with allow_unknown = 0.
@@ -2915,26 +2993,26 @@ show_command (arg, from_tty)
 
 /* Add an element to the list of commands.  */
 
-void
+struct cmd_list_element *
 add_com (name, class, fun, doc)
      char *name;
      enum command_class class;
      void (*fun) PARAMS ((char *, int));
      char *doc;
 {
-  add_cmd (name, class, fun, doc, &cmdlist);
+  return add_cmd (name, class, fun, doc, &cmdlist);
 }
 
 /* Add an alias or abbreviation command to the list of commands.  */
 
-void
+struct cmd_list_element *
 add_com_alias (name, oldname, class, abbrev_flag)
      char *name;
      char *oldname;
      enum command_class class;
      int abbrev_flag;
 {
-  add_alias_cmd (name, oldname, class, abbrev_flag, &cmdlist);
+  return add_alias_cmd (name, oldname, class, abbrev_flag, &cmdlist);
 }
 
 void
@@ -3118,7 +3196,7 @@ print_gdb_version (stream)
 
   /* Second line is a copyright notice. */
 
-  fprintf_filtered (stream, "Copyright 1998 Free Software Foundation, Inc.\n");
+  fprintf_filtered (stream, "Copyright 2000 Free Software Foundation, Inc.\n");
 
   /* Following the copyright is a brief statement that the program is
      free software, that users are free to copy and change it on
@@ -3582,13 +3660,13 @@ cd_command (dir, from_tty)
 #endif
 
   len = strlen (dir);
-  if (SLASH_P (dir[len-1]))
+  if (SLASH_P (dir[len - 1]))
     {
       /* Remove the trailing slash unless this is a root directory
-	 (including a drive letter on non-Unix systems).  */
-      if (!(len == 1) /* "/" */
+         (including a drive letter on non-Unix systems).  */
+      if (!(len == 1)		/* "/" */
 #if defined(_WIN32) || defined(__MSDOS__)
-	  && !(!SLASH_P (*dir) && ROOTED_P (dir) && len <= 3) /* "d:/" */
+	  && !(!SLASH_P (*dir) && ROOTED_P (dir) && len <= 3)	/* "d:/" */
 #endif
 	  )
 	len--;
@@ -3931,7 +4009,23 @@ float_handler (signo)
   signal (SIGFPE, float_handler);
   error ("Erroneous arithmetic operation.");
 }
-
+
+static void
+set_debug (arg, from_tty)
+     char *arg;
+     int from_tty;
+{
+  printf_unfiltered ("\"set debug\" must be followed by the name of a print subcommand.\n");
+  help_list (setdebuglist, "set debug ", -1, gdb_stdout);
+}
+
+static void
+show_debug (args, from_tty)
+     char *args;
+     int from_tty;
+{
+  cmd_show_list (showdebuglist, from_tty, "");
+}
 
 static void
 init_cmd_lists ()
@@ -3987,8 +4081,8 @@ init_history ()
          directories the file written will be the same as the one
          that was read.  */
 #ifdef __MSDOS__
-    /* No leading dots in file names are allowed on MSDOS.  */
-    history_filename = concat (current_directory, "/_gdb_history", NULL);
+      /* No leading dots in file names are allowed on MSDOS.  */
+      history_filename = concat (current_directory, "/_gdb_history", NULL);
 #else
       history_filename = concat (current_directory, "/.gdb_history", NULL);
 #endif
@@ -4258,12 +4352,20 @@ This value is used to set the speed of the serial port when debugging\n\
 using remote targets.", &setlist),
 		     &showlist);
 
-  add_show_from_set (
-  add_set_cmd ("remotedebug", no_class, var_zinteger, (char *) &remote_debug,
-	       "Set debugging of remote protocol.\n\
+  c = add_set_cmd ("remotedebug", no_class, var_zinteger,
+		   (char *) &remote_debug,
+		   "Set debugging of remote protocol.\n\
 When enabled, each packet sent or received with the remote target\n\
-is displayed.", &setlist),
-		      &showlist);
+is displayed.", &setlist);
+  deprecate_cmd (c, "set debug remote");
+  deprecate_cmd (add_show_from_set (c, &showlist), "show debug remote");
+
+  add_show_from_set (add_set_cmd ("remote", no_class, var_zinteger,
+				  (char *) &remote_debug,
+				  "Set debugging of remote protocol.\n\
+When enabled, each packet sent or received with the remote target\n\
+is displayed.", &setdebuglist),
+		     &showdebuglist);
 
   add_show_from_set (
 		      add_set_cmd ("remotetimeout", no_class, var_integer, (char *) &remote_timeout,
@@ -4303,4 +4405,11 @@ from the target.", &setlist),
 Use \"on\" to enable the notification, and \"off\" to disable it.", &setlist),
 	 &showlist);
     }
+  add_prefix_cmd ("debug", no_class, set_debug,
+		  "Generic command for setting gdb debugging flags",
+		  &setdebuglist, "set debug ", 0, &setlist);
+
+  add_prefix_cmd ("debug", no_class, show_debug,
+		  "Generic command for showing gdb debugging flags",
+		  &showdebuglist, "show debug ", 0, &showlist);
 }
