@@ -1,5 +1,6 @@
 /* Build symbol tables in GDB's internal format.
-   Copyright 1986-1993, 1996-1999 Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1995, 1996,
+   1997, 1998, 1999, 2000 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -231,6 +232,8 @@ EXTERN int type_vector_length;
 
 #define	INITIAL_TYPE_VECTOR_LENGTH	160
 
+extern void add_free_pendings (struct pending *list);
+
 extern void add_symbol_to_list (struct symbol *symbol,
 				struct pending **listhead);
 
@@ -274,11 +277,11 @@ extern int hashname (char *name);
 
 extern void free_pending_blocks (void);
 
-/* FIXME: Note that this is used only in buildsym.c and dstread.c,
-   which should be fixed to not need direct access to
-   make_blockvector. */
+/* OBSOLETE FIXME: Note that this is used only in buildsym.c and dstread.c, */
+/* OBSOLETE which should be fixed to not need direct access to */
+/* OBSOLETE make_blockvector. */
 
-extern struct blockvector *make_blockvector (struct objfile *objfile);
+/* OBSOLETE extern struct blockvector *make_blockvector (struct objfile *objfile); */
 
 /* FIXME: Note that this is used only in buildsym.c and dstread.c,
    which should be fixed to not need direct access to
@@ -292,6 +295,10 @@ extern void record_debugformat (char *format);
 
 extern void merge_symbol_lists (struct pending **srclist,
 				struct pending **targetlist);
+
+/* The macro table for the compilation unit whose symbols we're
+   currently reading.  All the symtabs for this CU will point to this.  */
+EXTERN struct macro_table *pending_macros;
 
 #undef EXTERN
 

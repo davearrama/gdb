@@ -1,4 +1,4 @@
-/* Copyright (C) 1993 Free Software Foundation, Inc.
+/* Copyright 1993, 1997, 1998, 1999, 2000 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,12 +17,7 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-#define TARGET_BYTE_ORDER_SELECTABLE_P 1
-
 #include "mips/tm-bigmips.h"
-
-#undef DEFAULT_MIPS_TYPE
-#define DEFAULT_MIPS_TYPE "r3051"
 
 /* Watchpoint support */
 
@@ -33,11 +28,11 @@
 
 #define target_insert_watchpoint(addr, len, type) \
 	remote_mips_set_watchpoint (addr, len, type)
-int remote_mips_set_watchpoint PARAMS ((CORE_ADDR addr, int len, int type));
+int remote_mips_set_watchpoint (CORE_ADDR addr, int len, int type);
 
 #define target_remove_watchpoint(addr, len, type) \
 	remote_mips_remove_watchpoint (addr, len, type)
-int remote_mips_remove_watchpoint PARAMS ((CORE_ADDR addr, int len, int type));
+int remote_mips_remove_watchpoint (CORE_ADDR addr, int len, int type);
 
 /* We need to remove watchpoints when stepping, else we hit them again! */
 
@@ -48,4 +43,4 @@ int remote_mips_stopped_by_watchpoint (void);
 
 #define TARGET_CAN_USE_HARDWARE_WATCHPOINT(type, cnt, ot) \
   remote_mips_can_use_hardware_watchpoint(cnt)
-int remote_mips_can_use_hardware_watchpoint PARAMS ((int cnt));
+int remote_mips_can_use_hardware_watchpoint (int cnt);

@@ -47,22 +47,6 @@ NL_TARGET = -DNL_TARGET_v850
 
 ## COMMON_POST_CONFIG_FRAG
 
-simops.h table.c: tmp-gencode
-tmp-gencode: gencode
-	./gencode >tmp-table.c
-	mv tmp-table.c table.c
-	./gencode -h >tmp-simops.h
-	mv tmp-simops.h simops.h
-	touch tmp-gencode
-gencode.o: gencode.c
-	$(CC_FOR_BUILD) $(BUILD_CFLAGS) -c $(srcdir)/gencode.c
-v850-opc.o: $(srcdir)/../../opcodes/v850-opc.c
-	$(CC_FOR_BUILD) $(BUILD_CFLAGS) -c $<
-gencode: gencode.o v850-opc.o
-	$(CC_FOR_BUILD) $(BUILD_CFLAGS) -o gencode gencode.o v850-opc.o
-
-
-
 BUILT_SRC_FROM_IGEN = \
 	icache.h \
 	icache.c \
@@ -79,7 +63,7 @@ BUILT_SRC_FROM_IGEN = \
 	engine.h \
 	engine.c \
 	irun.c
-$(BUILT_SRC_FROM_IGEN): tmp-igen simops.h
+$(BUILT_SRC_FROM_IGEN): tmp-igen
 #
 
 .PHONY: clean-igen
@@ -98,6 +82,7 @@ tmp-igen: $(IGEN_INSN) $(IGEN_DC) ../igen/igen
 	../igen/igen \
 		$(IGEN_TRACE) \
 		-G gen-direct-access \
+		-G gen-zero-r0 \
 		-i $(IGEN_INSN) \
 		-o $(IGEN_DC) \
 		-x \
@@ -137,6 +122,6 @@ clean-extra: clean-igen
 	rm -f table.c simops.h gencode
 
 #interp.o: interp.c table.c $(INCLUDE)
-simops.o: simops.c $(INCLUDE) targ-vals.h
+simops.o: simops.c simops.h $(INCLUDE) targ-vals.h
 #table.o: table.c
 semantics.o: $(INCLUDE)

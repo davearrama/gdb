@@ -1,5 +1,6 @@
 /* Native-dependent definitions for Intel 386 running BSD Unix, for GDB.
-   Copyright 1986, 1987, 1989, 1992 Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1989, 1992, 1993, 2000
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -27,13 +28,10 @@
 #include <machine/vmparam.h>
 #define KERNEL_U_ADDR USRSTACK
 
-#undef FLOAT_INFO		/* No float info yet */
-
 #define REGISTER_U_ADDR(addr, blockend, regno) \
 	(addr) = i386_register_u_addr ((blockend),(regno));
 
-extern int
-i386_register_u_addr PARAMS ((int, int));
+extern int i386_register_u_addr (int, int);
 
 #define PTRACE_ARG3_TYPE char*
 

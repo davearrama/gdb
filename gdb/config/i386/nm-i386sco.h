@@ -1,5 +1,6 @@
 /* Native support for i386.
-   Copyright 1986, 1987, 1989, 1992 Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1989, 1992, 1994, 1998, 2000
+   Free Software Foundation, Inc.
    Changes for 80386 by Pace Willisson (pace@prep.ai.mit.edu), July 1988.
 
    This file is part of GDB.
@@ -19,22 +20,10 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-#if 0
-/* code to execute to print interesting information about the
-   floating point processor (if any)
-   No need to define if there is nothing to do.
-   On the 386, unfortunately this code is host-dependent (and lives
-   in the i386-xdep.c file), so we can't
-   do this unless we *know* we aren't cross-debugging.  FIXME.
- */
-#define FLOAT_INFO { i386_float_info (); }
-#endif /*0 */
-
 #define REGISTER_U_ADDR(addr, blockend, regno) \
 	(addr) = i386_register_u_addr ((blockend),(regno));
 
-extern int
-i386_register_u_addr PARAMS ((int, int));
+extern int i386_register_u_addr (int, int);
 
 /* When calling functions on SCO, sometimes we get an error writing some
    of the segment registers.  This would appear to be a kernel

@@ -1,5 +1,6 @@
-/* Definitions to make GDB run on the GNU Hurd on an Intel 386
-   Copyright (C) 1986, 1987, 1989, 1991 Free Software Foundation, Inc.
+/* Target-dependent definitions for NetBSD/mips.
+   Copyright 2002 Free Software Foundation, Inc.
+   Contributed by Wasabi Systems, Inc.
 
    This file is part of GDB.
 
@@ -18,7 +19,22 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-#define HOST_BYTE_ORDER LITTLE_ENDIAN
+#ifndef TM_NBSD_H
+#define TM_NBSD_H
 
-/* Do implement the attach and detach commands.  */
-#define ATTACH_DETACH	1
+/* Saved Pc.  Get it from sigcontext if within sigtramp.  */
+#define SIGCONTEXT_PC_OFFSET 8
+
+#include "mips/tm-mips.h"
+#include "solib.h"
+
+/* We don't want to inherit tm-mips.h's shared library trampoline code.  */
+#undef IN_SOLIB_CALL_TRAMPOLINE
+#undef IN_SOLIB_RETURN_TRAMPOLINE
+#undef SKIP_TRAMPOLINE_CODE
+#undef IGNORE_HELPER_CALL
+
+/* XXX undef a bunch of stuff we want to use multi-arch */
+#undef IN_SIGTRAMP
+
+#endif /* TM_NBSD_H */
