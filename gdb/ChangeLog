@@ -1,6 +1,11 @@
-2003-03-17  Fernando Nasser  <fnasser@redhat.com>
+2003-03-17  Andrew Cagney  <cagney@redhat.com>
 
-	* MAINTAINERS: Remove my name from several maintainership roles.
+	* frame.c (get_frame_id): If the frame's ID isn't valid, get it.
+	(get_prev_frame): Validate THIS frame's ID before trying to unwind
+	to prev frame.  Don't compute PREV's frame's ID.
+	(get_frame_base): Force the update of frame ID before returning
+	the frame.
+	* frame.h (struct frame_info): Add "id_p".
 
 2003-03-17  Andrew Cagney  <cagney@redhat.com>
 
