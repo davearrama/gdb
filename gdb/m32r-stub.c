@@ -210,8 +210,16 @@ handle_exception(int exceptionVector)
   unsigned char   buf[16];
   int binary;
 
-  if (!finish_from_step())
-    return;		/* "false step": let the target continue */
+  /* Do not call finish_from_step() if this is not a trap #1
+   * (breakpoint trap).  Without this check, the finish_from_step()
+   * might interpret a system call trap as a single step trap.  This
+   * can happen if: the stub receives 's' and exits, but an interrupt
+   * was pending; the interrupt is now handled and causes the stub to
+   * be reentered because some function makes a system call.  
+   */
+  if (exceptionVector == 1)	/* Trap exception? */
+    if (!finish_from_step())	/* Go see if stepping state needs update. */
+      return;		/* "false step": let the target continue */
 
   gdb_m32r_vector = exceptionVector;
 
@@ -425,7 +433,7 @@ handle_exception(int exceptionVector)
 		strcpy (remcomOutBuffer, "OK");
 		break;
 	      }
-	  strcpy (remcomOutBuffer, "P01");
+	  strcpy (remcomOutBuffer, "E01");
 	  break;
 	}
       case 'G': /* set the value of the CPU registers - return OK */
@@ -535,10 +543,7 @@ handle_exception(int exceptionVector)
 static unsigned long crc32_table[256] = {0, 0};
 
 static unsigned long
-crc32 (buf, len, crc)
-     unsigned char *buf;
-     int len;
-     unsigned long crc;
+crc32 (unsigned char *buf, int len, unsigned long crc)
 {
   if (! crc32_table[1])
     {
@@ -563,8 +568,7 @@ crc32 (buf, len, crc)
 }
 
 static int 
-hex(ch)
-     unsigned char ch;
+hex (unsigned char ch)
 {
   if ((ch >= 'a') && (ch <= 'f')) return (ch-'a'+10);
   if ((ch >= '0') && (ch <= '9')) return (ch-'0');
@@ -575,7 +579,7 @@ hex(ch)
 /* scan for the sequence $<data>#<checksum>     */
 
 unsigned char *
-getpacket ()
+getpacket (void)
 {
   unsigned char *buffer = &remcomInBuffer[0];
   unsigned char checksum;
@@ -651,8 +655,7 @@ retry:
 /* send the packet in buffer.  */
 
 static void 
-putpacket(buffer)
-     unsigned char *buffer;
+putpacket (unsigned char *buffer)
 {
   unsigned char checksum;
   int  count;
@@ -680,7 +683,7 @@ putpacket(buffer)
 static void (*volatile mem_fault_routine)() = 0;
 
 static void
-set_mem_err ()
+set_mem_err (void)
 {
   mem_err = 1;
 }
@@ -691,8 +694,7 @@ set_mem_err ()
    whether there's anything connected to the expansion bus. */
 
 static int
-mem_safe (addr)
-     unsigned char *addr;
+mem_safe (unsigned char *addr)
 {
 #define BAD_RANGE_ONE_START	((unsigned char *) 0x600000)
 #define BAD_RANGE_ONE_END	((unsigned char *) 0xa00000)
@@ -710,8 +712,7 @@ mem_safe (addr)
    to mem_fault, they won't get restored, so there better not be any
    saved).  */
 static int
-get_char (addr)
-     unsigned char *addr;
+get_char (unsigned char *addr)
 {
 #if 1
   if (mem_fault_routine && !mem_safe(addr))
@@ -724,9 +725,7 @@ get_char (addr)
 }
 
 static void
-set_char (addr, val)
-     unsigned char *addr;
-     unsigned char val;
+set_char (unsigned char *addr, unsigned char val)
 {
 #if 1
   if (mem_fault_routine && !mem_safe (addr))
@@ -744,11 +743,7 @@ set_char (addr, val)
    a fault; if zero treat a fault like any other fault in the stub.  */
 
 static unsigned char *
-mem2hex(mem, buf, count, may_fault)
-     unsigned char* mem;
-     unsigned char* buf;
-     int   count;
-     int   may_fault;
+mem2hex (unsigned char *mem, unsigned char *buf, int count, int may_fault)
 {
   int i;
   unsigned char ch;
@@ -772,11 +767,7 @@ mem2hex(mem, buf, count, may_fault)
    Return a pointer to the character AFTER the last byte written. */
 
 static unsigned char* 
-hex2mem(buf, mem, count, may_fault)
-     unsigned char* buf;
-     unsigned char* mem;
-     int   count;
-     int   may_fault;
+hex2mem (unsigned char *buf, unsigned char *mem, int count, int may_fault)
 {
   int i;
   unsigned char ch;
@@ -801,11 +792,7 @@ hex2mem(buf, mem, count, may_fault)
    COUNT is the total number of bytes to write into
    memory. */
 static unsigned char *
-bin2mem (buf, mem, count, may_fault)
-     unsigned char *buf;
-     unsigned char *mem;
-     int   count;
-     int   may_fault;
+bin2mem (unsigned char *buf, unsigned char *mem, int count, int may_fault)
 {
   int i;
   unsigned char ch;
@@ -847,8 +834,7 @@ bin2mem (buf, mem, count, may_fault)
    translate this number into a unix compatible signal value */
 
 static int 
-computeSignal(exceptionVector)
-     int exceptionVector;
+computeSignal (int exceptionVector)
 {
   int sigval;
   switch (exceptionVector) {
@@ -880,9 +866,7 @@ computeSignal(exceptionVector)
 /* RETURN NUMBER OF CHARS PROCESSED           */
 /**********************************************/
 static int 
-hexToInt(ptr, intValue)
-     unsigned char **ptr;
-     int *intValue;
+hexToInt (unsigned char **ptr, int *intValue)
 {
   int numChars = 0;
   int hexValue;
@@ -928,8 +912,7 @@ hexToInt(ptr, intValue)
   */
 
 static int 
-isShortBranch(instr)
-     unsigned char *instr;
+isShortBranch (unsigned char *instr)
 {
   unsigned char instr0 = instr[0] & 0x7F;		/* mask off high bit */
 
@@ -948,8 +931,7 @@ isShortBranch(instr)
 }
 
 static int
-isLongBranch(instr)
-     unsigned char *instr;
+isLongBranch (unsigned char *instr)
 {
   if (instr[0] == 0xFC || instr[0] == 0xFD ||	/* BRA, BNC, BL, BC */
       instr[0] == 0xFE || instr[0] == 0xFF)	/* 24 bit relative */
@@ -975,8 +957,7 @@ isLongBranch(instr)
     ((((int) addr & 2) || (((unsigned char *) addr)[0] & 0x80) == 0) ? 2 : 4)
 
 static int
-isBranch(instr)
-     unsigned char *instr;
+isBranch (unsigned char *instr)
 {
   if (INSTRUCTION_SIZE(instr) == 2)
     return isShortBranch(instr);
@@ -985,8 +966,7 @@ isBranch(instr)
 }
 
 static int
-willBranch(instr, branchCode)
-     unsigned char *instr;
+willBranch (unsigned char *instr, int branchCode)
 {
   switch (branchCode) 
     {
@@ -1041,8 +1021,7 @@ willBranch(instr, branchCode)
 }
 
 static int 
-branchDestination(instr, branchCode) 
-     unsigned char *instr;
+branchDestination (unsigned char *instr, int branchCode)
 { 
   switch (branchCode) { 
   default: 
@@ -1073,9 +1052,7 @@ branchDestination(instr, branchCode)
 }
 
 static void
-branchSideEffects(instr, branchCode)
-     unsigned char *instr;
-     int branchCode;
+branchSideEffects (unsigned char *instr, int branchCode)
 {
   switch (branchCode)
     {
@@ -1185,7 +1162,7 @@ prepare_to_step(continue_p)
 	    just "continue continuing".  */
 
 static int
-finish_from_step()
+finish_from_step (void)
 {
   if (stepping.stepping)	/* anything to do? */
     {
@@ -1276,7 +1253,7 @@ stash_registers:
    but doing stash_registers in C isn't straightforward.  */
 
 static void
-cleanup_stash ()
+cleanup_stash (void)
 {
   psw = (struct PSWreg *) &registers[PSW];	/* fields of PSW register */
   psw->sm = psw->bsm;		/* fix up pre-trap values of psw fields */
@@ -1319,8 +1296,7 @@ restore_and_return:
 	ld r13, @r0+	; restore r13
 	ld r14, @r0+	; restore r14
 	ld r15, @r0+	; restore r15
-	ld r1, @r0+	; restore cr0 == PSW
-	mvtc r1, cr0
+	addi r0, #4	; don't restore PSW (rte will do it)
 	ld r1, @r0+	; restore cr1 == CBR (no-op, because it's read only)
 	mvtc r1, cr1
 	ld r1, @r0+	; restore cr2 == SPI
@@ -1344,8 +1320,7 @@ restore_and_return:
    NUM is the trap/exception number.  */
 
 static void
-process_exception (num)
-     int num;
+process_exception (int num)
 {
   cleanup_stash ();
   asm volatile ("
@@ -1552,7 +1527,7 @@ _catchException17:
 /* this function is used to set up exception handlers for tracing and
    breakpoints */
 void 
-set_debug_traps()
+set_debug_traps (void)
 {
   /*  extern void remcomHandler(); */
   int i;
@@ -1593,7 +1568,7 @@ set_debug_traps()
 #define BREAKPOINT() asm volatile ("	trap #2");
 
 void 
-breakpoint()
+breakpoint (void)
 {
   if (initialized)
     BREAKPOINT();
@@ -1612,8 +1587,7 @@ breakpoint()
    Returns: the char */
  
 static int
-gdb_putchar(ch)
-     int ch;
+gdb_putchar (int ch)
 {
   char buf[4];
  
@@ -1630,9 +1604,7 @@ gdb_putchar(ch)
    Returns: number of bytes written */
  
 static int
-gdb_write(data, len)
-     char *data;
-     int len;
+gdb_write (char *data, int len)
 {
   char *buf, *cpy;
   int i;
@@ -1660,8 +1632,7 @@ gdb_write(data, len)
    Returns: the length of the string */
  
 static int
-gdb_puts(str)
-     char *str;
+gdb_puts (char *str)
 {
   return gdb_write(str, strlen(str));
 }
@@ -1672,9 +1643,7 @@ gdb_puts(str)
    will cause the optional second string to be inserted.  */
  
 static void
-gdb_error(format, parm)
-     char * format;
-     char * parm;
+gdb_error (char *format, char *parm)
 {
   char buf[400], *cpy;
   int len;

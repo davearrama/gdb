@@ -1,109 +1,84 @@
-/*
-   ** tuiSourceWin.c
-   **         This module contains functions for displaying source or assembly in the "source" window.
-   *        The "source" window may be the assembly or the source windows.
- */
+/* TUI display source/assembly window.
+
+   Copyright 1998, 1999, 2000, 2001, 2002 Free Software Foundation,
+   Inc.
+
+   Contributed by Hewlett-Packard Company.
+
+   This file is part of GDB.
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place - Suite 330,
+   Boston, MA 02111-1307, USA.  */
+
+/* FIXME: cagney/2002-02-28: The GDB coding standard indicates that
+   "defs.h" should be included first.  Unfortunatly some systems
+   (currently Debian GNU/Linux) include the <stdbool.h> via <curses.h>
+   and they clash with "bfd.h"'s definiton of true/false.  The correct
+   fix is to remove true/false from "bfd.h", however, until that
+   happens, hack around it by including "config.h" and <curses.h>
+   first.  */
+
+#include "config.h"
+#ifdef HAVE_NCURSES_H       
+#include <ncurses.h>
+#else
+#ifdef HAVE_CURSES_H
+#include <curses.h>
+#endif
+#endif
 
 #include "defs.h"
 #include <ctype.h>
 #include "symtab.h"
 #include "frame.h"
 #include "breakpoint.h"
+#include "value.h"
+#include "source.h"
 
 #include "tui.h"
 #include "tuiData.h"
 #include "tuiStack.h"
+#include "tuiWin.h"
+#include "tuiGeneralWin.h"
 #include "tuiSourceWin.h"
 #include "tuiSource.h"
 #include "tuiDisassem.h"
 
 
-/*****************************************
-** EXTERNAL FUNCTION DECLS                **
-******************************************/
-
-/*****************************************
-** EXTERNAL DATA DECLS                    **
-******************************************/
-extern int current_source_line;
-extern struct symtab *current_source_symtab;
-
-
-/*****************************************
-** STATIC LOCAL FUNCTIONS FORWARD DECLS    **
-******************************************/
-
-/*****************************************
-** STATIC LOCAL DATA                    **
-******************************************/
-
-
-/*****************************************
-** PUBLIC FUNCTIONS                        **
-******************************************/
-
-/*********************************
-** SOURCE/DISASSEM  FUNCTIONS    **
-*********************************/
-
-/*
-   ** tuiSrcWinIsDisplayed().
- */
-int
-#ifdef __STDC__
-tuiSrcWinIsDisplayed (void)
-#else
-tuiSrcWinIsDisplayed ()
-#endif
-{
-  return (m_winPtrNotNull (srcWin) && srcWin->generic.isVisible);
-}				/* tuiSrcWinIsDisplayed */
-
-
-/*
-   ** tuiAsmWinIsDisplayed().
- */
-int
-#ifdef __STDC__
-tuiAsmWinIsDisplayed (void)
-#else
-tuiAsmWinIsDisplayed ()
-#endif
-{
-  return (m_winPtrNotNull (disassemWin) && disassemWin->generic.isVisible);
-}				/* tuiAsmWinIsDisplayed */
-
-
-/*
-   ** tuiDisplayMainFunction().
-   **        Function to display the "main" routine"
- */
+/* Function to display the "main" routine.  */
 void
-#ifdef __STDC__
-tuiDisplayMainFunction (void)
-#else
-tuiDisplayMainFunction ()
-#endif
+tui_display_main (void)
 {
   if ((sourceWindows ())->count > 0)
     {
       CORE_ADDR addr;
 
-      addr = parse_and_eval_address ("main");
-      if (addr <= (CORE_ADDR) 0)
-	addr = parse_and_eval_address ("MAIN");
-      if (addr > (CORE_ADDR) 0)
+      addr = tuiGetBeginAsmAddress ();
+      if (addr != (CORE_ADDR) 0)
 	{
 	  struct symtab_and_line sal;
 
-	  tuiUpdateSourceWindowsWithAddr ((Opaque) addr);
+	  tuiUpdateSourceWindowsWithAddr (addr);
 	  sal = find_pc_line (addr, 0);
-	  tuiSwitchFilename (sal.symtab->filename);
+          if (sal.symtab)
+             tuiUpdateLocatorFilename (sal.symtab->filename);
+          else
+             tuiUpdateLocatorFilename ("??");
 	}
     }
-
-  return;
-}				/* tuiDisplayMainFunction */
+}
 
 
 
@@ -113,19 +88,8 @@ tuiDisplayMainFunction ()
    **    initializes the horizontal scroll to 0.
  */
 void
-#ifdef __STDC__
-tuiUpdateSourceWindow (
-			TuiWinInfoPtr winInfo,
-			struct symtab *s,
-			Opaque lineOrAddr,
-			int noerror)
-#else
-tuiUpdateSourceWindow (winInfo, s, lineOrAddr, noerror)
-     TuiWinInfoPtr winInfo;
-     struct symtab *s;
-     Opaque lineOrAddr;
-     int noerror;
-#endif
+tuiUpdateSourceWindow (TuiWinInfoPtr winInfo, struct symtab *s,
+                       TuiLineOrAddress lineOrAddr, int noerror)
 {
   winInfo->detail.sourceInfo.horizontalOffset = 0;
   tuiUpdateSourceWindowAsIs (winInfo, s, lineOrAddr, noerror);
@@ -140,26 +104,15 @@ tuiUpdateSourceWindow (winInfo, s, lineOrAddr, noerror)
    **        function shows the source as specified by the horizontal offset.
  */
 void
-#ifdef __STDC__
-tuiUpdateSourceWindowAsIs (
-			    TuiWinInfoPtr winInfo,
-			    struct symtab *s,
-			    Opaque lineOrAddr,
-			    int noerror)
-#else
-tuiUpdateSourceWindowAsIs (winInfo, s, lineOrAddr, noerror)
-     TuiWinInfoPtr winInfo;
-     struct symtab *s;
-     Opaque lineOrAddr;
-     int noerror;
-#endif
+tuiUpdateSourceWindowAsIs (TuiWinInfoPtr winInfo, struct symtab *s,
+                           TuiLineOrAddress lineOrAddr, int noerror)
 {
   TuiStatus ret;
 
   if (winInfo->generic.type == SRC_WIN)
-    ret = tuiSetSourceContent (s, (int) lineOrAddr, noerror);
+    ret = tuiSetSourceContent (s, lineOrAddr.lineNo, noerror);
   else
-    ret = tuiSetDisassemContent (s, (Opaque) lineOrAddr);
+    ret = tuiSetDisassemContent (lineOrAddr.addr);
 
   if (ret == TUI_FAILURE)
     {
@@ -168,14 +121,17 @@ tuiUpdateSourceWindowAsIs (winInfo, s, lineOrAddr, noerror)
     }
   else
     {
-      tuiEraseSourceContent (winInfo, NO_EMPTY_SOURCE_PROMPT);
+      tui_update_breakpoint_info (winInfo, 0);
       tuiShowSourceContent (winInfo);
       tuiUpdateExecInfo (winInfo);
       if (winInfo->generic.type == SRC_WIN)
 	{
-	  current_source_line = (int) lineOrAddr +
+	  struct symtab_and_line sal;
+	  
+	  sal.line = lineOrAddr.lineNo +
 	    (winInfo->generic.contentSize - 2);
-	  current_source_symtab = s;
+	  sal.symtab = s;
+	  set_current_source_symtab_and_line (&sal);
 	  /*
 	     ** If the focus was in the asm win, put it in the src
 	     ** win if we don't have a split layout
@@ -197,18 +153,13 @@ tuiUpdateSourceWindowAsIs (winInfo, s, lineOrAddr, noerror)
    **        reflect the input address.
  */
 void
-#ifdef __STDC__
-tuiUpdateSourceWindowsWithAddr (
-				 Opaque addr)
-#else
-tuiUpdateSourceWindowsWithAddr (addr)
-     Opaque addr;
-#endif
+tuiUpdateSourceWindowsWithAddr (CORE_ADDR addr)
 {
-  if (addr > (Opaque) NULL)
+  if (addr != 0)
     {
       struct symtab_and_line sal;
-
+      TuiLineOrAddress l;
+      
       switch (currentLayout ())
 	{
 	case DISASSEM_COMMAND:
@@ -219,10 +170,9 @@ tuiUpdateSourceWindowsWithAddr (addr)
 	  tuiShowDisassemAndUpdateSource (addr);
 	  break;
 	default:
-	  sal = find_pc_line ((CORE_ADDR) addr, 0);
-	  tuiShowSource (sal.symtab,
-			 (Opaque) sal.line,
-			 FALSE);
+	  sal = find_pc_line (addr, 0);
+	  l.lineNo = sal.line;
+	  tuiShowSource (sal.symtab, l, FALSE);
 	  break;
 	}
     }
@@ -242,96 +192,43 @@ tuiUpdateSourceWindowsWithAddr (addr)
   return;
 }				/* tuiUpdateSourceWindowsWithAddr */
 
-
-/*
-   ** tui_vUpdateSourceWindowsWithAddr()
-   **        Update the source window with the address in a va_list
- */
-void
-#ifdef __STDC__
-tui_vUpdateSourceWindowsWithAddr (
-				   va_list args)
-#else
-tui_vUpdateSourceWindowsWithAddr (args)
-     va_list args;
-#endif
-{
-  Opaque addr = va_arg (args, Opaque);
-
-  tuiUpdateSourceWindowsWithAddr (addr);
-
-  return;
-}				/* tui_vUpdateSourceWindowsWithAddr */
-
-
 /*
    ** tuiUpdateSourceWindowsWithLine().
    **        Function to ensure that the source and/or disassemly windows
    **        reflect the input address.
  */
 void
-#ifdef __STDC__
-tuiUpdateSourceWindowsWithLine (
-				 struct symtab *s,
-				 int line)
-#else
-tuiUpdateSourceWindowsWithLine (s, line)
-     struct symtab *s;
-     int line;
-#endif
+tuiUpdateSourceWindowsWithLine (struct symtab *s, int line)
 {
+  CORE_ADDR pc;
+  TuiLineOrAddress l;
+  
   switch (currentLayout ())
     {
     case DISASSEM_COMMAND:
     case DISASSEM_DATA_COMMAND:
-      tuiUpdateSourceWindowsWithAddr ((Opaque) find_line_pc (s, line));
+      find_line_pc (s, line, &pc);
+      tuiUpdateSourceWindowsWithAddr (pc);
       break;
     default:
-      tuiShowSource (s, (Opaque) line, FALSE);
+      l.lineNo = line;
+      tuiShowSource (s, l, FALSE);
       if (currentLayout () == SRC_DISASSEM_COMMAND)
-	tuiShowDisassem ((Opaque) find_line_pc (s, line));
+	{
+	  find_line_pc (s, line, &pc);
+	  tuiShowDisassem (pc);
+	}
       break;
     }
 
   return;
 }				/* tuiUpdateSourceWindowsWithLine */
 
-
-/*
-   ** tui_vUpdateSourceWindowsWithLine()
-   **        Update the source window with the line number in a va_list
- */
-void
-#ifdef __STDC__
-tui_vUpdateSourceWindowsWithLine (
-				   va_list args)
-#else
-tui_vUpdateSourceWindowsWithLine (args)
-     va_list args;
-#endif
-{
-  struct symtab *s = va_arg (args, struct symtab *);
-  int line = va_arg (args, int);
-
-  tuiUpdateSourceWindowsWithLine (s, line);
-
-  return;
-}				/* tui_vUpdateSourceWindowsWithLine */
-
-
 /*
    ** tuiClearSourceContent().
  */
 void
-#ifdef __STDC__
-tuiClearSourceContent (
-			TuiWinInfoPtr winInfo,
-			int displayPrompt)
-#else
-tuiClearSourceContent (winInfo, displayPrompt)
-     TuiWinInfoPtr winInfo;
-     int displayPrompt;
-#endif
+tuiClearSourceContent (TuiWinInfoPtr winInfo, int displayPrompt)
 {
   if (m_winPtrNotNull (winInfo))
     {
@@ -353,40 +250,10 @@ tuiClearSourceContent (winInfo, displayPrompt)
 
 
 /*
-   ** tuiClearAllSourceWinsContent().
- */
-void
-#ifdef __STDC__
-tuiClearAllSourceWinsContent (
-			       int displayPrompt)
-#else
-tuiClearAllSourceWinsContent (displayPrompt)
-     int displayPrompt;
-#endif
-{
-  int i;
-
-  for (i = 0; i < (sourceWindows ())->count; i++)
-    tuiClearSourceContent ((TuiWinInfoPtr) (sourceWindows ())->list[i],
-			   displayPrompt);
-
-  return;
-}				/* tuiClearAllSourceWinsContent */
-
-
-/*
    ** tuiEraseSourceContent().
  */
 void
-#ifdef __STDC__
-tuiEraseSourceContent (
-			TuiWinInfoPtr winInfo,
-			int displayPrompt)
-#else
-tuiEraseSourceContent (winInfo, displayPrompt)
-     TuiWinInfoPtr winInfo;
-     int displayPrompt;
-#endif
+tuiEraseSourceContent (TuiWinInfoPtr winInfo, int displayPrompt)
 {
   int xPos;
   int halfWidth = (winInfo->generic.width - 2) / 2;
@@ -425,80 +292,51 @@ tuiEraseSourceContent (winInfo, displayPrompt)
 }				/* tuiEraseSourceContent */
 
 
-/*
-   ** tuiEraseAllSourceContent().
- */
-void
-#ifdef __STDC__
-tuiEraseAllSourceWinsContent (
-			       int displayPrompt)
-#else
-tuiEraseAllSourceWinsContent (displayPrompt)
-     int displayPrompt;
-#endif
+/* Redraw the complete line of a source or disassembly window.  */
+static void
+tui_show_source_line (TuiWinInfoPtr winInfo, int lineno)
 {
-  int i;
+  TuiWinElementPtr line;
+  int x, y;
 
-  for (i = 0; i < (sourceWindows ())->count; i++)
-    tuiEraseSourceContent ((TuiWinInfoPtr) (sourceWindows ())->list[i],
-			   displayPrompt);
+  line = (TuiWinElementPtr) winInfo->generic.content[lineno - 1];
+  if (line->whichElement.source.isExecPoint)
+    wattron (winInfo->generic.handle, A_STANDOUT);
 
-  return;
-}				/* tuiEraseAllSourceWinsContent */
+  mvwaddstr (winInfo->generic.handle, lineno, 1,
+             line->whichElement.source.line);
+  if (line->whichElement.source.isExecPoint)
+    wattroff (winInfo->generic.handle, A_STANDOUT);
 
+  /* Clear to end of line but stop before the border.  */
+  getyx (winInfo->generic.handle, y, x);
+  while (x + 1 < winInfo->generic.width)
+    {
+      waddch (winInfo->generic.handle, ' ');
+      getyx (winInfo->generic.handle, y, x);
+    }
+}
 
 /*
    ** tuiShowSourceContent().
  */
 void
-#ifdef __STDC__
-tuiShowSourceContent (
-		       TuiWinInfoPtr winInfo)
-#else
-tuiShowSourceContent (winInfo)
-     TuiWinInfoPtr winInfo;
-#endif
+tuiShowSourceContent (TuiWinInfoPtr winInfo)
 {
-  int curLine, i, curX;
-
-  tuiEraseSourceContent (winInfo, (winInfo->generic.contentSize <= 0));
   if (winInfo->generic.contentSize > 0)
     {
-      char *line;
+      int lineno;
 
-      for (curLine = 1; (curLine <= winInfo->generic.contentSize); curLine++)
-	mvwaddstr (
-		    winInfo->generic.handle,
-		    curLine,
-		    1,
-		    ((TuiWinElementPtr)
-	  winInfo->generic.content[curLine - 1])->whichElement.source.line);
+      for (lineno = 1; lineno <= winInfo->generic.contentSize; lineno++)
+        tui_show_source_line (winInfo, lineno);
     }
+  else
+    tuiEraseSourceContent (winInfo, TRUE);
+
   checkAndDisplayHighlightIfNeeded (winInfo);
   tuiRefreshWin (&winInfo->generic);
   winInfo->generic.contentInUse = TRUE;
-
-  return;
-}				/* tuiShowSourceContent */
-
-
-/*
-   ** tuiShowAllSourceWinsContent()
- */
-void
-#ifdef __STDC__
-tuiShowAllSourceWinsContent (void)
-#else
-tuiShowAllSourceWinsContent ()
-#endif
-{
-  int i;
-
-  for (i = 0; i < (sourceWindows ())->count; i++)
-    tuiShowSourceContent ((TuiWinInfoPtr) (sourceWindows ())->list[i]);
-
-  return;
-}				/* tuiShowAllSourceWinsContent */
+}
 
 
 /*
@@ -506,27 +344,20 @@ tuiShowAllSourceWinsContent ()
    **      Scroll the source forward or backward horizontally
  */
 void
-#ifdef __STDC__
-tuiHorizontalSourceScroll (
-			    TuiWinInfoPtr winInfo,
-			    TuiScrollDirection direction,
-			    int numToScroll)
-#else
-tuiHorizontalSourceScroll (winInfo, direction, numToScroll)
-     TuiWinInfoPtr winInfo;
-     TuiScrollDirection direction;
-     int numToScroll;
-#endif
+tuiHorizontalSourceScroll (TuiWinInfoPtr winInfo,
+                           TuiScrollDirection direction,
+                           int numToScroll)
 {
   if (winInfo->generic.content != (OpaquePtr) NULL)
     {
       int offset;
       struct symtab *s;
+      struct symtab_and_line cursal = get_current_source_symtab_and_line ();
 
-      if (current_source_symtab == (struct symtab *) NULL)
+      if (cursal.symtab == (struct symtab *) NULL)
 	s = find_pc_symtab (selected_frame->pc);
       else
-	s = current_source_symtab;
+	s = cursal.symtab;
 
       if (direction == LEFT_SCROLL)
 	offset = winInfo->detail.sourceInfo.horizontalOffset + numToScroll;
@@ -540,160 +371,123 @@ tuiHorizontalSourceScroll (winInfo, direction, numToScroll)
       tuiUpdateSourceWindowAsIs (
 				  winInfo,
 				  s,
-				  ((winInfo == srcWin) ?
-				   (Opaque) ((TuiWinElementPtr)
-       winInfo->generic.content[0])->whichElement.source.lineOrAddr.lineNo :
-				   (Opaque) ((TuiWinElementPtr)
-	 winInfo->generic.content[0])->whichElement.source.lineOrAddr.addr),
-				  (int) FALSE);
+				  ((TuiWinElementPtr)
+				   winInfo->generic.content[0])->whichElement.source.lineOrAddr,
+				  FALSE);
     }
 
   return;
 }				/* tuiHorizontalSourceScroll */
 
 
-/*
-   ** tuiSetHasExecPointAt().
-   **        Set or clear the hasBreak flag in the line whose line is lineNo.
- */
+/* Set or clear the hasBreak flag in the line whose line is lineNo.  */
 void
-#ifdef __STDC__
-tuiSetIsExecPointAt (
-		      Opaque lineOrAddr,
-		      TuiWinInfoPtr winInfo)
-#else
-tuiSetIsExecPointAt (lineOrAddr, winInfo)
-     Opaque lineOrAddr;
-     TuiWinInfoPtr winInfo;
-#endif
+tuiSetIsExecPointAt (TuiLineOrAddress l, TuiWinInfoPtr winInfo)
 {
+  int changed = 0;
   int i;
   TuiWinContent content = (TuiWinContent) winInfo->generic.content;
 
   i = 0;
   while (i < winInfo->generic.contentSize)
     {
-      if (content[i]->whichElement.source.lineOrAddr.addr == lineOrAddr)
-	content[i]->whichElement.source.isExecPoint = TRUE;
+      int newState;
+
+      if (content[i]->whichElement.source.lineOrAddr.addr == l.addr)
+        newState = TRUE;
       else
-	content[i]->whichElement.source.isExecPoint = FALSE;
+	newState = FALSE;
+      if (newState != content[i]->whichElement.source.isExecPoint)
+        {
+          changed++;
+          content[i]->whichElement.source.isExecPoint = newState;
+          tui_show_source_line (winInfo, i + 1);
+        }
       i++;
     }
+  if (changed)
+    tuiRefreshWin (&winInfo->generic);
+}
 
-  return;
-}				/* tuiSetIsExecPointAt */
-
-
-/*
-   ** tuiSetHasBreakAt().
-   **        Set or clear the hasBreak flag in the line whose line is lineNo.
- */
+/* Update the execution windows to show the active breakpoints.
+   This is called whenever a breakpoint is inserted, removed or
+   has its state changed.  */
 void
-#ifdef __STDC__
-tuiSetHasBreakAt (
-		   struct breakpoint *bp,
-		   TuiWinInfoPtr winInfo,
-		   int hasBreak)
-#else
-tuiSetHasBreakAt (bp, winInfo, hasBreak)
-     struct breakpoint *bp;
-     TuiWinInfoPtr winInfo;
-     int hasBreak;
-#endif
+tui_update_all_breakpoint_info ()
 {
+  TuiList* list = sourceWindows ();
   int i;
-  TuiWinContent content = (TuiWinContent) winInfo->generic.content;
 
-  i = 0;
-  while (i < winInfo->generic.contentSize)
+  for (i = 0; i < list->count; i++)
     {
-      int gotIt;
-      TuiGenWinInfoPtr locator = locatorWinInfoPtr ();
+      TuiWinInfoPtr win = (TuiWinInfoPtr) list->list[i];
 
-      if (winInfo == srcWin)
-	{
-	  char *fileNameDisplayed = (char *) NULL;
-
-	  if (((TuiWinElementPtr)
-	       locator->content[0])->whichElement.locator.fileName !=
-	      (char *) NULL)
-	    fileNameDisplayed = ((TuiWinElementPtr)
-			locator->content[0])->whichElement.locator.fileName;
-	  else if (current_source_symtab != (struct symtab *) NULL)
-	    fileNameDisplayed = current_source_symtab->filename;
-
-	  gotIt = (fileNameDisplayed != (char *) NULL &&
-		   (strcmp (bp->source_file, fileNameDisplayed) == 0) &&
-		   content[i]->whichElement.source.lineOrAddr.lineNo ==
-		   bp->line_number);
-	}
-      else
-	gotIt = (content[i]->whichElement.source.lineOrAddr.addr
-		 == (Opaque) bp->address);
-      if (gotIt)
-	{
-	  content[i]->whichElement.source.hasBreak = hasBreak;
-	  break;
-	}
-      i++;
+      if (tui_update_breakpoint_info (win, FALSE))
+        {
+          tuiUpdateExecInfo (win);
+        }
     }
-
-  return;
-}				/* tuiSetHasBreakAt */
+}
 
 
-/*
-   ** tuiAllSetHasBreakAt().
-   **        Set or clear the hasBreak flag in all displayed source windows.
- */
-void
-#ifdef __STDC__
-tuiAllSetHasBreakAt (
-		      struct breakpoint *bp,
-		      int hasBreak)
-#else
-tuiAllSetHasBreakAt (bp, hasBreak)
-     struct breakpoint *bp;
-     int hasBreak;
-#endif
+/* Scan the source window and the breakpoints to update the
+   hasBreak information for each line.
+   Returns 1 if something changed and the execution window
+   must be refreshed.  */
+int
+tui_update_breakpoint_info (TuiWinInfoPtr win, int current_only)
 {
   int i;
+  int need_refresh = 0;
+  TuiSourceInfoPtr src = &win->detail.sourceInfo;
 
-  for (i = 0; i < (sourceWindows ())->count; i++)
-    tuiSetHasBreakAt (bp,
-		      (TuiWinInfoPtr) (sourceWindows ())->list[i], hasBreak);
+  for (i = 0; i < win->generic.contentSize; i++)
+    {
+      struct breakpoint *bp;
+      extern struct breakpoint *breakpoint_chain;
+      int mode;
+      TuiSourceElement* line;
 
-  return;
-}				/* tuiAllSetHasBreakAt */
+      line = &((TuiWinElementPtr) win->generic.content[i])->whichElement.source;
+      if (current_only && !line->isExecPoint)
+         continue;
 
+      /* Scan each breakpoint to see if the current line has something to
+         do with it.  Identify enable/disabled breakpoints as well as
+         those that we already hit.  */
+      mode = 0;
+      for (bp = breakpoint_chain;
+           bp != (struct breakpoint *) NULL;
+           bp = bp->next)
+        {
+          if ((win == srcWin
+               && bp->source_file
+               && (strcmp (src->filename, bp->source_file) == 0)
+               && bp->line_number == line->lineOrAddr.lineNo)
+              || (win == disassemWin
+                  && bp->address == line->lineOrAddr.addr))
+            {
+              if (bp->enable_state == bp_disabled)
+                mode |= TUI_BP_DISABLED;
+              else
+                mode |= TUI_BP_ENABLED;
+              if (bp->hit_count)
+                mode |= TUI_BP_HIT;
+              if (bp->cond)
+                mode |= TUI_BP_CONDITIONAL;
+              if (bp->type == bp_hardware_breakpoint)
+                mode |= TUI_BP_HARDWARE;
+            }
+        }
+      if (line->hasBreak != mode)
+        {
+          line->hasBreak = mode;
+          need_refresh = 1;
+        }
+    }
+  return need_refresh;
+}
 
-/*
-   ** tui_vAllSetHasBreakAt()
-   **        Set or clear the hasBreak flag in all displayed source windows,
-   **        with params in a va_list
- */
-void
-#ifdef __STDC__
-tui_vAllSetHasBreakAt (
-			va_list args)
-#else
-tui_vAllSetHasBreakAt (args)
-     va_list args;
-#endif
-{
-  struct breakpoint *bp = va_arg (args, struct breakpoint *);
-  int hasBreak = va_arg (args, int);
-
-  tuiAllSetHasBreakAt (bp, hasBreak);
-
-  return;
-}				/* tui_vAllSetHasBreakAt */
-
-
-
-/*********************************
-** EXECUTION INFO FUNCTIONS        **
-*********************************/
 
 /*
    ** tuiSetExecInfoContent().
@@ -702,13 +496,7 @@ tui_vAllSetHasBreakAt (args)
    **      disassembly window.
  */
 TuiStatus
-#ifdef __STDC__
-tuiSetExecInfoContent (
-			TuiWinInfoPtr winInfo)
-#else
-tuiSetExecInfoContent (winInfo)
-     TuiWinInfoPtr winInfo;
-#endif
+tuiSetExecInfoContent (TuiWinInfoPtr winInfo)
 {
   TuiStatus ret = TUI_SUCCESS;
 
@@ -724,56 +512,37 @@ tuiSetExecInfoContent (winInfo)
 	{
 	  int i;
 
+          tui_update_breakpoint_info (winInfo, 1);
 	  for (i = 0; i < winInfo->generic.contentSize; i++)
 	    {
 	      TuiWinElementPtr element;
 	      TuiWinElementPtr srcElement;
+              int mode;
 
 	      element = (TuiWinElementPtr) execInfoPtr->content[i];
 	      srcElement = (TuiWinElementPtr) winInfo->generic.content[i];
-	      /*
-	         ** First check to see if we have a breakpoint that is
-	         ** temporary.  If so, and this is our current execution point,
-	         ** then clear the break indicator.
-	       */
-	      if (srcElement->whichElement.source.hasBreak &&
-		  srcElement->whichElement.source.isExecPoint)
-		{
-		  struct breakpoint *bp;
-		  int found = FALSE;
-		  extern struct breakpoint *breakpoint_chain;
 
-		  for (bp = breakpoint_chain;
-		       (bp != (struct breakpoint *) NULL && !found);
-		       bp = bp->next)
-		    {
-		      found =
-			(winInfo == srcWin &&
-			 bp->line_number ==
-		       srcElement->whichElement.source.lineOrAddr.lineNo) ||
-			(winInfo == disassemWin &&
-			 bp->address == (CORE_ADDR)
-			 srcElement->whichElement.source.lineOrAddr.addr);
-		      if (found)
-			srcElement->whichElement.source.hasBreak =
-			  (bp->disposition != del || bp->hit_count <= 0);
-		    }
-		  if (!found)
-		    srcElement->whichElement.source.hasBreak = FALSE;
-		}
-	      /*
-	         ** Now update the exec info content based upon the state
-	         ** of each line as indicated by the source content.
-	       */
-	      if (srcElement->whichElement.source.hasBreak &&
-		  srcElement->whichElement.source.isExecPoint)
-		element->whichElement.simpleString = breakLocationStr ();
-	      else if (srcElement->whichElement.source.hasBreak)
-		element->whichElement.simpleString = breakStr ();
-	      else if (srcElement->whichElement.source.isExecPoint)
-		element->whichElement.simpleString = locationStr ();
-	      else
-		element->whichElement.simpleString = blankStr ();
+              memset(element->whichElement.simpleString, ' ',
+                     sizeof(element->whichElement.simpleString));
+              element->whichElement.simpleString[TUI_EXECINFO_SIZE - 1] = 0;
+
+	      /* Now update the exec info content based upon the state
+                 of each line as indicated by the source content.  */
+              mode = srcElement->whichElement.source.hasBreak;
+              if (mode & TUI_BP_HIT)
+                element->whichElement.simpleString[TUI_BP_HIT_POS] =
+                  (mode & TUI_BP_HARDWARE) ? 'H' : 'B';
+              else if (mode & (TUI_BP_ENABLED | TUI_BP_DISABLED))
+                element->whichElement.simpleString[TUI_BP_HIT_POS] =
+                  (mode & TUI_BP_HARDWARE) ? 'h' : 'b';
+
+              if (mode & TUI_BP_ENABLED)
+                element->whichElement.simpleString[TUI_BP_BREAK_POS] = '+';
+              else if (mode & TUI_BP_DISABLED)
+                element->whichElement.simpleString[TUI_BP_BREAK_POS] = '-';
+
+              if (srcElement->whichElement.source.isExecPoint)
+                element->whichElement.simpleString[TUI_EXEC_POS] = '>';
 	    }
 	  execInfoPtr->contentSize = winInfo->generic.contentSize;
 	}
@@ -782,20 +551,14 @@ tuiSetExecInfoContent (winInfo)
     }
 
   return ret;
-}				/* tuiSetExecInfoContent */
+}
 
 
 /*
    ** tuiShowExecInfoContent().
  */
 void
-#ifdef __STDC__
-tuiShowExecInfoContent (
-			 TuiWinInfoPtr winInfo)
-#else
-tuiShowExecInfoContent (winInfo)
-     TuiWinInfoPtr winInfo;
-#endif
+tuiShowExecInfoContent (TuiWinInfoPtr winInfo)
 {
   TuiGenWinInfoPtr execInfo = winInfo->detail.sourceInfo.executionInfo;
   int curLine;
@@ -816,35 +579,10 @@ tuiShowExecInfoContent (winInfo)
 
 
 /*
-   ** tuiShowAllExecInfosContent()
- */
-void
-#ifdef __STDC__
-tuiShowAllExecInfosContent (void)
-#else
-tuiShowAllExecInfosContent ()
-#endif
-{
-  int i;
-
-  for (i = 0; i < (sourceWindows ())->count; i++)
-    tuiShowExecInfoContent ((TuiWinInfoPtr) (sourceWindows ())->list[i]);
-
-  return;
-}				/* tuiShowAllExecInfosContent */
-
-
-/*
    ** tuiEraseExecInfoContent().
  */
 void
-#ifdef __STDC__
-tuiEraseExecInfoContent (
-			  TuiWinInfoPtr winInfo)
-#else
-tuiEraseExecInfoContent (winInfo)
-     TuiWinInfoPtr winInfo;
-#endif
+tuiEraseExecInfoContent (TuiWinInfoPtr winInfo)
 {
   TuiGenWinInfoPtr execInfo = winInfo->detail.sourceInfo.executionInfo;
 
@@ -854,37 +592,11 @@ tuiEraseExecInfoContent (winInfo)
   return;
 }				/* tuiEraseExecInfoContent */
 
-
-/*
-   ** tuiEraseAllExecInfosContent()
- */
-void
-#ifdef __STDC__
-tuiEraseAllExecInfosContent (void)
-#else
-tuiEraseAllExecInfosContent ()
-#endif
-{
-  int i;
-
-  for (i = 0; i < (sourceWindows ())->count; i++)
-    tuiEraseExecInfoContent ((TuiWinInfoPtr) (sourceWindows ())->list[i]);
-
-  return;
-}				/* tuiEraseAllExecInfosContent */
-
-
 /*
    ** tuiClearExecInfoContent().
  */
 void
-#ifdef __STDC__
-tuiClearExecInfoContent (
-			  TuiWinInfoPtr winInfo)
-#else
-tuiClearExecInfoContent (winInfo)
-     TuiWinInfoPtr winInfo;
-#endif
+tuiClearExecInfoContent (TuiWinInfoPtr winInfo)
 {
   winInfo->detail.sourceInfo.executionInfo->contentInUse = FALSE;
   tuiEraseExecInfoContent (winInfo);
@@ -892,122 +604,22 @@ tuiClearExecInfoContent (winInfo)
   return;
 }				/* tuiClearExecInfoContent */
 
-
-/*
-   ** tuiClearAllExecInfosContent()
- */
-void
-#ifdef __STDC__
-tuiClearAllExecInfosContent (void)
-#else
-tuiClearAllExecInfosContent ()
-#endif
-{
-  int i;
-
-  for (i = 0; i < (sourceWindows ())->count; i++)
-    tuiClearExecInfoContent ((TuiWinInfoPtr) (sourceWindows ())->list[i]);
-
-  return;
-}				/* tuiClearAllExecInfosContent */
-
-
 /*
    ** tuiUpdateExecInfo().
    **        Function to update the execution info window
  */
 void
-#ifdef __STDC__
-tuiUpdateExecInfo (
-		    TuiWinInfoPtr winInfo)
-#else
-tuiUpdateExecInfo (winInfo)
-     TuiWinInfoPtr winInfo;
-#endif
+tuiUpdateExecInfo (TuiWinInfoPtr winInfo)
 {
   tuiSetExecInfoContent (winInfo);
   tuiShowExecInfoContent (winInfo);
-}				/* tuiUpdateExecInfo
-
-
-				   /*
-				   ** tuiUpdateAllExecInfos()
-				 */
-void
-#ifdef __STDC__
-tuiUpdateAllExecInfos (void)
-#else
-tuiUpdateAllExecInfos ()
-#endif
-{
-  int i;
-
-  for (i = 0; i < (sourceWindows ())->count; i++)
-    tuiUpdateExecInfo ((TuiWinInfoPtr) (sourceWindows ())->list[i]);
-
-  return;
-}				/* tuiUpdateAllExecInfos */
-
-
-
-/* tuiUpdateOnEnd()
-   **       elz: This function clears the execution info from the source windows
-   **       and resets the locator to display no line info, procedure info, pc
-   **       info.  It is called by stack_publish_stopped_with_no_frame, which
-   **       is called then the target terminates execution
- */
-void
-#ifdef __STDC__
-tuiUpdateOnEnd (void)
-#else
-tuiUpdateOnEnd ()
-#endif
-{
-  int i;
-  TuiGenWinInfoPtr locator;
-  char *filename;
-  TuiWinInfoPtr winInfo;
-
-  locator = locatorWinInfoPtr ();
-
-  /* for all the windows (src, asm) */
-  for (i = 0; i < (sourceWindows ())->count; i++)
-    {
-      winInfo = (TuiWinInfoPtr) (sourceWindows ())->list[i];
-
-      tuiSetIsExecPointAt ((Opaque) - 1, winInfo);	/* the target is'n running */
-      /* -1 should not match any line number or pc */
-      tuiSetExecInfoContent (winInfo);	/*set winInfo so that > is'n displayed */
-      tuiShowExecInfoContent (winInfo);		/* display the new contents */
-    }
-
-  /*now update the locator */
-  tuiClearLocatorDisplay ();
-  tuiGetLocatorFilename (locator, &filename);
-  tuiSetLocatorInfo (
-		      filename,
-		      (char *) NULL,
-		      0,
-		      (Opaque) NULL,
-	   &((TuiWinElementPtr) locator->content[0])->whichElement.locator);
-  tuiShowLocatorContent ();
-
-  return;
-}				/* tuiUpdateOnEnd */
-
-
+}				/* tuiUpdateExecInfo */
 
 TuiStatus
-#ifdef __STDC__
-tuiAllocSourceBuffer (
-		       TuiWinInfoPtr winInfo)
-#else
-tuiAllocSourceBuffer (winInfo)
-     TuiWinInfoPtr winInfo;
-#endif
+tuiAllocSourceBuffer (TuiWinInfoPtr winInfo)
 {
-  register char *srcLine, *srcLineBuf;
-  register int i, lineWidth, c, maxLines;
+  register char *srcLineBuf;
+  register int i, lineWidth, maxLines;
   TuiStatus ret = TUI_FAILURE;
 
   maxLines = winInfo->generic.height;	/* less the highlight box */
@@ -1056,17 +668,8 @@ tuiAllocSourceBuffer (winInfo)
    **      in the current source window.
  */
 int
-#ifdef __STDC__
-tuiLineIsDisplayed (
-		     Opaque lineNoOrAddr,
-		     TuiWinInfoPtr winInfo,
-		     int checkThreshold)
-#else
-tuiLineIsDisplayed (lineNoOrAddr, winInfo, checkThreshold)
-     Opaque lineNoOrAddr;
-     TuiWinInfoPtr winInfo;
-     int checkThreshold;
-#endif
+tuiLineIsDisplayed (int line, TuiWinInfoPtr winInfo,
+                    int checkThreshold)
 {
   int isDisplayed = FALSE;
   int i, threshold;
@@ -1078,19 +681,43 @@ tuiLineIsDisplayed (lineNoOrAddr, winInfo, checkThreshold)
   i = 0;
   while (i < winInfo->generic.contentSize - threshold && !isDisplayed)
     {
-      if (winInfo == srcWin)
-	isDisplayed = (((TuiWinElementPtr)
-	 winInfo->generic.content[i])->whichElement.source.lineOrAddr.lineNo
-		       == (int) lineNoOrAddr);
-      else
-	isDisplayed = (((TuiWinElementPtr)
-	   winInfo->generic.content[i])->whichElement.source.lineOrAddr.addr
-		       == lineNoOrAddr);
+      isDisplayed = (((TuiWinElementPtr)
+		      winInfo->generic.content[i])->whichElement.source.lineOrAddr.lineNo
+		     == (int) line);
       i++;
     }
 
   return isDisplayed;
 }				/* tuiLineIsDisplayed */
+
+
+/*
+   ** tuiLineIsDisplayed().
+   **      Answer whether the a particular line number or address is displayed
+   **      in the current source window.
+ */
+int
+tuiAddrIsDisplayed (CORE_ADDR addr, TuiWinInfoPtr winInfo,
+		    int checkThreshold)
+{
+  int isDisplayed = FALSE;
+  int i, threshold;
+
+  if (checkThreshold)
+    threshold = SCROLL_THRESHOLD;
+  else
+    threshold = 0;
+  i = 0;
+  while (i < winInfo->generic.contentSize - threshold && !isDisplayed)
+    {
+      isDisplayed = (((TuiWinElementPtr)
+		      winInfo->generic.content[i])->whichElement.source.lineOrAddr.addr
+		     == addr);
+      i++;
+    }
+
+  return isDisplayed;
+}
 
 
 /*****************************************

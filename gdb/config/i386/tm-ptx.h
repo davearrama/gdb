@@ -1,6 +1,7 @@
 /* Target machine definitions for GDB on a Sequent Symmetry under ptx
    with Weitek 1167 and i387 support.
-   Copyright 1986, 1987, 1989, 1991, 1992, 1993 Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1989, 1991, 1992, 1993, 1994, 1995, 2000
+   Free Software Foundation, Inc.
    Symmetry version by Jay Vosburgh (fubar@sequent.com).
 
    This file is part of GDB.
@@ -29,18 +30,10 @@
 #include <sys/reg.h>
 
 #ifdef SEQUENT_PTX4
-#include "i386/tm-i386v4.h"
+#include "i386/tm-i386.h"
 #else /* !SEQUENT_PTX4 */
-#include "i386/tm-i386v.h"
+#include "i386/tm-i386.h"
 #endif
-
-/* Number of traps that happen between exec'ing the shell to run an
-   inferior, and when we finally get to the inferior code.  This is 2
-   on most implementations. Here we have to undo what tm-i386v.h gave
-   us and restore the default. */
-
-#undef START_INFERIOR_TRAPS_EXPECTED
-#define START_INFERIOR_TRAPS_EXPECTED 2
 
 /* Amount PC must be decremented by after a breakpoint.  This is often the
    number of bytes in BREAKPOINT but not always (such as now). */
@@ -68,7 +61,7 @@ since it uses host specific ptrace calls.
    scheme (which is the same as the 386 scheme) and also regmap in the various
    *-nat.c files. */
 
-#undef  REGISTER_NAMES
+#undef REGISTER_NAME
 #define REGISTER_NAMES { "eax",  "ecx",    "edx",  "ebx",  \
 			 "esp",  "ebp",    "esi",  "edi",  \
 			 "eip",  "eflags", "st0",  "st1",  \
@@ -139,8 +132,7 @@ since it uses host specific ptrace calls.
 #define REGISTER_U_ADDR(addr, blockend, regno) \
 { (addr) = ptx_register_u_addr((blockend), (regno)); }
 
-extern int
-ptx_register_u_addr PARAMS ((int, int));
+extern int ptx_register_u_addr (int, int);
 
 /* Total amount of space needed to store our copies of the machine's
    register state, the array `registers'.  10 i*86 registers, 8 i387
@@ -148,24 +140,6 @@ ptx_register_u_addr PARAMS ((int, int));
 
 #undef  REGISTER_BYTES
 #define REGISTER_BYTES ((10 * 4) + (8 * 10) + (31 * 4))
-
-/* Index within `registers' of the first byte of the space for register N. */
-
-#undef  REGISTER_BYTE
-#define REGISTER_BYTE(N) 		\
-(((N) < ST0_REGNUM) ? ((N) * 4) : \
- ((N) < FP1_REGNUM) ? (40 + (((N) - ST0_REGNUM) * 10)) : \
- (40 + 80 + (((N) - FP1_REGNUM) * 4)))
-
-/* Number of bytes of storage in the actual machine representation for
-   register N.  All registers are 4 bytes, except 387 st(0) - st(7),
-   which are 80 bits each. */
-
-#undef  REGISTER_RAW_SIZE
-#define REGISTER_RAW_SIZE(N) \
-(((N) < ST0_REGNUM) ? 4 : \
- ((N) < FP1_REGNUM) ? 10 : \
- 4)
 
 /* Largest value REGISTER_RAW_SIZE can have.  */
 
@@ -220,8 +194,8 @@ extern const struct floatformat floatformat_i387_ext;	/* from floatformat.h */
    a function return value of type TYPE, and copy that, in virtual format,
    into VALBUF.  */
 
-#undef  EXTRACT_RETURN_VALUE
-#define EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
+#undef  DEPRECATED_EXTRACT_RETURN_VALUE
+#define DEPRECATED_EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
   symmetry_extract_return_value(TYPE, REGBUF, VALBUF)
 
 /*

@@ -1,5 +1,6 @@
 /* Target machine description for SGI Iris under Irix, for GDB.
-   Copyright 1990, 1991, 1992, 1993, 1995 Free Software Foundation, Inc.
+   Copyright 1990, 1991, 1992, 1993, 1995, 1999
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,11 +20,6 @@
    Boston, MA 02111-1307, USA.  */
 
 #include "mips/tm-bigmips.h"
-
-/* SGI's assembler doesn't grok dollar signs in identifiers.
-   So we use dots instead.  This item must be coordinated with G++. */
-#undef CPLUS_MARKER
-#define CPLUS_MARKER '.'
 
 /* Redefine register numbers for SGI. */
 
