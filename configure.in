@@ -643,8 +643,7 @@ case "${target}" in
     noconfigdirs="$noconfigdirs ld binutils gprof target-libgloss ${libgcj}"
     ;;
   mips*-*-irix5*)
-    # The GNU linker does not support shared libraries.
-    noconfigdirs="$noconfigdirs ld gprof target-libgloss ${libgcj}"
+    noconfigdirs="$noconfigdirs gprof target-libgloss ${libgcj}"
     ;;
   mips*-*-irix6*)
     # Linking libjava exceeds command-line length limits on at least
@@ -661,9 +660,6 @@ case "${target}" in
     ;;
   mipstx39-*-*)
     noconfigdirs="$noconfigdirs gprof ${libgcj}"   # same as generic mips
-    ;;
-  mips64*-*-linux*)
-    noconfigdirs="$noconfigdirs target-newlib ${libgcj}"
     ;;
   mips*-*-linux*)
     noconfigdirs="$noconfigdirs target-newlib target-libgloss"
