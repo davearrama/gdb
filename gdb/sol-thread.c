@@ -122,14 +122,14 @@ static void init_sol_core_ops PARAMS ((void));
 /* Default definitions: These must be defined in tm.h 
    if they are to be shared with a process module such as procfs.  */
 
-#define THREAD_FLAG            0x80000000
-#define is_thread(ARG)         (((ARG) & THREAD_FLAG) != 0)
-#define is_lwp(ARG)            (((ARG) & THREAD_FLAG) == 0)
-#define GET_LWP(PID)           TIDGET (PID)
-#define GET_THREAD(PID)        (((PID) >> 16) & 0x7fff)
-#define BUILD_LWP(TID, PID)    ((TID) << 16 | (PID))
+#define THREAD_FLAG		0x80000000
+#define is_thread(ARG)		(((ARG) & THREAD_FLAG) != 0)
+#define is_lwp(ARG)		(((ARG) & THREAD_FLAG) == 0)
+#define GET_LWP(PID)		TIDGET (PID)
+#define GET_THREAD(PID)		TIDGET (PID)
+#define BUILD_LWP(TID, PID)	MERGEPID (PID, TID)
 
-#define BUILD_THREAD(THREAD_ID, PID) (THREAD_FLAG | BUILD_LWP (THREAD_ID, PID))
+#define BUILD_THREAD(TID, PID)	(MERGEPID (PID, TID) | THREAD_FLAG)
 
 /* Pointers to routines from lithread_db resolved by dlopen() */
 
@@ -995,11 +995,13 @@ typedef const struct ps_prochandle *gdb_ps_prochandle_t;
 typedef char *gdb_ps_read_buf_t;
 typedef char *gdb_ps_write_buf_t;
 typedef int gdb_ps_size_t;
+typedef paddr_t gdb_ps_addr_t;
 #else
 typedef struct ps_prochandle *gdb_ps_prochandle_t;
 typedef void *gdb_ps_read_buf_t;
 typedef const void *gdb_ps_write_buf_t;
 typedef size_t gdb_ps_size_t;
+typedef psaddr_t gdb_ps_addr_t;
 #endif
 
 
@@ -1044,7 +1046,7 @@ ps_lcontinue (gdb_ps_prochandle_t ph, lwpid_t lwpid)
 
 ps_err_e
 ps_pglobal_lookup (gdb_ps_prochandle_t ph, const char *ld_object_name,
-		   const char *ld_symbol_name, paddr_t * ld_symbol_addr)
+		   const char *ld_symbol_name, gdb_ps_addr_t * ld_symbol_addr)
 {
   struct minimal_symbol *ms;
 
@@ -1061,7 +1063,7 @@ ps_pglobal_lookup (gdb_ps_prochandle_t ph, const char *ld_object_name,
 /* Common routine for reading and writing memory.  */
 
 static ps_err_e
-rw_common (int dowrite, const struct ps_prochandle *ph, paddr_t addr,
+rw_common (int dowrite, const struct ps_prochandle *ph, gdb_ps_addr_t addr,
 	   char *buf, int size)
 {
   struct cleanup *old_chain;
@@ -1105,7 +1107,7 @@ rw_common (int dowrite, const struct ps_prochandle *ph, paddr_t addr,
 /* Copies SIZE bytes from target process .data segment to debugger memory.  */
 
 ps_err_e
-ps_pdread (gdb_ps_prochandle_t ph, paddr_t addr,
+ps_pdread (gdb_ps_prochandle_t ph, gdb_ps_addr_t addr,
 	   gdb_ps_read_buf_t buf, gdb_ps_size_t size)
 {
   return rw_common (0, ph, addr, buf, size);
@@ -1114,7 +1116,7 @@ ps_pdread (gdb_ps_prochandle_t ph, paddr_t addr,
 /* Copies SIZE bytes from debugger memory .data segment to target process.  */
 
 ps_err_e
-ps_pdwrite (gdb_ps_prochandle_t ph, paddr_t addr,
+ps_pdwrite (gdb_ps_prochandle_t ph, gdb_ps_addr_t addr,
 	    gdb_ps_write_buf_t buf, gdb_ps_size_t size)
 {
   return rw_common (1, ph, addr, (char *) buf, size);
@@ -1123,7 +1125,7 @@ ps_pdwrite (gdb_ps_prochandle_t ph, paddr_t addr,
 /* Copies SIZE bytes from target process .text segment to debugger memory.  */
 
 ps_err_e
-ps_ptread (gdb_ps_prochandle_t ph, paddr_t addr,
+ps_ptread (gdb_ps_prochandle_t ph, gdb_ps_addr_t addr,
 	   gdb_ps_read_buf_t buf, gdb_ps_size_t size)
 {
   return rw_common (0, ph, addr, buf, size);
@@ -1132,7 +1134,7 @@ ps_ptread (gdb_ps_prochandle_t ph, paddr_t addr,
 /* Copies SIZE bytes from debugger memory .text segment to target process.  */
 
 ps_err_e
-ps_ptwrite (gdb_ps_prochandle_t ph, paddr_t addr,
+ps_ptwrite (gdb_ps_prochandle_t ph, gdb_ps_addr_t addr,
 	    gdb_ps_write_buf_t buf, gdb_ps_size_t size)
 {
   return rw_common (1, ph, addr, (char *) buf, size);
@@ -1318,61 +1320,30 @@ ps_lsetfpregs (gdb_ps_prochandle_t ph, lwpid_t lwpid,
 
 #ifdef TM_I386SOL2_H
 
-/* Get local descriptor table.  */
-
-#include <sys/procfs.h>
-#include <sys/reg.h>
-#include <sys/sysi86.h>
-
-static int nldt_allocated = 0;
-static struct ssd *ldt_bufp = NULL;
-
 /* Reads the local descriptor table of a LWP.  */
 
 ps_err_e
 ps_lgetLDT (gdb_ps_prochandle_t ph, lwpid_t lwpid,
 	    struct ssd *pldt)
 {
-  gregset_t gregset;
-  int lwp_fd;
-  ps_err_e val;
-  int nldt;
-  int i;
+  /* NOTE: only used on Solaris, therefore OK to refer to procfs.c */
+  extern struct ssd *procfs_find_LDT_entry (int);
+  struct ssd *ret;
 
-  /* Get procfs file descriptor for the LWP.  */
-  lwp_fd = procfs_get_pid_fd (BUILD_LWP (lwpid, PIDGET (inferior_pid)));
-  if (lwp_fd < 0)
+  /* FIXME: can't I get the process ID from the prochandle or something?
+   */
+
+  if (inferior_pid <= 0 || lwpid <= 0)
     return PS_BADLID;
 
-  /* Fetch registers und LDT descriptors.  */
-  if (ioctl (lwp_fd, PIOCGREG, &gregset) == -1)
-    return PS_ERR;
-
-  if (ioctl (lwp_fd, PIOCNLDT, &nldt) == -1)
-    return PS_ERR;
-
-  if (nldt_allocated < nldt)
+  ret = procfs_find_LDT_entry (BUILD_LWP (lwpid, PIDGET (inferior_pid)));
+  if (ret)
     {
-      ldt_bufp
-	= (struct ssd *) xrealloc (ldt_bufp, (nldt + 1) * sizeof (struct ssd));
-      nldt_allocated = nldt;
+      memcpy (pldt, ret, sizeof (struct ssd));
+      return PS_OK;
     }
-
-  if (ioctl (lwp_fd, PIOCLDT, ldt_bufp) == -1)
+  else	/* LDT not found. */
     return PS_ERR;
-
-  /* Search LDT for the LWP via register GS.  */
-  for (i = 0; i < nldt; i++)
-    {
-      if (ldt_bufp[i].sel == (gregset[GS] & 0xffff))
-	{
-	  *pldt = ldt_bufp[i];
-	  return PS_OK;
-	}
-    }
-
-  /* LDT not found.  */
-  return PS_ERR;
 }
 #endif /* TM_I386SOL2_H */
 
@@ -1661,7 +1632,13 @@ init_sol_core_ops ()
   sol_core_ops.to_has_registers = 1;
   sol_core_ops.to_has_execution = 0;
   sol_core_ops.to_has_thread_control = tc_none;
+  sol_core_ops.to_thread_alive = sol_thread_alive;
   sol_core_ops.to_pid_to_str = solaris_pid_to_str;
+  /* On Solaris/x86, when debugging a threaded core file from process <n>,
+     the following causes "info threads" to produce "procfs: couldn't find pid
+     <n> in procinfo list" where <n> is the pid of the process that produced
+     the core file.  Disable it for now. */
+  /* sol_core_ops.to_find_new_threads = sol_find_new_threads; */
   sol_core_ops.to_sections = 0;
   sol_core_ops.to_sections_end = 0;
   sol_core_ops.to_magic = OPS_MAGIC;
