@@ -1,5 +1,6 @@
 /* DWARF debugging format support for GDB.
-   Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1998
+   Copyright 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
+   2001, 2002
    Free Software Foundation, Inc.
    Written by Fred Fish at Cygnus Support.  Portions based on dbxread.c,
    mipsread.c, coffread.c, and dwarfread.c from a Data General SVR4 gdb port.
@@ -185,14 +186,9 @@ typedef unsigned int DIE_REF;	/* Reference to a DIE */
 #define LCC_PRODUCER "NCR C/C++"
 #endif
 
-#ifndef CHILL_PRODUCER
-#define CHILL_PRODUCER "GNU Chill "
-#endif
-
-/* Provide a default mapping from a DWARF register number to a gdb REGNUM.  */
-#ifndef DWARF_REG_TO_REGNUM
-#define DWARF_REG_TO_REGNUM(num) (num)
-#endif
+/* OBSOLETE #ifndef CHILL_PRODUCER */
+/* OBSOLETE #define CHILL_PRODUCER "GNU Chill " */
+/* OBSOLETE #endif */
 
 /* Flags to target_to_host() that tell whether or not the data object is
    expected to be signed.  Used, for example, when fetching a signed
@@ -242,11 +238,6 @@ typedef unsigned int DIE_REF;	/* Reference to a DIE */
    we define AT_short_element_list for this variant. */
 
 #define	AT_short_element_list	 (0x00f0|FORM_BLOCK2)
-
-/* External variables referenced. */
-
-extern int info_verbose;	/* From main.c; nonzero => verbose */
-extern char *warning_pre_print;	/* From utils.c */
 
 /* The DWARF debugging information consists of two major pieces,
    one is a block of DWARF Information Entries (DIE's) and the other
@@ -450,132 +441,95 @@ static const struct language_defn *cu_language_defn;
 /* Forward declarations of static functions so we don't have to worry
    about ordering within this file.  */
 
-static void
-free_utypes PARAMS ((PTR));
+static void free_utypes (PTR);
 
-static int
-attribute_size PARAMS ((unsigned int));
+static int attribute_size (unsigned int);
 
-static CORE_ADDR
-  target_to_host PARAMS ((char *, int, int, struct objfile *));
+static CORE_ADDR target_to_host (char *, int, int, struct objfile *);
 
-static void
-add_enum_psymbol PARAMS ((struct dieinfo *, struct objfile *));
+static void add_enum_psymbol (struct dieinfo *, struct objfile *);
+
+static void handle_producer (char *);
 
 static void
-handle_producer PARAMS ((char *));
+read_file_scope (struct dieinfo *, char *, char *, struct objfile *);
 
 static void
-read_file_scope PARAMS ((struct dieinfo *, char *, char *, struct objfile *));
+read_func_scope (struct dieinfo *, char *, char *, struct objfile *);
 
 static void
-read_func_scope PARAMS ((struct dieinfo *, char *, char *, struct objfile *));
+read_lexical_block_scope (struct dieinfo *, char *, char *, struct objfile *);
+
+static void scan_partial_symbols (char *, char *, struct objfile *);
 
 static void
-read_lexical_block_scope PARAMS ((struct dieinfo *, char *, char *,
-				  struct objfile *));
+scan_compilation_units (char *, char *, file_ptr, file_ptr, struct objfile *);
+
+static void add_partial_symbol (struct dieinfo *, struct objfile *);
+
+static void basicdieinfo (struct dieinfo *, char *, struct objfile *);
+
+static void completedieinfo (struct dieinfo *, struct objfile *);
+
+static void dwarf_psymtab_to_symtab (struct partial_symtab *);
+
+static void psymtab_to_symtab_1 (struct partial_symtab *);
+
+static void read_ofile_symtab (struct partial_symtab *);
+
+static void process_dies (char *, char *, struct objfile *);
 
 static void
-scan_partial_symbols PARAMS ((char *, char *, struct objfile *));
+read_structure_scope (struct dieinfo *, char *, char *, struct objfile *);
+
+static struct type *decode_array_element_type (char *);
+
+static struct type *decode_subscript_data_item (char *, char *);
+
+static void dwarf_read_array_type (struct dieinfo *);
+
+static void read_tag_pointer_type (struct dieinfo *dip);
+
+static void read_tag_string_type (struct dieinfo *dip);
+
+static void read_subroutine_type (struct dieinfo *, char *, char *);
 
 static void
-scan_compilation_units PARAMS ((char *, char *, file_ptr,
-				file_ptr, struct objfile *));
+read_enumeration (struct dieinfo *, char *, char *, struct objfile *);
+
+static struct type *struct_type (struct dieinfo *, char *, char *,
+				 struct objfile *);
+
+static struct type *enum_type (struct dieinfo *, struct objfile *);
+
+static void decode_line_numbers (char *);
+
+static struct type *decode_die_type (struct dieinfo *);
+
+static struct type *decode_mod_fund_type (char *);
+
+static struct type *decode_mod_u_d_type (char *);
+
+static struct type *decode_modified_type (char *, unsigned int, int);
+
+static struct type *decode_fund_type (unsigned int);
+
+static char *create_name (char *, struct obstack *);
+
+static struct type *lookup_utype (DIE_REF);
+
+static struct type *alloc_utype (DIE_REF, struct type *);
+
+static struct symbol *new_symbol (struct dieinfo *, struct objfile *);
 
 static void
-add_partial_symbol PARAMS ((struct dieinfo *, struct objfile *));
+synthesize_typedef (struct dieinfo *, struct objfile *, struct type *);
 
-static void
-basicdieinfo PARAMS ((struct dieinfo *, char *, struct objfile *));
+static int locval (struct dieinfo *);
 
-static void
-completedieinfo PARAMS ((struct dieinfo *, struct objfile *));
+static void set_cu_language (struct dieinfo *);
 
-static void
-dwarf_psymtab_to_symtab PARAMS ((struct partial_symtab *));
-
-static void
-psymtab_to_symtab_1 PARAMS ((struct partial_symtab *));
-
-static void
-read_ofile_symtab PARAMS ((struct partial_symtab *));
-
-static void
-process_dies PARAMS ((char *, char *, struct objfile *));
-
-static void
-read_structure_scope PARAMS ((struct dieinfo *, char *, char *,
-			      struct objfile *));
-
-static struct type *
-  decode_array_element_type PARAMS ((char *));
-
-static struct type *
-  decode_subscript_data_item PARAMS ((char *, char *));
-
-static void
-dwarf_read_array_type PARAMS ((struct dieinfo *));
-
-static void
-read_tag_pointer_type PARAMS ((struct dieinfo * dip));
-
-static void
-read_tag_string_type PARAMS ((struct dieinfo * dip));
-
-static void
-read_subroutine_type PARAMS ((struct dieinfo *, char *, char *));
-
-static void
-read_enumeration PARAMS ((struct dieinfo *, char *, char *, struct objfile *));
-
-static struct type *
-  struct_type PARAMS ((struct dieinfo *, char *, char *, struct objfile *));
-
-static struct type *
-  enum_type PARAMS ((struct dieinfo *, struct objfile *));
-
-static void
-decode_line_numbers PARAMS ((char *));
-
-static struct type *
-  decode_die_type PARAMS ((struct dieinfo *));
-
-static struct type *
-  decode_mod_fund_type PARAMS ((char *));
-
-static struct type *
-  decode_mod_u_d_type PARAMS ((char *));
-
-static struct type *
-  decode_modified_type PARAMS ((char *, unsigned int, int));
-
-static struct type *
-  decode_fund_type PARAMS ((unsigned int));
-
-static char *
-  create_name PARAMS ((char *, struct obstack *));
-
-static struct type *
-  lookup_utype PARAMS ((DIE_REF));
-
-static struct type *
-  alloc_utype PARAMS ((DIE_REF, struct type *));
-
-static struct symbol *
-  new_symbol PARAMS ((struct dieinfo *, struct objfile *));
-
-static void
-synthesize_typedef PARAMS ((struct dieinfo *, struct objfile *,
-			    struct type *));
-
-static int
-locval PARAMS ((struct dieinfo *));
-
-static void
-set_cu_language PARAMS ((struct dieinfo *));
-
-static struct type *
-  dwarf_fundamental_type PARAMS ((struct objfile *, int));
+static struct type *dwarf_fundamental_type (struct objfile *, int);
 
 
 /*
@@ -613,9 +567,7 @@ static struct type *
  */
 
 static struct type *
-dwarf_fundamental_type (objfile, typeid)
-     struct objfile *objfile;
-     int typeid;
+dwarf_fundamental_type (struct objfile *objfile, int typeid)
 {
   if (typeid < 0 || typeid >= FT_NUM_MEMBERS)
     {
@@ -658,8 +610,7 @@ dwarf_fundamental_type (objfile, typeid)
  */
 
 static void
-set_cu_language (dip)
-     struct dieinfo *dip;
+set_cu_language (struct dieinfo *dip)
 {
   switch (dip->at_language)
     {
@@ -670,9 +621,9 @@ set_cu_language (dip)
     case LANG_C_PLUS_PLUS:
       cu_language = language_cplus;
       break;
-    case LANG_CHILL:
-      cu_language = language_chill;
-      break;
+      /* OBSOLETE case LANG_CHILL: */
+      /* OBSOLETE   cu_language = language_chill; */
+      /* OBSOLETE   break; */
     case LANG_MODULA2:
       cu_language = language_m2;
       break;
@@ -727,14 +678,9 @@ set_cu_language (dip)
  */
 
 void
-dwarf_build_psymtabs (objfile, mainline, dbfoff, dbfsize,
-		      lnoffset, lnsize)
-     struct objfile *objfile;
-     int mainline;
-     file_ptr dbfoff;
-     unsigned int dbfsize;
-     file_ptr lnoffset;
-     unsigned int lnsize;
+dwarf_build_psymtabs (struct objfile *objfile, int mainline, file_ptr dbfoff,
+		      unsigned int dbfsize, file_ptr lnoffset,
+		      unsigned int lnsize)
 {
   bfd *abfd = objfile->obfd;
   struct cleanup *back_to;
@@ -744,19 +690,20 @@ dwarf_build_psymtabs (objfile, mainline, dbfoff, dbfsize,
   dbbase = xmalloc (dbsize);
   dbroff = 0;
   if ((bfd_seek (abfd, dbfoff, SEEK_SET) != 0) ||
-      (bfd_read (dbbase, dbsize, 1, abfd) != dbsize))
+      (bfd_bread (dbbase, dbsize, abfd) != dbsize))
     {
-      free (dbbase);
+      xfree (dbbase);
       error ("can't read DWARF data from '%s'", bfd_get_filename (abfd));
     }
-  back_to = make_cleanup (free, dbbase);
+  back_to = make_cleanup (xfree, dbbase);
 
   /* If we are reinitializing, or if we have never loaded syms yet, init.
      Since we have no idea how many DIES we are looking at, we just guess
      some arbitrary value. */
 
-  if (mainline || objfile->global_psymbols.size == 0 ||
-      objfile->static_psymbols.size == 0)
+  if (mainline
+      || (objfile->global_psymbols.size == 0
+	  && objfile->static_psymbols.size == 0))
     {
       init_psymbol_list (objfile, 1024);
     }
@@ -795,11 +742,8 @@ dwarf_build_psymtabs (objfile, mainline, dbfoff, dbfsize,
  */
 
 static void
-read_lexical_block_scope (dip, thisdie, enddie, objfile)
-     struct dieinfo *dip;
-     char *thisdie;
-     char *enddie;
-     struct objfile *objfile;
+read_lexical_block_scope (struct dieinfo *dip, char *thisdie, char *enddie,
+			  struct objfile *objfile)
 {
   register struct context_stack *new;
 
@@ -834,8 +778,7 @@ read_lexical_block_scope (dip, thisdie, enddie, objfile)
  */
 
 static struct type *
-lookup_utype (die_ref)
-     DIE_REF die_ref;
+lookup_utype (DIE_REF die_ref)
 {
   struct type *type = NULL;
   int utypeidx;
@@ -875,9 +818,7 @@ lookup_utype (die_ref)
  */
 
 static struct type *
-alloc_utype (die_ref, utypep)
-     DIE_REF die_ref;
-     struct type *utypep;
+alloc_utype (DIE_REF die_ref, struct type *utypep)
 {
   struct type **typep;
   int utypeidx;
@@ -923,10 +864,9 @@ alloc_utype (die_ref, utypep)
  */
 
 static void
-free_utypes (dummy)
-     PTR dummy;
+free_utypes (PTR dummy)
 {
-  free (utypes);
+  xfree (utypes);
   utypes = NULL;
   numutypes = 0;
 }
@@ -950,8 +890,7 @@ free_utypes (dummy)
  */
 
 static struct type *
-decode_die_type (dip)
-     struct dieinfo *dip;
+decode_die_type (struct dieinfo *dip)
 {
   struct type *type = NULL;
 
@@ -1002,11 +941,8 @@ decode_die_type (dip)
  */
 
 static struct type *
-struct_type (dip, thisdie, enddie, objfile)
-     struct dieinfo *dip;
-     char *thisdie;
-     char *enddie;
-     struct objfile *objfile;
+struct_type (struct dieinfo *dip, char *thisdie, char *enddie,
+	     struct objfile *objfile)
 {
   struct type *type;
   struct nextfield
@@ -1200,17 +1136,14 @@ struct_type (dip, thisdie, enddie, objfile)
  */
 
 static void
-read_structure_scope (dip, thisdie, enddie, objfile)
-     struct dieinfo *dip;
-     char *thisdie;
-     char *enddie;
-     struct objfile *objfile;
+read_structure_scope (struct dieinfo *dip, char *thisdie, char *enddie,
+		      struct objfile *objfile)
 {
   struct type *type;
   struct symbol *sym;
 
   type = struct_type (dip, thisdie, enddie, objfile);
-  if (!(TYPE_FLAGS (type) & TYPE_FLAG_STUB))
+  if (!TYPE_STUB (type))
     {
       sym = new_symbol (dip, objfile);
       if (sym != NULL)
@@ -1244,8 +1177,7 @@ read_structure_scope (dip, thisdie, enddie, objfile)
  */
 
 static struct type *
-decode_array_element_type (scan)
-     char *scan;
+decode_array_element_type (char *scan)
 {
   struct type *typep;
   DIE_REF die_ref;
@@ -1339,9 +1271,7 @@ decode_array_element_type (scan)
  */
 
 static struct type *
-decode_subscript_data_item (scan, end)
-     char *scan;
-     char *end;
+decode_subscript_data_item (char *scan, char *end)
 {
   struct type *typep = NULL;	/* Array type we are building */
   struct type *nexttype;	/* Type of each element (may be array) */
@@ -1421,8 +1351,7 @@ decode_subscript_data_item (scan, end)
  */
 
 static void
-dwarf_read_array_type (dip)
-     struct dieinfo *dip;
+dwarf_read_array_type (struct dieinfo *dip)
 {
   struct type *type;
   struct type *utype;
@@ -1486,8 +1415,7 @@ dwarf_read_array_type (dip)
  */
 
 static void
-read_tag_pointer_type (dip)
-     struct dieinfo *dip;
+read_tag_pointer_type (struct dieinfo *dip)
 {
   struct type *type;
   struct type *utype;
@@ -1529,8 +1457,7 @@ read_tag_pointer_type (dip)
  */
 
 static void
-read_tag_string_type (dip)
-     struct dieinfo *dip;
+read_tag_string_type (struct dieinfo *dip)
 {
   struct type *utype;
   struct type *indextype;
@@ -1601,10 +1528,7 @@ read_tag_string_type (dip)
  */
 
 static void
-read_subroutine_type (dip, thisdie, enddie)
-     struct dieinfo *dip;
-     char *thisdie;
-     char *enddie;
+read_subroutine_type (struct dieinfo *dip, char *thisdie, char *enddie)
 {
   struct type *type;		/* Type that this function returns */
   struct type *ftype;		/* Function that returns above type */
@@ -1661,11 +1585,8 @@ read_subroutine_type (dip, thisdie, enddie)
  */
 
 static void
-read_enumeration (dip, thisdie, enddie, objfile)
-     struct dieinfo *dip;
-     char *thisdie;
-     char *enddie;
-     struct objfile *objfile;
+read_enumeration (struct dieinfo *dip, char *thisdie, char *enddie,
+		  struct objfile *objfile)
 {
   struct type *type;
   struct symbol *sym;
@@ -1714,9 +1635,7 @@ read_enumeration (dip, thisdie, enddie, objfile)
  */
 
 static struct type *
-enum_type (dip, objfile)
-     struct dieinfo *dip;
-     struct objfile *objfile;
+enum_type (struct dieinfo *dip, struct objfile *objfile)
 {
   struct type *type;
   struct nextfield
@@ -1842,11 +1761,8 @@ enum_type (dip, objfile)
  */
 
 static void
-read_func_scope (dip, thisdie, enddie, objfile)
-     struct dieinfo *dip;
-     char *thisdie;
-     char *enddie;
-     struct objfile *objfile;
+read_func_scope (struct dieinfo *dip, char *thisdie, char *enddie,
+		 struct objfile *objfile)
 {
   register struct context_stack *new;
 
@@ -1892,8 +1808,7 @@ read_func_scope (dip, thisdie, enddie, objfile)
  */
 
 static void
-handle_producer (producer)
-     char *producer;
+handle_producer (char *producer)
 {
 
   /* If this compilation unit was compiled with g++ or gcc, then set the
@@ -1907,8 +1822,8 @@ handle_producer (producer)
   else
     {
       processing_gcc_compilation =
-	STREQN (producer, GPLUS_PRODUCER, strlen (GPLUS_PRODUCER))
-	|| STREQN (producer, CHILL_PRODUCER, strlen (CHILL_PRODUCER));
+	STREQN (producer, GPLUS_PRODUCER, strlen (GPLUS_PRODUCER));
+      /* OBSOLETE || STREQN (producer, CHILL_PRODUCER, strlen (CHILL_PRODUCER)); */
     }
 
   /* Select a demangling style if we can identify the producer and if
@@ -1920,7 +1835,11 @@ handle_producer (producer)
     {
       if (STREQN (producer, GPLUS_PRODUCER, strlen (GPLUS_PRODUCER)))
 	{
+#if 0
+	  /* For now, stay with AUTO_DEMANGLING for g++ output, as we don't
+	     know whether it will use the old style or v3 mangling.  */
 	  set_demangling_style (GNU_DEMANGLING_STYLE_STRING);
+#endif
 	}
       else if (STREQN (producer, LCC_PRODUCER, strlen (LCC_PRODUCER)))
 	{
@@ -1953,11 +1872,8 @@ handle_producer (producer)
  */
 
 static void
-read_file_scope (dip, thisdie, enddie, objfile)
-     struct dieinfo *dip;
-     char *thisdie;
-     char *enddie;
-     struct objfile *objfile;
+read_file_scope (struct dieinfo *dip, char *thisdie, char *enddie,
+		 struct objfile *objfile)
 {
   struct cleanup *back_to;
   struct symtab *symtab;
@@ -2009,10 +1925,7 @@ read_file_scope (dip, thisdie, enddie, objfile)
  */
 
 static void
-process_dies (thisdie, enddie, objfile)
-     char *thisdie;
-     char *enddie;
-     struct objfile *objfile;
+process_dies (char *thisdie, char *enddie, struct objfile *objfile)
 {
   char *nextdie;
   struct dieinfo di;
@@ -2039,11 +1952,9 @@ process_dies (thisdie, enddie, objfile)
 	    {
 	      nextdie = thisdie + di.die_length;
 	    }
-#ifdef SMASH_TEXT_ADDRESS
 	  /* I think that these are always text, not data, addresses.  */
-	  SMASH_TEXT_ADDRESS (di.at_low_pc);
-	  SMASH_TEXT_ADDRESS (di.at_high_pc);
-#endif
+	  di.at_low_pc = SMASH_TEXT_ADDRESS (di.at_low_pc);
+	  di.at_high_pc = SMASH_TEXT_ADDRESS (di.at_high_pc);
 	  switch (di.die_tag)
 	    {
 	    case TAG_compile_unit:
@@ -2155,8 +2066,7 @@ process_dies (thisdie, enddie, objfile)
  */
 
 static void
-decode_line_numbers (linetable)
-     char *linetable;
+decode_line_numbers (char *linetable)
 {
   char *tblscan;
   char *tblend;
@@ -2229,8 +2139,7 @@ decode_line_numbers (linetable)
  */
 
 static int
-locval (dip)
-     struct dieinfo *dip;
+locval (struct dieinfo *dip)
 {
   unsigned short nbytes;
   unsigned short locsize;
@@ -2331,8 +2240,7 @@ locval (dip)
  */
 
 static void
-read_ofile_symtab (pst)
-     struct partial_symtab *pst;
+read_ofile_symtab (struct partial_symtab *pst)
 {
   struct cleanup *back_to;
   unsigned long lnsize;
@@ -2354,12 +2262,12 @@ read_ofile_symtab (pst)
   base_section_offsets = pst->section_offsets;
   baseaddr = ANOFFSET (pst->section_offsets, 0);
   if (bfd_seek (abfd, foffset, SEEK_SET) ||
-      (bfd_read (dbbase, dbsize, 1, abfd) != dbsize))
+      (bfd_bread (dbbase, dbsize, abfd) != dbsize))
     {
-      free (dbbase);
+      xfree (dbbase);
       error ("can't read DWARF data");
     }
-  back_to = make_cleanup (free, dbbase);
+  back_to = make_cleanup (xfree, dbbase);
 
   /* If there is a line number table associated with this compilation unit
      then read the size of this fragment in bytes, from the fragment itself.
@@ -2370,8 +2278,8 @@ read_ofile_symtab (pst)
   if (LNFOFF (pst))
     {
       if (bfd_seek (abfd, LNFOFF (pst), SEEK_SET) ||
-	  (bfd_read ((PTR) lnsizedata, sizeof (lnsizedata), 1, abfd) !=
-	   sizeof (lnsizedata)))
+	  (bfd_bread ((PTR) lnsizedata, sizeof (lnsizedata), abfd)
+	   != sizeof (lnsizedata)))
 	{
 	  error ("can't read DWARF line number table size");
 	}
@@ -2379,12 +2287,12 @@ read_ofile_symtab (pst)
 			       GET_UNSIGNED, pst->objfile);
       lnbase = xmalloc (lnsize);
       if (bfd_seek (abfd, LNFOFF (pst), SEEK_SET) ||
-	  (bfd_read (lnbase, lnsize, 1, abfd) != lnsize))
+	  (bfd_bread (lnbase, lnsize, abfd) != lnsize))
 	{
-	  free (lnbase);
+	  xfree (lnbase);
 	  error ("can't read DWARF line numbers");
 	}
-      make_cleanup (free, lnbase);
+      make_cleanup (xfree, lnbase);
     }
 
   process_dies (dbbase, dbbase + dbsize, pst->objfile);
@@ -2411,8 +2319,7 @@ read_ofile_symtab (pst)
  */
 
 static void
-psymtab_to_symtab_1 (pst)
-     struct partial_symtab *pst;
+psymtab_to_symtab_1 (struct partial_symtab *pst)
 {
   int i;
   struct cleanup *old_chain;
@@ -2457,7 +2364,6 @@ psymtab_to_symtab_1 (pst)
 		  wrap_here ("");
 		  gdb_flush (gdb_stdout);
 		}
-	      sort_symtab_syms (pst->symtab);
 	      do_cleanups (old_chain);
 	    }
 	  pst->readin = 1;
@@ -2484,8 +2390,7 @@ psymtab_to_symtab_1 (pst)
  */
 
 static void
-dwarf_psymtab_to_symtab (pst)
-     struct partial_symtab *pst;
+dwarf_psymtab_to_symtab (struct partial_symtab *pst)
 {
 
   if (pst != NULL)
@@ -2544,9 +2449,7 @@ dwarf_psymtab_to_symtab (pst)
  */
 
 static void
-add_enum_psymbol (dip, objfile)
-     struct dieinfo *dip;
-     struct objfile *objfile;
+add_enum_psymbol (struct dieinfo *dip, struct objfile *objfile)
 {
   char *scan;
   char *listend;
@@ -2595,9 +2498,7 @@ add_enum_psymbol (dip, objfile)
  */
 
 static void
-add_partial_symbol (dip, objfile)
-     struct dieinfo *dip;
-     struct objfile *objfile;
+add_partial_symbol (struct dieinfo *dip, struct objfile *objfile)
 {
   switch (dip->die_tag)
     {
@@ -2722,10 +2623,7 @@ NOTES
 
 
 static void
-scan_partial_symbols (thisdie, enddie, objfile)
-     char *thisdie;
-     char *enddie;
-     struct objfile *objfile;
+scan_partial_symbols (char *thisdie, char *enddie, struct objfile *objfile)
 {
   char *nextdie;
   char *temp;
@@ -2846,12 +2744,8 @@ scan_partial_symbols (thisdie, enddie, objfile)
  */
 
 static void
-scan_compilation_units (thisdie, enddie, dbfoff, lnoffset, objfile)
-     char *thisdie;
-     char *enddie;
-     file_ptr dbfoff;
-     file_ptr lnoffset;
-     struct objfile *objfile;
+scan_compilation_units (char *thisdie, char *enddie, file_ptr dbfoff,
+			file_ptr lnoffset, struct objfile *objfile)
 {
   char *nextdie;
   struct dieinfo di;
@@ -2941,9 +2835,7 @@ scan_compilation_units (thisdie, enddie, dbfoff, lnoffset, objfile)
  */
 
 static struct symbol *
-new_symbol (dip, objfile)
-     struct dieinfo *dip;
-     struct objfile *objfile;
+new_symbol (struct dieinfo *dip, struct objfile *objfile)
 {
   struct symbol *sym = NULL;
 
@@ -3103,10 +2995,8 @@ new_symbol (dip, objfile)
  */
 
 static void
-synthesize_typedef (dip, objfile, type)
-     struct dieinfo *dip;
-     struct objfile *objfile;
-     struct type *type;
+synthesize_typedef (struct dieinfo *dip, struct objfile *objfile,
+		    struct type *type)
 {
   struct symbol *sym = NULL;
 
@@ -3150,8 +3040,7 @@ synthesize_typedef (dip, objfile, type)
  */
 
 static struct type *
-decode_mod_fund_type (typedata)
-     char *typedata;
+decode_mod_fund_type (char *typedata)
 {
   struct type *typep = NULL;
   unsigned short modcount;
@@ -3197,8 +3086,7 @@ decode_mod_fund_type (typedata)
  */
 
 static struct type *
-decode_mod_u_d_type (typedata)
-     char *typedata;
+decode_mod_u_d_type (char *typedata)
 {
   struct type *typep = NULL;
   unsigned short modcount;
@@ -3261,10 +3149,7 @@ decode_mod_u_d_type (typedata)
  */
 
 static struct type *
-decode_modified_type (modifiers, modcount, mtype)
-     char *modifiers;
-     unsigned int modcount;
-     int mtype;
+decode_modified_type (char *modifiers, unsigned int modcount, int mtype)
 {
   struct type *typep = NULL;
   unsigned short fundtype;
@@ -3350,8 +3235,7 @@ decode_modified_type (modifiers, modcount, mtype)
  */
 
 static struct type *
-decode_fund_type (fundtype)
-     unsigned int fundtype;
+decode_fund_type (unsigned int fundtype)
 {
   struct type *typep = NULL;
 
@@ -3483,9 +3367,7 @@ decode_fund_type (fundtype)
  */
 
 static char *
-create_name (name, obstackp)
-     char *name;
-     struct obstack *obstackp;
+create_name (char *name, struct obstack *obstackp)
 {
   int length;
   char *newname;
@@ -3551,10 +3433,7 @@ create_name (name, obstackp)
  */
 
 static void
-basicdieinfo (dip, diep, objfile)
-     struct dieinfo *dip;
-     char *diep;
-     struct objfile *objfile;
+basicdieinfo (struct dieinfo *dip, char *diep, struct objfile *objfile)
 {
   curdie = dip;
   memset (dip, 0, sizeof (struct dieinfo));
@@ -3613,9 +3492,7 @@ basicdieinfo (dip, diep, objfile)
  */
 
 static void
-completedieinfo (dip, objfile)
-     struct dieinfo *dip;
-     struct objfile *objfile;
+completedieinfo (struct dieinfo *dip, struct objfile *objfile)
 {
   char *diep;			/* Current pointer into raw DIE data */
   char *end;			/* Terminate DIE scan here */
@@ -3827,11 +3704,8 @@ completedieinfo (dip, objfile)
  */
 
 static CORE_ADDR
-target_to_host (from, nbytes, signextend, objfile)
-     char *from;
-     int nbytes;
-     int signextend;		/* FIXME:  Unused */
-     struct objfile *objfile;
+target_to_host (char *from, int nbytes, int signextend,	/* FIXME:  Unused */
+		struct objfile *objfile)
 {
   CORE_ADDR rtnval;
 
@@ -3878,8 +3752,7 @@ target_to_host (from, nbytes, signextend, objfile)
  */
 
 static int
-attribute_size (attr)
-     unsigned int attr;
+attribute_size (unsigned int attr)
 {
   int nbytes;			/* Size of next data for this attribute */
   unsigned short form;		/* Form of the attribute */
