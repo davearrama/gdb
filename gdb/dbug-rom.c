@@ -1,5 +1,5 @@
 /* Remote debugging interface to dBUG ROM monitor for GDB, the GNU debugger.
-   Copyright 1996, 1999 Free Software Foundation, Inc.
+   Copyright 1996, 1998, 1999, 2000, 2001 Free Software Foundation, Inc.
 
    Written by Stan Shebs of Cygnus Support.
 
@@ -30,15 +30,12 @@
 #include "target.h"
 #include "monitor.h"
 #include "serial.h"
+#include "regcache.h"
 
-static void dbug_open PARAMS ((char *args, int from_tty));
+static void dbug_open (char *args, int from_tty);
 
 static void
-dbug_supply_register (regname, regnamelen, val, vallen)
-     char *regname;
-     int regnamelen;
-     char *val;
-     int vallen;
+dbug_supply_register (char *regname, int regnamelen, char *val, int vallen)
 {
   int regno;
 
@@ -79,13 +76,25 @@ dbug_supply_register (regname, regnamelen, val, vallen)
    different names than GDB does, and don't support all the registers
    either. So, typing "info reg sp" becomes an "A7". */
 
-static char *dbug_regnames[NUM_REGS] =
+static const char *
+dbug_regname (int index)
 {
-  "D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7",
-  "A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7",
-  "SR", "PC"
-  /* no float registers */
-};
+  static char *regnames[] =
+  {
+    "D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7",
+    "A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7",
+    "SR", "PC"
+    /* no float registers */
+  };
+
+  if ((index >= (sizeof (regnames) / sizeof (regnames[0]))) 
+      || (index < 0) || (index >= NUM_REGS))
+    return NULL;
+  else
+    return regnames[index];
+
+}
+
 static struct target_ops dbug_ops;
 static struct monitor_ops dbug_cmds;
 
@@ -138,20 +147,19 @@ init_dbug_cmds (void)
   dbug_cmds.cmd_end = NULL;	/* optional command terminator */
   dbug_cmds.target = &dbug_ops;	/* target operations */
   dbug_cmds.stopbits = SERIAL_1_STOPBITS;	/* number of stop bits */
-  dbug_cmds.regnames = dbug_regnames;	/* registers names */
+  dbug_cmds.regnames = NULL;	/* registers names */
+  dbug_cmds.regname = dbug_regname;
   dbug_cmds.magic = MONITOR_OPS_MAGIC;	/* magic */
 }				/* init_debug_ops */
 
 static void
-dbug_open (args, from_tty)
-     char *args;
-     int from_tty;
+dbug_open (char *args, int from_tty)
 {
   monitor_open (args, &dbug_cmds, from_tty);
 }
 
 void
-_initialize_dbug_rom ()
+_initialize_dbug_rom (void)
 {
   init_dbug_cmds ();
   init_monitor_ops (&dbug_ops);
