@@ -1,5 +1,6 @@
-/* Target macro definitions for i386 running FreeBSD
-   Copyright (C) 1997 Free Software Foundation, Inc.
+/* Target-dependent definitions for FreeBSD/i386.
+
+   Copyright 1997, 1999, 2000, 2001, 2004 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,16 +19,13 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-#include "i386/tm-i386bsd.h"
+#ifndef TM_FBSD_H
+#define TM_FBSD_H
 
+#include "solib.h"
 
-#undef NUM_REGS
-#define NUM_REGS 14
+#ifdef HAVE_SYS_PARAM_H
+#include <sys/param.h>
+#endif
 
-
-#undef IN_SOLIB_CALL_TRAMPOLINE
-#define IN_SOLIB_CALL_TRAMPOLINE(pc, name) STREQ (name, "_DYNAMIC")
-
-
-extern i386_float_info ();
-#define FLOAT_INFO  i386_float_info ()
+#endif /* tm-fbsd.h */

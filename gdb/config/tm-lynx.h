@@ -1,5 +1,5 @@
 /* Macro definitions for LynxOS targets.
-   Copyright 1993 Free Software Foundation, Inc.
+   Copyright 1993, 1995 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -20,9 +20,6 @@
 
 #ifndef TM_LYNX_H
 #define TM_LYNX_H
-
-/* Override number of expected traps from sysv. */
-#define START_INFERIOR_TRAPS_EXPECTED 2
 
 #include "coff-solib.h"		/* COFF shared library support */
 

@@ -1,5 +1,6 @@
-/* Parameters for execution on a i386 running NetBSD, for GDB.
-   Copyright 1994 Free Software Foundation, Inc.
+/* Host-dependent definitions for NetBSD/i386.
+
+   Copyright 1994, 2000, 2004 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,5 +19,7 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-/* Get generic NetBSD host definitions. */
-#include "xm-nbsd.h"
+#include "i386/xm-i386.h"
+
+/* Get generic NetBSD host definitions.  */
+#include "config/xm-nbsd.h"

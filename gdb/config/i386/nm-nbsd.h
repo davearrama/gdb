@@ -1,5 +1,7 @@
-/* Native-dependent definitions for Intel 386 running NetBSD, for GDB.
-   Copyright 1986, 1987, 1989, 1992, 1994 Free Software Foundation, Inc.
+/* Native-dependent definitions for NetBSD/i386.
+
+   Copyright 1986, 1987, 1989, 1992, 1994, 2000, 2002, 2004
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,15 +23,7 @@
 #ifndef NM_NBSD_H
 #define NM_NBSD_H
 
-/* Get generic NetBSD native definitions. */
-#include "nm-nbsd.h"
+/* Get generic NetBSD native definitions.  */
+#include "config/nm-nbsd.h"
 
-/* #define FLOAT_INFO   { i386_float_info(); } */
-
-#define REGISTER_U_ADDR(addr, blockend, regno) \
-	(addr) = i386_register_u_addr ((blockend),(regno));
-
-extern int
-i386_register_u_addr PARAMS ((int, int));
-
-#endif /* NM_NBSD_H */
+#endif /* nm-nbsd.h */
