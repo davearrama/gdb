@@ -31,8 +31,8 @@
 #include <setjmp.h>
 #include "ansidecl.h"
 #include "bfd.h"
-#include "callback.h"
-#include "remote-sim.h"
+#include "gdb/callback.h"
+#include "gdb/remote-sim.h"
 
 #define O_RECOMPILE 85
 #define DEFINE_TABLE
@@ -2443,7 +2443,7 @@ SIM_DESC
 sim_open (kind, cb, abfd, argv)
      SIM_OPEN_KIND kind;
      host_callback *cb;
-     struct _bfd *abfd;
+     struct bfd *abfd;
      char **argv;
 {
   sim_kind = kind;
@@ -2484,7 +2484,7 @@ sim_load (sd, prog, abfd, from_tty)
 SIM_RC
 sim_create_inferior (sd, abfd, argv, env)
      SIM_DESC sd;
-     struct _bfd *abfd;
+     struct bfd *abfd;
      char **argv;
      char **env;
 {

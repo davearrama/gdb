@@ -1,5 +1,6 @@
 /* Read a symbol table in MIPS' format (Third-Eye).
-   Copyright 1986, 87, 89, 90, 91, 92, 93, 94, 95, 96, 1998
+   Copyright 1986, 1987, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
+   1998, 1999, 2000, 2001, 2003
    Free Software Foundation, Inc.
    Contributed by Alessandro Forin (af@cs.cmu.edu) at CMU.  Major work
    by Per Bothner, John Gilmore and Ian Lance Taylor at Cygnus Support.
@@ -32,7 +33,6 @@
 #include "objfiles.h"
 #include "buildsym.h"
 #include "stabsread.h"
-#include "gdb-stabs.h"
 
 #include "coff/sym.h"
 #include "coff/internal.h"
@@ -42,23 +42,19 @@
 #include "elf/common.h"
 #include "elf/mips.h"
 
-extern void _initialize_mipsread PARAMS ((void));
+extern void _initialize_mipsread (void);
+
+static void mipscoff_new_init (struct objfile *);
+
+static void mipscoff_symfile_init (struct objfile *);
+
+static void mipscoff_symfile_read (struct objfile *, int);
+
+static void mipscoff_symfile_finish (struct objfile *);
 
 static void
-mipscoff_new_init PARAMS ((struct objfile *));
-
-static void
-mipscoff_symfile_init PARAMS ((struct objfile *));
-
-static void
-mipscoff_symfile_read PARAMS ((struct objfile *, int));
-
-static void
-mipscoff_symfile_finish PARAMS ((struct objfile *));
-
-static void
-read_alphacoff_dynamic_symtab PARAMS ((struct section_offsets *,
-				       struct objfile * objfile));
+read_alphacoff_dynamic_symtab (struct section_offsets *,
+			       struct objfile *objfile);
 
 /* Initialize anything that needs initializing when a completely new
    symbol file is specified (not just adding some symbols from another
@@ -67,8 +63,7 @@ read_alphacoff_dynamic_symtab PARAMS ((struct section_offsets *,
 extern CORE_ADDR sigtramp_address;
 
 static void
-mipscoff_new_init (ignore)
-     struct objfile *ignore;
+mipscoff_new_init (struct objfile *ignore)
 {
   sigtramp_address = 0;
   stabsread_new_init ();
@@ -78,23 +73,20 @@ mipscoff_new_init (ignore)
 /* Initialize to read a symbol file (nothing to do).  */
 
 static void
-mipscoff_symfile_init (objfile)
-     struct objfile *objfile;
+mipscoff_symfile_init (struct objfile *objfile)
 {
 }
 
 /* Read a symbol file from a file.  */
 
 static void
-mipscoff_symfile_read (objfile, mainline)
-     struct objfile *objfile;
-     int mainline;
+mipscoff_symfile_read (struct objfile *objfile, int mainline)
 {
   bfd *abfd = objfile->obfd;
   struct cleanup *back_to;
 
   init_minimal_symbol_collection ();
-  back_to = make_cleanup ((make_cleanup_func) discard_minimal_symbols, 0);
+  back_to = make_cleanup_discard_minimal_symbols ();
 
   /* Now that the executable file is positioned at symbol table,
      process it and define symbols accordingly.  */
@@ -126,7 +118,7 @@ mipscoff_symfile_read (objfile, mainline)
       struct minimal_symbol *m;
 
       m = lookup_minimal_symbol_by_pc (objfile->ei.entry_point);
-      if (m && SYMBOL_NAME (m + 1))
+      if (m && DEPRECATED_SYMBOL_NAME (m + 1))
 	{
 	  objfile->ei.entry_file_lowpc = SYMBOL_VALUE_ADDRESS (m);
 	  objfile->ei.entry_file_highpc = SYMBOL_VALUE_ADDRESS (m + 1);
@@ -140,8 +132,7 @@ mipscoff_symfile_read (objfile, mainline)
    particular objfile.  */
 
 static void
-mipscoff_symfile_finish (objfile)
-     struct objfile *objfile;
+mipscoff_symfile_finish (struct objfile *objfile)
 {
 }
 
@@ -194,19 +185,13 @@ struct alphacoff_dynsecinfo
     asection *got_sect;		/* Section pointer for .got section */
   };
 
-static void
-alphacoff_locate_sections PARAMS ((bfd *, asection *, void *));
-
 /* We are called once per section from read_alphacoff_dynamic_symtab.
    We need to examine each section we are passed, check to see
    if it is something we are interested in processing, and
    if so, stash away some access information for the section.  */
 
 static void
-alphacoff_locate_sections (ignore_abfd, sectp, sip)
-     bfd *ignore_abfd;
-     asection *sectp;
-     PTR sip;
+alphacoff_locate_sections (bfd *ignore_abfd, asection *sectp, void *sip)
 {
   register struct alphacoff_dynsecinfo *si;
 
@@ -234,9 +219,8 @@ alphacoff_locate_sections (ignore_abfd, sectp, sip)
    add them to the minimal symbol table.  */
 
 static void
-read_alphacoff_dynamic_symtab (section_offsets, objfile)
-     struct section_offsets *section_offsets;
-     struct objfile *objfile;
+read_alphacoff_dynamic_symtab (struct section_offsets *section_offsets,
+			       struct objfile *objfile)
 {
   bfd *abfd = objfile->obfd;
   struct alphacoff_dynsecinfo si;
@@ -257,6 +241,7 @@ read_alphacoff_dynamic_symtab (section_offsets, objfile)
   int got_entry_size = 8;
   int dt_mips_local_gotno = -1;
   int dt_mips_gotsym = -1;
+  struct cleanup *cleanups;
 
 
   /* We currently only know how to handle alpha dynamic symbols.  */
@@ -265,7 +250,7 @@ read_alphacoff_dynamic_symtab (section_offsets, objfile)
 
   /* Locate the dynamic symbols sections and read them in.  */
   memset ((char *) &si, 0, sizeof (si));
-  bfd_map_over_sections (abfd, alphacoff_locate_sections, (PTR) & si);
+  bfd_map_over_sections (abfd, alphacoff_locate_sections, (void *) & si);
   if (si.sym_sect == NULL
       || si.str_sect == NULL
       || si.dyninfo_sect == NULL
@@ -276,10 +261,14 @@ read_alphacoff_dynamic_symtab (section_offsets, objfile)
   str_secsize = bfd_get_section_size_before_reloc (si.str_sect);
   dyninfo_secsize = bfd_get_section_size_before_reloc (si.dyninfo_sect);
   got_secsize = bfd_get_section_size_before_reloc (si.got_sect);
-  sym_secptr = alloca (sym_secsize);
-  str_secptr = alloca (str_secsize);
-  dyninfo_secptr = alloca (dyninfo_secsize);
-  got_secptr = alloca (got_secsize);
+  sym_secptr = xmalloc (sym_secsize);
+  cleanups = make_cleanup (free, sym_secptr);
+  str_secptr = xmalloc (str_secsize);
+  make_cleanup (free, str_secptr);
+  dyninfo_secptr = xmalloc (dyninfo_secsize);
+  make_cleanup (free, dyninfo_secptr);
+  got_secptr = xmalloc (got_secsize);
+  make_cleanup (free, got_secptr);
 
   if (!bfd_get_section_contents (abfd, si.sym_sect, sym_secptr,
 				 (file_ptr) 0, sym_secsize))
@@ -402,7 +391,7 @@ read_alphacoff_dynamic_symtab (section_offsets, objfile)
 		ms_type = mst_text;
 	      else
 		ms_type = mst_file_text;
-	      sym_value += ANOFFSET (section_offsets, SECT_OFF_TEXT);
+	      sym_value += ANOFFSET (section_offsets, SECT_OFF_TEXT (objfile));
 	    }
 	  else if (sym_shndx == SHN_MIPS_DATA)
 	    {
@@ -410,7 +399,7 @@ read_alphacoff_dynamic_symtab (section_offsets, objfile)
 		ms_type = mst_data;
 	      else
 		ms_type = mst_file_data;
-	      sym_value += ANOFFSET (section_offsets, SECT_OFF_DATA);
+	      sym_value += ANOFFSET (section_offsets, SECT_OFF_DATA (objfile));
 	    }
 	  else if (sym_shndx == SHN_MIPS_ACOMMON)
 	    {
@@ -418,7 +407,7 @@ read_alphacoff_dynamic_symtab (section_offsets, objfile)
 		ms_type = mst_bss;
 	      else
 		ms_type = mst_file_bss;
-	      sym_value += ANOFFSET (section_offsets, SECT_OFF_BSS);
+	      sym_value += ANOFFSET (section_offsets, SECT_OFF_BSS (objfile));
 	    }
 	  else if (sym_shndx == SHN_ABS)
 	    {
@@ -432,6 +421,8 @@ read_alphacoff_dynamic_symtab (section_offsets, objfile)
 
       prim_record_minimal_symbol (name, sym_value, ms_type, objfile);
     }
+
+  do_cleanups (cleanups);
 }
 
 /* Initialization */
@@ -448,7 +439,7 @@ static struct sym_fns ecoff_sym_fns =
 };
 
 void
-_initialize_mipsread ()
+_initialize_mipsread (void)
 {
   add_symtab_fns (&ecoff_sym_fns);
 }

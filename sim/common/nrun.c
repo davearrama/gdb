@@ -47,7 +47,7 @@ main (int argc, char **argv)
 {
   char *name;
   char **prog_argv = NULL;
-  struct _bfd *prog_bfd;
+  struct bfd *prog_bfd;
   enum sim_stop reason;
   int sigrc = 0;
   int single_step = 0;
@@ -165,7 +165,8 @@ main (int argc, char **argv)
       
     }
   /* Print any stats the simulator collected.  */
-  sim_info (sd, 0);
+  if (STATE_VERBOSE_P (sd))
+    sim_info (sd, 0);
   
   /* Shutdown the simulator.  */
   sim_close (sd, 0);

@@ -1,5 +1,50 @@
+/* TUI data manipulation routines.
+   Copyright 1998, 1999, 2000, 2001, 2002 Free Software Foundation, Inc.
+   Contributed by Hewlett-Packard Company.
+
+   This file is part of GDB.
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place - Suite 330,
+   Boston, MA 02111-1307, USA.  */
+
 #ifndef TUI_DATA_H
 #define TUI_DATA_H
+
+#if defined (HAVE_NCURSES_H)
+#include <ncurses.h>
+#elif defined (HAVE_CURSES_H)
+#include <curses.h>
+#endif
+
+/* Generic window information */
+     typedef struct _TuiGenWinInfo
+       {
+	 WINDOW *handle;	/* window handle */
+	 TuiWinType type;	/* type of window */
+	 int width;		/* window width */
+	 int height;		/* window height */
+	 TuiPoint origin;	/* origin of window */
+	 OpaquePtr content;	/* content of window */
+	 int contentSize;	/* Size of content (# of elements) */
+	 int contentInUse;	/* Can it be used, or is it already used? */
+	 int viewportHeight;	/* viewport height */
+	 int lastVisibleLine;	/* index of last visible line */
+	 int isVisible;		/* whether the window is visible or not */
+         char* title;          /* Window title to display.  */
+       }
+TuiGenWinInfo, *TuiGenWinInfoPtr;
 
 /* Constant definitions */
 #define DEFAULT_TAB_LEN                8
@@ -26,10 +71,17 @@
 #define MIN_WIN_HEIGHT                 3
 #define MIN_CMD_WIN_HEIGHT             3
 
-#define FILE_PREFIX                    "File: "
-#define PROC_PREFIX                    "Procedure: "
+/* Strings to display in the TUI status line.  */
+#define PROC_PREFIX                    "In: "
 #define LINE_PREFIX                    "Line: "
-#define PC_PREFIX                      "pc: "
+#define PC_PREFIX                      "PC: "
+#define SINGLE_KEY                     "(SingleKey)"
+
+/* Minimum/Maximum length of some fields displayed in the TUI status line.  */
+#define MIN_LINE_WIDTH     4 /* Use at least 4 digits for line numbers.  */
+#define MIN_PROC_WIDTH    12
+#define MAX_TARGET_WIDTH  10
+#define MAX_PID_WIDTH     14
 
 #define TUI_FLOAT_REGS_NAME                  "$FREGS"
 #define TUI_FLOAT_REGS_NAME_LOWER            "$fregs"
@@ -98,7 +150,7 @@ TuiRegisterDisplayType, *TuiRegisterDisplayTypePtr;
 typedef union _TuiLineOrAddress
   {
     int lineNo;
-    Opaque addr;
+    CORE_ADDR addr;
   }
 TuiLineOrAddress, *TuiLineOrAddressPtr;
 
@@ -126,7 +178,7 @@ TuiSourceElement, *TuiSourceElementPtr;
 /* Elements in the data display window content */
 typedef struct _TuiDataElement
   {
-    char *name;
+    const char *name;
     int itemNo;			/* the register number, or data display number */
     TuiDataType type;
     Opaque value;
@@ -151,10 +203,24 @@ typedef struct _TuiLocatorElement
     char fileName[MAX_LOCATOR_ELEMENT_LEN];
     char procName[MAX_LOCATOR_ELEMENT_LEN];
     int lineNo;
-    Opaque addr;
+    CORE_ADDR addr;
   }
 TuiLocatorElement, *TuiLocatorElementPtr;
 
+/* Flags to tell what kind of breakpoint is at current line.  */
+#define TUI_BP_ENABLED      0x01
+#define TUI_BP_DISABLED     0x02
+#define TUI_BP_HIT          0x04
+#define TUI_BP_CONDITIONAL  0x08
+#define TUI_BP_HARDWARE     0x10
+
+/* Position of breakpoint markers in the exec info string.  */
+#define TUI_BP_HIT_POS      0
+#define TUI_BP_BREAK_POS    1
+#define TUI_EXEC_POS        2
+#define TUI_EXECINFO_SIZE   4
+
+typedef char TuiExecInfoContent[TUI_EXECINFO_SIZE];
 
 /* An content element in a window */
 typedef union
@@ -164,7 +230,7 @@ typedef union
     TuiDataElement data;	/* elements of dataWindow */
     TuiCommandElement command;	/* command elements */
     TuiLocatorElement locator;	/* locator elements */
-    char *simpleString;		/* simple char based elements */
+    TuiExecInfoContent simpleString;	/* simple char based elements */
   }
 TuiWhichElement, *TuiWhichElementPtr;
 
@@ -200,6 +266,7 @@ typedef struct _TuiSourceInfo
     TuiGenWinInfoPtr executionInfo;	/* execution information window */
     int horizontalOffset;	/* used for horizontal scroll */
     TuiLineOrAddress startLineOrAddr;
+    char* filename;
   }
 TuiSourceInfo, *TuiSourceInfoPtr;
 
@@ -208,6 +275,7 @@ typedef struct _TuiCommandInfo
   {
     int curLine;		/* The current line position */
     int curch;			/* The current cursor position */
+    int start_line;
   }
 TuiCommandInfo, *TuiCommandInfoPtr;
 
@@ -260,7 +328,6 @@ TuiWinInfo, *TuiWinInfoPtr;
 
 /* Global Data */
 extern TuiWinInfoPtr winList[MAX_MAJOR_WINDOWS];
-extern int tui_version;
 
 /* Macros */
 #define srcWin            winList[SRC_WIN]
@@ -269,64 +336,48 @@ extern int tui_version;
 #define cmdWin            winList[CMD_WIN]
 
 /* Data Manipulation Functions */
-extern void initializeStaticData PARAMS ((void));
-extern TuiGenWinInfoPtr allocGenericWinInfo PARAMS ((void));
-extern TuiWinInfoPtr allocWinInfo PARAMS ((TuiWinType));
-extern void initGenericPart PARAMS ((TuiGenWinInfoPtr));
-extern void initWinInfo PARAMS ((TuiWinInfoPtr));
-extern TuiWinContent allocContent PARAMS ((int, TuiWinType));
-extern int addContentElements
-  PARAMS ((TuiGenWinInfoPtr, int));
-extern void initContentElement
-  PARAMS ((TuiWinElementPtr, TuiWinType));
-extern void freeWindow PARAMS ((TuiWinInfoPtr));
-extern void freeAllWindows PARAMS ((void));
-extern void freeWinContent PARAMS ((TuiGenWinInfoPtr));
-extern void freeDataContent PARAMS ((TuiWinContent, int));
-extern void freeAllSourceWinsContent PARAMS ((void));
-extern void tuiDelWindow PARAMS ((TuiWinInfoPtr));
-extern void tuiDelDataWindows PARAMS ((TuiWinContent, int));
-extern TuiWinInfoPtr winByName PARAMS ((char *));
-extern TuiWinInfoPtr partialWinByName PARAMS ((char *));
-extern char *winName PARAMS ((TuiGenWinInfoPtr));
-extern char *displayableWinContentOf
-  PARAMS ((TuiGenWinInfoPtr, TuiWinElementPtr));
-extern char *displayableWinContentAt
-  PARAMS ((TuiGenWinInfoPtr, int));
-extern int winElementHeight
-  PARAMS ((TuiGenWinInfoPtr, TuiWinElementPtr));
-extern TuiLayoutType currentLayout PARAMS ((void));
-extern void setCurrentLayoutTo PARAMS ((TuiLayoutType));
-extern int termHeight PARAMS ((void));
-extern void setTermHeight PARAMS ((int));
-extern int termWidth PARAMS ((void));
-extern void setTermWidth PARAMS ((int));
-extern int historyLimit PARAMS ((void));
-extern void setHistoryLimit PARAMS ((int));
-extern void setGenWinOrigin PARAMS ((TuiGenWinInfoPtr, int, int));
-extern TuiGenWinInfoPtr locatorWinInfoPtr PARAMS ((void));
-extern TuiGenWinInfoPtr sourceExecInfoWinPtr PARAMS ((void));
-extern TuiGenWinInfoPtr disassemExecInfoWinPtr PARAMS ((void));
-extern char *nullStr PARAMS ((void));
-extern char *blankStr PARAMS ((void));
-extern char *locationStr PARAMS ((void));
-extern char *breakStr PARAMS ((void));
-extern char *breakLocationStr PARAMS ((void));
-extern TuiListPtr sourceWindows PARAMS ((void));
-extern void clearSourceWindows PARAMS ((void));
-extern void clearSourceWindowsDetail PARAMS ((void));
-extern void clearWinDetail PARAMS ((TuiWinInfoPtr winInfo));
-extern void tuiAddToSourceWindows PARAMS ((TuiWinInfoPtr));
-extern int tuiDefaultTabLen PARAMS ((void));
-extern void tuiSetDefaultTabLen PARAMS ((int));
-extern TuiWinInfoPtr tuiWinWithFocus PARAMS ((void));
-extern void tuiSetWinWithFocus PARAMS ((TuiWinInfoPtr));
-extern TuiLayoutDefPtr tuiLayoutDef PARAMS ((void));
-extern int tuiWinResized PARAMS ((void));
-extern void tuiSetWinResizedTo PARAMS ((int));
+extern void initializeStaticData (void);
+extern TuiGenWinInfoPtr allocGenericWinInfo (void);
+extern TuiWinInfoPtr allocWinInfo (TuiWinType);
+extern void initGenericPart (TuiGenWinInfoPtr);
+extern void initWinInfo (TuiWinInfoPtr);
+extern TuiWinContent allocContent (int, TuiWinType);
+extern int addContentElements (TuiGenWinInfoPtr, int);
+extern void initContentElement (TuiWinElementPtr, TuiWinType);
+extern void freeWindow (TuiWinInfoPtr);
+extern void freeWinContent (TuiGenWinInfoPtr);
+extern void freeDataContent (TuiWinContent, int);
+extern void freeAllSourceWinsContent (void);
+extern void tuiDelWindow (TuiWinInfoPtr);
+extern void tuiDelDataWindows (TuiWinContent, int);
+extern TuiWinInfoPtr partialWinByName (char *);
+extern char *winName (TuiGenWinInfoPtr);
+extern TuiLayoutType currentLayout (void);
+extern void setCurrentLayoutTo (TuiLayoutType);
+extern int termHeight (void);
+extern void setTermHeightTo (int);
+extern int termWidth (void);
+extern void setTermWidthTo (int);
+extern void setGenWinOrigin (TuiGenWinInfoPtr, int, int);
+extern TuiGenWinInfoPtr locatorWinInfoPtr (void);
+extern TuiGenWinInfoPtr sourceExecInfoWinPtr (void);
+extern TuiGenWinInfoPtr disassemExecInfoWinPtr (void);
+extern TuiListPtr sourceWindows (void);
+extern void clearSourceWindows (void);
+extern void clearSourceWindowsDetail (void);
+extern void clearWinDetail (TuiWinInfoPtr winInfo);
+extern void tuiAddToSourceWindows (TuiWinInfoPtr);
+extern int tuiDefaultTabLen (void);
+extern void tuiSetDefaultTabLen (int);
+extern TuiWinInfoPtr tuiWinWithFocus (void);
+extern void tuiSetWinWithFocus (TuiWinInfoPtr);
+extern TuiLayoutDefPtr tuiLayoutDef (void);
+extern int tuiWinResized (void);
+extern void tuiSetWinResizedTo (int);
 
-extern TuiWinInfoPtr tuiNextWin PARAMS ((TuiWinInfoPtr));
-extern TuiWinInfoPtr tuiPrevWin PARAMS ((TuiWinInfoPtr));
+extern TuiWinInfoPtr tuiNextWin (TuiWinInfoPtr);
+extern TuiWinInfoPtr tuiPrevWin (TuiWinInfoPtr);
 
+extern void addToSourceWindows (TuiWinInfoPtr winInfo);
 
 #endif /* TUI_DATA_H */
