@@ -1,4 +1,5 @@
-# Copyright (C) 1992, 1994, 1997, 1998 Free Software Foundation, Inc.
+# Copyright 1992, 1994, 1995, 1996, 1997, 1998, 1999, 2000
+# Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -62,6 +63,11 @@ proc initialize {} {
     global decimal
     global srcfile
     global wp_set
+
+    # Disable hardware watchpoints if necessary.
+    if [target_info exists gdb,no_hardware_watchpoints] {
+	gdb_test "set can-use-hw-watchpoints 0" "" ""
+    }
 
     if [gdb_test "break marker1" "Breakpoint 1 at $hex: file .*$srcfile, line $decimal.*" "set breakpoint at marker1" ] { 
       return 0; 
@@ -368,30 +374,8 @@ proc test_stepping {} {
 	gdb_test "break func2 if 0" "Breakpoint.*at.*"
 	gdb_test "p \$func2_breakpoint_number = \$bpnum" " = .*"
 
-	# The problem is that GDB confuses stepping through the call
-	# dummy with hitting the breakpoint at the end of the call dummy.
-	# Will be fixed once all architectures define 
-	# CALL_DUMMY_BREAKPOINT_OFFSET.
-	setup_xfail "*-*-*"
-	# This doesn't occur if the call dummy starts with a call,
-	# because we are out of the dummy by the first time the inferior
-	# stops.
-	clear_xfail "d10v*-*-*"
-	clear_xfail "m68*-*-*"
-	clear_xfail "i*86*-*-*"
-	clear_xfail "vax-*-*"
-	# The following architectures define CALL_DUMMY_BREAKPOINT_OFFSET.
-	clear_xfail "alpha-*-*"
-	clear_xfail "mips*-*-*"
-	clear_xfail "sparc-*-*"
-	clear_xfail "hppa*-*-*bsd*"
-	# It works with the generic inferior function calling code too.
-	clear_xfail "mn10200*-*-*"
-	clear_xfail "mn10300*-*-*"
-	# The following architectures define CALL_DUMMY_HAS_COMPLETED.
-	clear_xfail "hppa*-*-*hpux*"
 	gdb_test "p func1 ()" "= 73" \
-	"calling function with watchpoint enabled"
+	    "calling function with watchpoint enabled"
 
 	# 
 	# "finish" brings us back to main.
@@ -459,9 +443,9 @@ proc test_stepping {} {
 proc test_watchpoint_triggered_in_syscall {} {
     global gdb_prompt
 
-    if [target_info exists gdb,noinferiorio] {
-	verbose "Skipping test_watchpoint_triggered_in_syscall due to noinferiorio"
-	return
+    # These tests won't work without printf support.
+    if [gdb_skip_stdio_test "watchpoints triggered in syscall"] {
+	return;
     }
     # Run until we get to the first marker function.
     set x 0
@@ -640,12 +624,34 @@ proc test_complex_watchpoint {} {
     }
 }
 
+proc test_watchpoint_and_breakpoint {} {
+    global gdb_prompt
+
+    # This is a test for PR gdb/38, which involves setting a
+    # watchpoint right after you've reached a breakpoint.
+
+    if [runto func3] then {
+	gdb_breakpoint [gdb_get_line_number "second x assignment"]
+	gdb_continue_to_breakpoint "second x assignment"
+	gdb_test "watch x" ".*atchpoint \[0-9\]+: x"
+	gdb_test_multiple "next" "next after watch x" {
+	    -re ".*atchpoint \[0-9\]+: x\r\n\r\nOld value = 0\r\nNew value = 1\r\n.*$gdb_prompt $" {
+		pass "next after watch x"
+	    }
+	    -re "\[0-9\]+\[\t \]+y = 1;\r\n$gdb_prompt $" {
+		kfail "gdb/38" "next after watch x"
+	    }
+	}
+    }
+}
+    
 # Start with a fresh gdb.
 
 gdb_exit
 gdb_start
 gdb_reinitialize_dir $srcdir/$subdir
 gdb_load $binfile
+set prev_timeout $timeout
 set timeout 600	
 verbose "Timeout now 600 sec.\n"
 
@@ -790,4 +796,19 @@ if [initialize] then {
         timeout {fail "(timeout) access watches disallowed"}
       }
     }
+
+    # See above.
+    if [istarget "mips-idt-*"] then {
+	gdb_exit
+	gdb_start
+	gdb_reinitialize_dir $srcdir/$subdir
+	gdb_load $binfile
+	initialize
+    }
+
+    test_watchpoint_and_breakpoint
 }
+
+# Restore old timeout
+set timeout $prev_timeout
+verbose "Timeout now $timeout sec.\n"

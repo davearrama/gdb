@@ -1,5 +1,7 @@
 /* Target-dependent code for the Matsushita MN10300 for GDB, the GNU debugger.
-   Copyright 1996, 1997, 1998 Free Software Foundation, Inc.
+
+   Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004 Free
+   Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,17 +23,54 @@
 #include "defs.h"
 #include "frame.h"
 #include "inferior.h"
-#include "obstack.h"
 #include "target.h"
 #include "value.h"
 #include "bfd.h"
 #include "gdb_string.h"
 #include "gdbcore.h"
-#include "symfile.h"
+#include "objfiles.h"
+#include "regcache.h"
+#include "arch-utils.h"
+#include "gdb_assert.h"
+#include "dis-asm.h"
+
+#define D0_REGNUM 0
+#define D2_REGNUM 2
+#define D3_REGNUM 3
+#define A0_REGNUM 4
+#define A2_REGNUM 6
+#define A3_REGNUM 7
+#define MDR_REGNUM 10
+#define PSW_REGNUM 11
+#define LIR_REGNUM 12
+#define LAR_REGNUM 13
+#define MDRQ_REGNUM 14
+#define E0_REGNUM 15
+#define MCRH_REGNUM 26
+#define MCRL_REGNUM 27
+#define MCVF_REGNUM 28
+
+enum movm_register_bits {
+  movm_exother_bit = 0x01,
+  movm_exreg1_bit  = 0x02,
+  movm_exreg0_bit  = 0x04,
+  movm_other_bit   = 0x08,
+  movm_a3_bit      = 0x10,
+  movm_a2_bit      = 0x20,
+  movm_d3_bit      = 0x40,
+  movm_d2_bit      = 0x80
+};
 
 extern void _initialize_mn10300_tdep (void);
-static CORE_ADDR mn10300_analyze_prologue PARAMS ((struct frame_info * fi,
-						   CORE_ADDR pc));
+static CORE_ADDR mn10300_analyze_prologue (struct frame_info *fi,
+					   CORE_ADDR pc);
+
+/* mn10300 private data */
+struct gdbarch_tdep
+{
+  int am33_mode;
+#define AM33_MODE (gdbarch_tdep (current_gdbarch)->am33_mode)
+};
 
 /* Additional info used by the frame */
 
@@ -42,87 +81,80 @@ struct frame_extra_info
   };
 
 
-static char *mn10300_generic_register_names[] =
-{"d0", "d1", "d2", "d3", "a0", "a1", "a2", "a3",
- "sp", "pc", "mdr", "psw", "lir", "lar", "", "",
- "", "", "", "", "", "", "", "",
- "", "", "", "", "", "", "", "fp"};
-
-static char **mn10300_register_names = mn10300_generic_register_names;
-static char *am33_register_names[] =
+static char *
+register_name (int reg, char **regs, long sizeof_regs)
 {
-  "d0", "d1", "d2", "d3", "a0", "a1", "a2", "a3",
-  "sp", "pc", "mdr", "psw", "lir", "lar", "",
-  "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
-  "ssp", "msp", "usp", "mcrh", "mcrl", "mcvf", "", "", ""};
-static int am33_mode;
-
-char *
-mn10300_register_name (i)
-     int i;
-{
-  return mn10300_register_names[i];
+  if (reg < 0 || reg >= sizeof_regs / sizeof (regs[0]))
+    return NULL;
+  else
+    return regs[reg];
 }
 
-CORE_ADDR
-mn10300_saved_pc_after_call (fi)
-     struct frame_info *fi;
+static const char *
+mn10300_generic_register_name (int reg)
+{
+  static char *regs[] =
+  { "d0", "d1", "d2", "d3", "a0", "a1", "a2", "a3",
+    "sp", "pc", "mdr", "psw", "lir", "lar", "", "",
+    "", "", "", "", "", "", "", "",
+    "", "", "", "", "", "", "", "fp"
+  };
+  return register_name (reg, regs, sizeof regs);
+}
+
+
+static const char *
+am33_register_name (int reg)
+{
+  static char *regs[] =
+  { "d0", "d1", "d2", "d3", "a0", "a1", "a2", "a3",
+    "sp", "pc", "mdr", "psw", "lir", "lar", "",
+    "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
+    "ssp", "msp", "usp", "mcrh", "mcrl", "mcvf", "", "", ""
+  };
+  return register_name (reg, regs, sizeof regs);
+}
+  
+static CORE_ADDR
+mn10300_saved_pc_after_call (struct frame_info *fi)
 {
   return read_memory_integer (read_register (SP_REGNUM), 4);
 }
 
-void
-mn10300_extract_return_value (type, regbuf, valbuf)
-     struct type *type;
-     char *regbuf;
-     char *valbuf;
+static void
+mn10300_extract_return_value (struct type *type, char *regbuf, char *valbuf)
 {
   if (TYPE_CODE (type) == TYPE_CODE_PTR)
-    memcpy (valbuf, regbuf + REGISTER_BYTE (4), TYPE_LENGTH (type));
+    memcpy (valbuf, regbuf + DEPRECATED_REGISTER_BYTE (4), TYPE_LENGTH (type));
   else
-    memcpy (valbuf, regbuf + REGISTER_BYTE (0), TYPE_LENGTH (type));
+    memcpy (valbuf, regbuf + DEPRECATED_REGISTER_BYTE (0), TYPE_LENGTH (type));
 }
 
-CORE_ADDR
-mn10300_extract_struct_value_address (regbuf)
-     char *regbuf;
-{
-  return extract_address (regbuf + REGISTER_BYTE (4),
-			  REGISTER_RAW_SIZE (4));
-}
-
-void
-mn10300_store_return_value (type, valbuf)
-     struct type *type;
-     char *valbuf;
+static void
+mn10300_store_return_value (struct type *type, char *valbuf)
 {
   if (TYPE_CODE (type) == TYPE_CODE_PTR)
-    write_register_bytes (REGISTER_BYTE (4), valbuf, TYPE_LENGTH (type));
+    deprecated_write_register_bytes (DEPRECATED_REGISTER_BYTE (4), valbuf,
+				     TYPE_LENGTH (type));
   else
-    write_register_bytes (REGISTER_BYTE (0), valbuf, TYPE_LENGTH (type));
+    deprecated_write_register_bytes (DEPRECATED_REGISTER_BYTE (0), valbuf,
+				     TYPE_LENGTH (type));
 }
 
-static struct frame_info *analyze_dummy_frame PARAMS ((CORE_ADDR, CORE_ADDR));
+static struct frame_info *analyze_dummy_frame (CORE_ADDR, CORE_ADDR);
 static struct frame_info *
-analyze_dummy_frame (pc, frame)
-     CORE_ADDR pc;
-     CORE_ADDR frame;
+analyze_dummy_frame (CORE_ADDR pc, CORE_ADDR frame)
 {
-  static struct frame_info *dummy = NULL;
-  if (dummy == NULL)
-    {
-      dummy = xmalloc (sizeof (struct frame_info));
-      dummy->saved_regs = xmalloc (SIZEOF_FRAME_SAVED_REGS);
-      dummy->extra_info = xmalloc (sizeof (struct frame_extra_info));
-    }
-  dummy->next = NULL;
-  dummy->prev = NULL;
-  dummy->pc = pc;
-  dummy->frame = frame;
-  dummy->extra_info->status = 0;
-  dummy->extra_info->stack_size = 0;
-  memset (dummy->saved_regs, '\000', SIZEOF_FRAME_SAVED_REGS);
-  mn10300_analyze_prologue (dummy, 0);
+  struct cleanup *old_chain = make_cleanup (null_cleanup, NULL);
+  struct frame_info *dummy
+    = deprecated_frame_xmalloc_with_cleanup (SIZEOF_FRAME_SAVED_REGS,
+					     sizeof (struct frame_extra_info));
+  deprecated_update_frame_pc_hack (dummy, pc);
+  deprecated_update_frame_base_hack (dummy, frame);
+  get_frame_extra_info (dummy)->status = 0;
+  get_frame_extra_info (dummy)->stack_size = 0;
+  mn10300_analyze_prologue (dummy, pc);
+  do_cleanups (old_chain);
   return dummy;
 }
 
@@ -134,10 +166,8 @@ analyze_dummy_frame (pc, frame)
 
 
 /* Should call_function allocate stack space for a struct return?  */
-int
-mn10300_use_struct_convention (gcc_p, type)
-     int gcc_p;
-     struct type *type;
+static int
+mn10300_use_struct_convention (int gcc_p, struct type *type)
 {
   return (TYPE_NFIELDS (type) > 1 || TYPE_LENGTH (type) > 8);
 }
@@ -149,10 +179,8 @@ mn10300_use_struct_convention (gcc_p, type)
    so we need a single byte breakpoint.  Matsushita hasn't defined
    one, so we defined it ourselves.  */
 
-unsigned char *
-mn10300_breakpoint_from_pc (bp_addr, bp_size)
-     CORE_ADDR *bp_addr;
-     int *bp_size;
+const static unsigned char *
+mn10300_breakpoint_from_pc (CORE_ADDR *bp_addr, int *bp_size)
 {
   static char breakpoint[] =
   {0xff};
@@ -165,16 +193,14 @@ mn10300_breakpoint_from_pc (bp_addr, bp_size)
    function for mn10300_analyze_prologue. */
 
 static void
-fix_frame_pointer (fi, stack_size)
-     struct frame_info *fi;
-     int stack_size;
+fix_frame_pointer (struct frame_info *fi, int stack_size)
 {
-  if (fi && fi->next == NULL)
+  if (fi && get_next_frame (fi) == NULL)
     {
-      if (fi->extra_info->status & MY_FRAME_IN_SP)
-	fi->frame = read_sp () - stack_size;
-      else if (fi->extra_info->status & MY_FRAME_IN_FP)
-	fi->frame = read_register (A3_REGNUM);
+      if (get_frame_extra_info (fi)->status & MY_FRAME_IN_SP)
+	deprecated_update_frame_base_hack (fi, read_sp () - stack_size);
+      else if (get_frame_extra_info (fi)->status & MY_FRAME_IN_FP)
+	deprecated_update_frame_base_hack (fi, read_register (A3_REGNUM));
     }
 }
 
@@ -183,41 +209,73 @@ fix_frame_pointer (fi, stack_size)
    This is a helper function for mn10300_analyze_prologue.  */
 
 static void
-set_movm_offsets (fi, movm_args)
-     struct frame_info *fi;
-     int movm_args;
+set_movm_offsets (struct frame_info *fi, int movm_args)
 {
   int offset = 0;
 
   if (fi == NULL || movm_args == 0)
     return;
 
-  if (movm_args & 0x10)
+  if (movm_args & movm_other_bit)
     {
-      fi->saved_regs[A3_REGNUM] = fi->frame + offset;
+      /* The `other' bit leaves a blank area of four bytes at the
+         beginning of its block of saved registers, making it 32 bytes
+         long in total.  */
+      deprecated_get_frame_saved_regs (fi)[LAR_REGNUM]    = get_frame_base (fi) + offset + 4;
+      deprecated_get_frame_saved_regs (fi)[LIR_REGNUM]    = get_frame_base (fi) + offset + 8;
+      deprecated_get_frame_saved_regs (fi)[MDR_REGNUM]    = get_frame_base (fi) + offset + 12;
+      deprecated_get_frame_saved_regs (fi)[A0_REGNUM + 1] = get_frame_base (fi) + offset + 16;
+      deprecated_get_frame_saved_regs (fi)[A0_REGNUM]     = get_frame_base (fi) + offset + 20;
+      deprecated_get_frame_saved_regs (fi)[D0_REGNUM + 1] = get_frame_base (fi) + offset + 24;
+      deprecated_get_frame_saved_regs (fi)[D0_REGNUM]     = get_frame_base (fi) + offset + 28;
+      offset += 32;
+    }
+  if (movm_args & movm_a3_bit)
+    {
+      deprecated_get_frame_saved_regs (fi)[A3_REGNUM] = get_frame_base (fi) + offset;
       offset += 4;
     }
-  if (movm_args & 0x20)
+  if (movm_args & movm_a2_bit)
     {
-      fi->saved_regs[A2_REGNUM] = fi->frame + offset;
+      deprecated_get_frame_saved_regs (fi)[A2_REGNUM] = get_frame_base (fi) + offset;
       offset += 4;
     }
-  if (movm_args & 0x40)
+  if (movm_args & movm_d3_bit)
     {
-      fi->saved_regs[D3_REGNUM] = fi->frame + offset;
+      deprecated_get_frame_saved_regs (fi)[D3_REGNUM] = get_frame_base (fi) + offset;
       offset += 4;
     }
-  if (movm_args & 0x80)
+  if (movm_args & movm_d2_bit)
     {
-      fi->saved_regs[D2_REGNUM] = fi->frame + offset;
+      deprecated_get_frame_saved_regs (fi)[D2_REGNUM] = get_frame_base (fi) + offset;
       offset += 4;
     }
-  if (am33_mode && movm_args & 0x02)
+  if (AM33_MODE)
     {
-      fi->saved_regs[E0_REGNUM + 5] = fi->frame + offset;
-      fi->saved_regs[E0_REGNUM + 4] = fi->frame + offset + 4;
-      fi->saved_regs[E0_REGNUM + 3] = fi->frame + offset + 8;
-      fi->saved_regs[E0_REGNUM + 2] = fi->frame + offset + 12;
+      if (movm_args & movm_exother_bit)
+        {
+          deprecated_get_frame_saved_regs (fi)[MCVF_REGNUM]   = get_frame_base (fi) + offset;
+          deprecated_get_frame_saved_regs (fi)[MCRL_REGNUM]   = get_frame_base (fi) + offset + 4;
+          deprecated_get_frame_saved_regs (fi)[MCRH_REGNUM]   = get_frame_base (fi) + offset + 8;
+          deprecated_get_frame_saved_regs (fi)[MDRQ_REGNUM]   = get_frame_base (fi) + offset + 12;
+          deprecated_get_frame_saved_regs (fi)[E0_REGNUM + 1] = get_frame_base (fi) + offset + 16;
+          deprecated_get_frame_saved_regs (fi)[E0_REGNUM + 0] = get_frame_base (fi) + offset + 20;
+          offset += 24;
+        }
+      if (movm_args & movm_exreg1_bit)
+        {
+          deprecated_get_frame_saved_regs (fi)[E0_REGNUM + 7] = get_frame_base (fi) + offset;
+          deprecated_get_frame_saved_regs (fi)[E0_REGNUM + 6] = get_frame_base (fi) + offset + 4;
+          deprecated_get_frame_saved_regs (fi)[E0_REGNUM + 5] = get_frame_base (fi) + offset + 8;
+          deprecated_get_frame_saved_regs (fi)[E0_REGNUM + 4] = get_frame_base (fi) + offset + 12;
+          offset += 16;
+        }
+      if (movm_args & movm_exreg0_bit)
+        {
+          deprecated_get_frame_saved_regs (fi)[E0_REGNUM + 3] = get_frame_base (fi) + offset;
+          deprecated_get_frame_saved_regs (fi)[E0_REGNUM + 2] = get_frame_base (fi) + offset + 4;
+          offset += 8;
+        }
     }
 }
 
@@ -225,16 +283,63 @@ set_movm_offsets (fi, movm_args)
 /* The main purpose of this file is dealing with prologues to extract
    information about stack frames and saved registers.
 
-   For reference here's how prologues look on the mn10300:
+   In gcc/config/mn13000/mn10300.c, the expand_prologue prologue
+   function is pretty readable, and has a nice explanation of how the
+   prologue is generated.  The prologues generated by that code will
+   have the following form (NOTE: the current code doesn't handle all
+   this!):
 
-   With frame pointer:
-   movm [d2,d3,a2,a3],sp
-   mov sp,a3
-   add <size>,sp
+   + If this is an old-style varargs function, then its arguments
+     need to be flushed back to the stack:
+     
+        mov d0,(4,sp)
+        mov d1,(4,sp)
 
-   Without frame pointer:
-   movm [d2,d3,a2,a3],sp (if needed)
-   add <size>,sp
+   + If we use any of the callee-saved registers, save them now.
+     
+        movm [some callee-saved registers],(sp)
+
+   + If we have any floating-point registers to save:
+
+     - Decrement the stack pointer to reserve space for the registers.
+       If the function doesn't need a frame pointer, we may combine
+       this with the adjustment that reserves space for the frame.
+
+        add -SIZE, sp
+
+     - Save the floating-point registers.  We have two possible
+       strategies:
+
+       . Save them at fixed offset from the SP:
+
+        fmov fsN,(OFFSETN,sp)
+        fmov fsM,(OFFSETM,sp)
+        ...
+
+       Note that, if OFFSETN happens to be zero, you'll get the
+       different opcode: fmov fsN,(sp)
+
+       . Or, set a0 to the start of the save area, and then use
+       post-increment addressing to save the FP registers.
+
+        mov sp, a0
+        add SIZE, a0
+        fmov fsN,(a0+)
+        fmov fsM,(a0+)
+        ...
+
+   + If the function needs a frame pointer, we set it here.
+
+        mov sp, a3
+
+   + Now we reserve space for the stack frame proper.  This could be
+     merged into the `add -SIZE, sp' instruction for FP saves up
+     above, unless we needed to set the frame pointer in the previous
+     step, or the frame is so large that allocating the whole thing at
+     once would put the FP register save slots out of reach of the
+     addressing mode (128 bytes).
+      
+        add -SIZE, sp        
 
    One day we might keep the stack pointer constant, that won't
    change the code for prologues, but it will make the frame
@@ -264,16 +369,14 @@ set_movm_offsets (fi, movm_args)
    save instructions.
 
    MY_FRAME_IN_FP: The base of the current frame is in the
-   frame pointer register ($a2).
+   frame pointer register ($a3).
 
    NO_MORE_FRAMES: Set this if the current frame is "start" or
    if the first instruction looks like mov <imm>,sp.  This tells
    frame chain to not bother trying to unwind past this frame.  */
 
 static CORE_ADDR
-mn10300_analyze_prologue (fi, pc)
-     struct frame_info *fi;
-     CORE_ADDR pc;
+mn10300_analyze_prologue (struct frame_info *fi, CORE_ADDR pc)
 {
   CORE_ADDR func_addr, func_end, addr, stop;
   CORE_ADDR stack_size;
@@ -283,8 +386,13 @@ mn10300_analyze_prologue (fi, pc)
   char *name;
 
   /* Use the PC in the frame if it's provided to look up the
-     start of this function.  */
-  pc = (fi ? fi->pc : pc);
+     start of this function.
+
+     Note: kevinb/2003-07-16: We used to do the following here:
+	pc = (fi ? get_frame_pc (fi) : pc);
+     But this is (now) badly broken when called from analyze_dummy_frame().
+  */
+  pc = (pc ? pc : get_frame_pc (fi));
 
   /* Find the start of this function.  */
   status = find_pc_partial_function (pc, &name, &func_addr, &func_end);
@@ -300,13 +408,13 @@ mn10300_analyze_prologue (fi, pc)
   if (strcmp (name, "start") == 0)
     {
       if (fi != NULL)
-	fi->extra_info->status = NO_MORE_FRAMES;
+	get_frame_extra_info (fi)->status = NO_MORE_FRAMES;
       return pc;
     }
 
   /* At the start of a function our frame is in the stack pointer.  */
   if (fi)
-    fi->extra_info->status = MY_FRAME_IN_SP;
+    get_frame_extra_info (fi)->status = MY_FRAME_IN_SP;
 
   /* Get the next two bytes into buf, we need two because rets is a two
      byte insn and the first isn't enough to uniquely identify it.  */
@@ -314,6 +422,9 @@ mn10300_analyze_prologue (fi, pc)
   if (status != 0)
     return pc;
 
+#if 0
+  /* Note: kevinb/2003-07-16: We shouldn't be making these sorts of
+     changes to the frame in prologue examination code.  */
   /* If we're physically on an "rets" instruction, then our frame has
      already been deallocated.  Note this can also be true for retf
      and ret if they specify a size of zero.
@@ -321,22 +432,23 @@ mn10300_analyze_prologue (fi, pc)
      In this case fi->frame is bogus, we need to fix it.  */
   if (fi && buf[0] == 0xf0 && buf[1] == 0xfc)
     {
-      if (fi->next == NULL)
-	fi->frame = read_sp ();
-      return fi->pc;
+      if (get_next_frame (fi) == NULL)
+	deprecated_update_frame_base_hack (fi, read_sp ());
+      return get_frame_pc (fi);
     }
 
   /* Similarly if we're stopped on the first insn of a prologue as our
      frame hasn't been allocated yet.  */
-  if (fi && fi->pc == func_addr)
+  if (fi && get_frame_pc (fi) == func_addr)
     {
-      if (fi->next == NULL)
-	fi->frame = read_sp ();
-      return fi->pc;
+      if (get_next_frame (fi) == NULL)
+	deprecated_update_frame_base_hack (fi, read_sp ());
+      return get_frame_pc (fi);
     }
+#endif
 
   /* Figure out where to stop scanning.  */
-  stop = fi ? fi->pc : func_end;
+  stop = fi ? pc : func_end;
 
   /* Don't walk off the end of the function.  */
   stop = stop > func_end ? func_end : stop;
@@ -352,12 +464,13 @@ mn10300_analyze_prologue (fi, pc)
       return addr;
     }
 
-  /* First see if this insn sets the stack pointer; if so, it's something
-     we won't understand, so quit now.   */
+  /* First see if this insn sets the stack pointer from a register; if
+     so, it's probably the initialization of the stack pointer in _start,
+     so mark this as the bottom-most frame.  */
   if (buf[0] == 0xf2 && (buf[1] & 0xf3) == 0xf0)
     {
       if (fi)
-	fi->extra_info->status = NO_MORE_FRAMES;
+	get_frame_extra_info (fi)->status = NO_MORE_FRAMES;
       return addr;
     }
 
@@ -378,8 +491,8 @@ mn10300_analyze_prologue (fi, pc)
       if (addr >= stop)
 	{
 	  /* Fix fi->frame since it's bogus at this point.  */
-	  if (fi && fi->next == NULL)
-	    fi->frame = read_sp ();
+	  if (fi && get_next_frame (fi) == NULL)
+	    deprecated_update_frame_base_hack (fi, read_sp ());
 
 	  /* Note if/where callee saved registers were saved.  */
 	  set_movm_offsets (fi, movm_args);
@@ -391,8 +504,8 @@ mn10300_analyze_prologue (fi, pc)
       if (status != 0)
 	{
 	  /* Fix fi->frame since it's bogus at this point.  */
-	  if (fi && fi->next == NULL)
-	    fi->frame = read_sp ();
+	  if (fi && get_next_frame (fi) == NULL)
+	    deprecated_update_frame_base_hack (fi, read_sp ());
 
 	  /* Note if/where callee saved registers were saved.  */
 	  set_movm_offsets (fi, movm_args);
@@ -408,8 +521,8 @@ mn10300_analyze_prologue (fi, pc)
       /* The frame pointer is now valid.  */
       if (fi)
 	{
-	  fi->extra_info->status |= MY_FRAME_IN_FP;
-	  fi->extra_info->status &= ~MY_FRAME_IN_SP;
+	  get_frame_extra_info (fi)->status |= MY_FRAME_IN_FP;
+	  get_frame_extra_info (fi)->status &= ~MY_FRAME_IN_SP;
 	}
 
       /* Quit now if we're beyond the stop point.  */
@@ -483,7 +596,7 @@ mn10300_analyze_prologue (fi, pc)
       /* Note the size of the stack in the frame info structure.  */
       stack_size = extract_signed_integer (buf, imm_size);
       if (fi)
-	fi->extra_info->stack_size = stack_size;
+	get_frame_extra_info (fi)->stack_size = stack_size;
 
       /* We just consumed 2 + imm_size bytes.  */
       addr += 2 + imm_size;
@@ -507,6 +620,32 @@ mn10300_analyze_prologue (fi, pc)
   return addr;
 }
 
+
+/* Function: saved_regs_size
+   Return the size in bytes of the register save area, based on the
+   saved_regs array in FI.  */
+static int
+saved_regs_size (struct frame_info *fi)
+{
+  int adjust = 0;
+  int i;
+
+  /* Reserve four bytes for every register saved.  */
+  for (i = 0; i < NUM_REGS; i++)
+    if (deprecated_get_frame_saved_regs (fi)[i])
+      adjust += 4;
+
+  /* If we saved LIR, then it's most likely we used a `movm'
+     instruction with the `other' bit set, in which case the SP is
+     decremented by an extra four bytes, "to simplify calculation
+     of the transfer area", according to the processor manual.  */
+  if (deprecated_get_frame_saved_regs (fi)[LIR_REGNUM])
+    adjust += 4;
+
+  return adjust;
+}
+
+
 /* Function: frame_chain
    Figure out and return the caller's frame pointer given current
    frame_info struct.
@@ -514,18 +653,17 @@ mn10300_analyze_prologue (fi, pc)
    We don't handle dummy frames yet but we would probably just return the
    stack pointer that was in use at the time the function call was made?  */
 
-CORE_ADDR
-mn10300_frame_chain (fi)
-     struct frame_info *fi;
+static CORE_ADDR
+mn10300_frame_chain (struct frame_info *fi)
 {
   struct frame_info *dummy;
   /* Walk through the prologue to determine the stack size,
      location of saved registers, end of the prologue, etc.  */
-  if (fi->extra_info->status == 0)
+  if (get_frame_extra_info (fi)->status == 0)
     mn10300_analyze_prologue (fi, (CORE_ADDR) 0);
 
   /* Quit now if mn10300_analyze_prologue set NO_MORE_FRAMES.  */
-  if (fi->extra_info->status & NO_MORE_FRAMES)
+  if (get_frame_extra_info (fi)->status & NO_MORE_FRAMES)
     return 0;
 
   /* Now that we've analyzed our prologue, determine the frame
@@ -545,86 +683,79 @@ mn10300_frame_chain (fi)
   /* The easiest way to get that info is to analyze our caller's frame.
      So we set up a dummy frame and call mn10300_analyze_prologue to
      find stuff for us.  */
-  dummy = analyze_dummy_frame (FRAME_SAVED_PC (fi), fi->frame);
+  dummy = analyze_dummy_frame (DEPRECATED_FRAME_SAVED_PC (fi), get_frame_base (fi));
 
-  if (dummy->extra_info->status & MY_FRAME_IN_FP)
+  if (get_frame_extra_info (dummy)->status & MY_FRAME_IN_FP)
     {
       /* Our caller has a frame pointer.  So find the frame in $a3 or
          in the stack.  */
-      if (fi->saved_regs[A3_REGNUM])
-	return (read_memory_integer (fi->saved_regs[A3_REGNUM], REGISTER_SIZE));
+      if (deprecated_get_frame_saved_regs (fi)[A3_REGNUM])
+	return (read_memory_integer (deprecated_get_frame_saved_regs (fi)[A3_REGNUM],
+				     DEPRECATED_REGISTER_SIZE));
       else
 	return read_register (A3_REGNUM);
     }
   else
     {
-      int adjust = 0;
-
-      adjust += (fi->saved_regs[D2_REGNUM] ? 4 : 0);
-      adjust += (fi->saved_regs[D3_REGNUM] ? 4 : 0);
-      adjust += (fi->saved_regs[A2_REGNUM] ? 4 : 0);
-      adjust += (fi->saved_regs[A3_REGNUM] ? 4 : 0);
-      if (am33_mode)
-	{
-	  adjust += (fi->saved_regs[E0_REGNUM + 5] ? 4 : 0);
-	  adjust += (fi->saved_regs[E0_REGNUM + 4] ? 4 : 0);
-	  adjust += (fi->saved_regs[E0_REGNUM + 3] ? 4 : 0);
-	  adjust += (fi->saved_regs[E0_REGNUM + 2] ? 4 : 0);
-	}
+      int adjust = saved_regs_size (fi);
 
       /* Our caller does not have a frame pointer.  So his frame starts
          at the base of our frame (fi->frame) + register save space
          + <his size>.  */
-      return fi->frame + adjust + -dummy->extra_info->stack_size;
+      return get_frame_base (fi) + adjust + -get_frame_extra_info (dummy)->stack_size;
     }
 }
 
 /* Function: skip_prologue
    Return the address of the first inst past the prologue of the function.  */
 
-CORE_ADDR
-mn10300_skip_prologue (pc)
-     CORE_ADDR pc;
+static CORE_ADDR
+mn10300_skip_prologue (CORE_ADDR pc)
 {
   /* We used to check the debug symbols, but that can lose if
      we have a null prologue.  */
   return mn10300_analyze_prologue (NULL, pc);
 }
 
+/* generic_pop_current_frame calls this function if the current
+   frame isn't a dummy frame.  */
+static void
+mn10300_pop_frame_regular (struct frame_info *frame)
+{
+  int regnum;
+
+  write_register (PC_REGNUM, DEPRECATED_FRAME_SAVED_PC (frame));
+
+  /* Restore any saved registers.  */
+  for (regnum = 0; regnum < NUM_REGS; regnum++)
+    if (deprecated_get_frame_saved_regs (frame)[regnum] != 0)
+      {
+        ULONGEST value;
+
+        value = read_memory_unsigned_integer (deprecated_get_frame_saved_regs (frame)[regnum],
+                                              DEPRECATED_REGISTER_RAW_SIZE (regnum));
+        write_register (regnum, value);
+      }
+
+  /* Actually cut back the stack.  */
+  write_register (SP_REGNUM, get_frame_base (frame));
+
+  /* Don't we need to set the PC?!?  XXX FIXME.  */
+}
 
 /* Function: pop_frame
    This routine gets called when either the user uses the `return'
    command, or the call dummy breakpoint gets hit.  */
-
-void
-mn10300_pop_frame (frame)
-     struct frame_info *frame;
+static void
+mn10300_pop_frame (void)
 {
-  int regnum;
-
-  if (PC_IN_CALL_DUMMY (frame->pc, frame->frame, frame->frame))
-    generic_pop_dummy_frame ();
+  struct frame_info *frame = get_current_frame ();
+  if (get_frame_type (frame) == DUMMY_FRAME)
+    /* NOTE: cagney/2002-22-23: Does this ever occure?  Surely a dummy
+       frame will have already been poped by the "infrun.c" code.  */
+    deprecated_pop_dummy_frame ();
   else
-    {
-      write_register (PC_REGNUM, FRAME_SAVED_PC (frame));
-
-      /* Restore any saved registers.  */
-      for (regnum = 0; regnum < NUM_REGS; regnum++)
-	if (frame->saved_regs[regnum] != 0)
-	  {
-	    ULONGEST value;
-
-	    value = read_memory_unsigned_integer (frame->saved_regs[regnum],
-						REGISTER_RAW_SIZE (regnum));
-	    write_register (regnum, value);
-	  }
-
-      /* Actually cut back the stack.  */
-      write_register (SP_REGNUM, FRAME_FP (frame));
-
-      /* Don't we need to set the PC?!?  XXX FIXME.  */
-    }
-
+    mn10300_pop_frame_regular (frame);
   /* Throw away any cached frame information.  */
   flush_cached_frames ();
 }
@@ -633,13 +764,9 @@ mn10300_pop_frame (frame)
    Setup arguments for a call to the target.  Arguments go in
    order on the stack.  */
 
-CORE_ADDR
-mn10300_push_arguments (nargs, args, sp, struct_return, struct_addr)
-     int nargs;
-     value_ptr *args;
-     CORE_ADDR sp;
-     unsigned char struct_return;
-     CORE_ADDR struct_addr;
+static CORE_ADDR
+mn10300_push_arguments (int nargs, struct value **args, CORE_ADDR sp,
+			int struct_return, CORE_ADDR struct_addr)
 {
   int argnum = 0;
   int len = 0;
@@ -718,14 +845,12 @@ mn10300_push_arguments (nargs, args, sp, struct_return, struct_addr)
    Set up the return address for the inferior function call.
    Needed for targets where we don't actually execute a JSR/BSR instruction */
 
-CORE_ADDR
-mn10300_push_return_address (pc, sp)
-     CORE_ADDR pc;
-     CORE_ADDR sp;
+static CORE_ADDR
+mn10300_push_return_address (CORE_ADDR pc, CORE_ADDR sp)
 {
   unsigned char buf[4];
 
-  store_unsigned_integer (buf, 4, CALL_DUMMY_ADDRESS ());
+  store_unsigned_integer (buf, 4, entry_point_address ());
   write_memory (sp - 4, buf, 4);
   return sp - 4;
 }
@@ -734,14 +859,11 @@ mn10300_push_return_address (pc, sp)
    Store the structure value return address for an inferior function
    call.  */
 
-CORE_ADDR
-mn10300_store_struct_return (addr, sp)
-     CORE_ADDR addr;
-     CORE_ADDR sp;
+static void
+mn10300_store_struct_return (CORE_ADDR addr, CORE_ADDR sp)
 {
   /* The structure return address is passed as the first argument.  */
   write_register (0, addr);
-  return sp;
 }
 
 /* Function: frame_saved_pc 
@@ -751,25 +873,13 @@ mn10300_store_struct_return (addr, sp)
    instead of RP, because that's where "caller" of the dummy-frame
    will be found.  */
 
-CORE_ADDR
-mn10300_frame_saved_pc (fi)
-     struct frame_info *fi;
+static CORE_ADDR
+mn10300_frame_saved_pc (struct frame_info *fi)
 {
-  int adjust = 0;
+  int adjust = saved_regs_size (fi);
 
-  adjust += (fi->saved_regs[D2_REGNUM] ? 4 : 0);
-  adjust += (fi->saved_regs[D3_REGNUM] ? 4 : 0);
-  adjust += (fi->saved_regs[A2_REGNUM] ? 4 : 0);
-  adjust += (fi->saved_regs[A3_REGNUM] ? 4 : 0);
-  if (am33_mode)
-    {
-      adjust += (fi->saved_regs[E0_REGNUM + 5] ? 4 : 0);
-      adjust += (fi->saved_regs[E0_REGNUM + 4] ? 4 : 0);
-      adjust += (fi->saved_regs[E0_REGNUM + 3] ? 4 : 0);
-      adjust += (fi->saved_regs[E0_REGNUM + 2] ? 4 : 0);
-    }
-
-  return (read_memory_integer (fi->frame + adjust, REGISTER_SIZE));
+  return (read_memory_integer (get_frame_base (fi) + adjust,
+			       DEPRECATED_REGISTER_SIZE));
 }
 
 /* Function: mn10300_init_extra_frame_info
@@ -777,51 +887,57 @@ mn10300_frame_saved_pc (fi)
    registers.  Most of the work is done in mn10300_analyze_prologue().
 
    Note that when we are called for the last frame (currently active frame),
-   that fi->pc and fi->frame will already be setup.  However, fi->frame will
+   that get_frame_pc (fi) and fi->frame will already be setup.  However, fi->frame will
    be valid only if this routine uses FP.  For previous frames, fi-frame will
    always be correct.  mn10300_analyze_prologue will fix fi->frame if
    it's not valid.
 
-   We can be called with the PC in the call dummy under two circumstances.
-   First, during normal backtracing, second, while figuring out the frame
-   pointer just prior to calling the target function (see run_stack_dummy).  */
+   We can be called with the PC in the call dummy under two
+   circumstances.  First, during normal backtracing, second, while
+   figuring out the frame pointer just prior to calling the target
+   function (see call_function_by_hand).  */
 
-void
-mn10300_init_extra_frame_info (fi)
-     struct frame_info *fi;
+static void
+mn10300_init_extra_frame_info (int fromleaf, struct frame_info *fi)
 {
-  if (fi->next)
-    fi->pc = FRAME_SAVED_PC (fi->next);
+  if (get_next_frame (fi))
+    deprecated_update_frame_pc_hack (fi, DEPRECATED_FRAME_SAVED_PC (get_next_frame (fi)));
 
   frame_saved_regs_zalloc (fi);
-  fi->extra_info = (struct frame_extra_info *)
-    frame_obstack_alloc (sizeof (struct frame_extra_info));
+  frame_extra_info_zalloc (fi, sizeof (struct frame_extra_info));
 
-  fi->extra_info->status = 0;
-  fi->extra_info->stack_size = 0;
+  get_frame_extra_info (fi)->status = 0;
+  get_frame_extra_info (fi)->stack_size = 0;
 
   mn10300_analyze_prologue (fi, 0);
 }
+
+
+/* This function's job is handled by init_extra_frame_info.  */
+static void
+mn10300_frame_init_saved_regs (struct frame_info *frame)
+{
+}
+
 
 /* Function: mn10300_virtual_frame_pointer
    Return the register that the function uses for a frame pointer, 
    plus any necessary offset to be applied to the register before
    any frame pointer offsets.  */
 
-void
-mn10300_virtual_frame_pointer (pc, reg, offset)
-     CORE_ADDR pc;
-     long *reg;
-     long *offset;
+static void
+mn10300_virtual_frame_pointer (CORE_ADDR pc,
+			       int *reg,
+			       LONGEST *offset)
 {
   struct frame_info *dummy = analyze_dummy_frame (pc, 0);
   /* Set up a dummy frame_info, Analyze the prolog and fill in the
      extra info.  */
   /* Results will tell us which type of frame it uses.  */
-  if (dummy->extra_info->status & MY_FRAME_IN_SP)
+  if (get_frame_extra_info (dummy)->status & MY_FRAME_IN_SP)
     {
       *reg = SP_REGNUM;
-      *offset = -(dummy->extra_info->stack_size);
+      *offset = -(get_frame_extra_info (dummy)->stack_size);
     }
   else
     {
@@ -830,34 +946,268 @@ mn10300_virtual_frame_pointer (pc, reg, offset)
     }
 }
 
-/* This can be made more generic later.  */
-static void
-set_machine_hook (filename)
-     char *filename;
+static int
+mn10300_reg_struct_has_addr (int gcc_p, struct type *type)
 {
-  int i;
+  return (TYPE_LENGTH (type) > 8);
+}
 
-  if (bfd_get_mach (exec_bfd) == bfd_mach_mn10300
-      || bfd_get_mach (exec_bfd) == 0)
+static struct type *
+mn10300_register_virtual_type (int reg)
+{
+  return builtin_type_int;
+}
+
+static int
+mn10300_register_byte (int reg)
+{
+  return (reg * 4);
+}
+
+static int
+mn10300_register_virtual_size (int reg)
+{
+  return 4;
+}
+
+static int
+mn10300_register_raw_size (int reg)
+{
+  return 4;
+}
+
+/* If DWARF2 is a register number appearing in Dwarf2 debug info, then
+   mn10300_dwarf2_reg_to_regnum (DWARF2) is the corresponding GDB
+   register number.  Why don't Dwarf2 and GDB use the same numbering?
+   Who knows?  But since people have object files lying around with
+   the existing Dwarf2 numbering, and other people have written stubs
+   to work with the existing GDB, neither of them can change.  So we
+   just have to cope.  */
+static int
+mn10300_dwarf2_reg_to_regnum (int dwarf2)
+{
+  /* This table is supposed to be shaped like the REGISTER_NAMES
+     initializer in gcc/config/mn10300/mn10300.h.  Registers which
+     appear in GCC's numbering, but have no counterpart in GDB's
+     world, are marked with a -1.  */
+  static int dwarf2_to_gdb[] = {
+    0,  1,  2,  3,  4,  5,  6,  7, -1, 8,
+    15, 16, 17, 18, 19, 20, 21, 22
+  };
+  int gdb;
+
+  if (dwarf2 < 0
+      || dwarf2 >= (sizeof (dwarf2_to_gdb) / sizeof (dwarf2_to_gdb[0]))
+      || dwarf2_to_gdb[dwarf2] == -1)
+    internal_error (__FILE__, __LINE__,
+                    "bogus register number in debug info: %d", dwarf2);
+
+  return dwarf2_to_gdb[dwarf2];
+}
+
+static void
+mn10300_print_register (const char *name, int regnum, int reg_width)
+{
+  char raw_buffer[MAX_REGISTER_SIZE];
+
+  if (reg_width)
+    printf_filtered ("%*s: ", reg_width, name);
+  else
+    printf_filtered ("%s: ", name);
+
+  /* Get the data */
+  if (!frame_register_read (deprecated_selected_frame, regnum, raw_buffer))
     {
-      mn10300_register_names = mn10300_generic_register_names;
+      printf_filtered ("[invalid]");
+      return;
     }
-
-  am33_mode = 0;
-  if (bfd_get_mach (exec_bfd) == bfd_mach_am33)
+  else
     {
-
-      mn10300_register_names = am33_register_names;
-      am33_mode = 1;
+      int byte;
+      if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
+	{
+	  for (byte = DEPRECATED_REGISTER_RAW_SIZE (regnum) - DEPRECATED_REGISTER_VIRTUAL_SIZE (regnum);
+	       byte < DEPRECATED_REGISTER_RAW_SIZE (regnum);
+	       byte++)
+	    printf_filtered ("%02x", (unsigned char) raw_buffer[byte]);
+	}
+      else
+	{
+	  for (byte = DEPRECATED_REGISTER_VIRTUAL_SIZE (regnum) - 1;
+	       byte >= 0;
+	       byte--)
+	    printf_filtered ("%02x", (unsigned char) raw_buffer[byte]);
+	}
     }
 }
 
+static void
+mn10300_do_registers_info (int regnum, int fpregs)
+{
+  if (regnum >= 0)
+    {
+      const char *name = REGISTER_NAME (regnum);
+      if (name == NULL || name[0] == '\0')
+	error ("Not a valid register for the current processor type");
+      mn10300_print_register (name, regnum, 0);
+      printf_filtered ("\n");
+    }
+  else
+    {
+      /* print registers in an array 4x8 */
+      int r;
+      int reg;
+      const int nr_in_row = 4;
+      const int reg_width = 4;
+      for (r = 0; r < NUM_REGS; r += nr_in_row)
+	{
+	  int c;
+	  int printing = 0;
+	  int padding = 0;
+	  for (c = r; c < r + nr_in_row; c++)
+	    {
+	      const char *name = REGISTER_NAME (c);
+	      if (name != NULL && *name != '\0')
+		{
+		  printing = 1;
+		  while (padding > 0)
+		    {
+		      printf_filtered (" ");
+		      padding--;
+		    }
+		  mn10300_print_register (name, c, reg_width);
+		  printf_filtered (" ");
+		}
+	      else
+		{
+		  padding += (reg_width + 2 + 8 + 1);
+		}
+	    }
+	  if (printing)
+	    printf_filtered ("\n");
+	}
+    }
+}
+
+static CORE_ADDR
+mn10300_read_fp (void)
+{
+  /* That's right, we're using the stack pointer as our frame pointer.  */
+  gdb_assert (SP_REGNUM >= 0);
+  return read_register (SP_REGNUM);
+}
+
+/* Dump out the mn10300 speciic architecture information. */
+
+static void
+mn10300_dump_tdep (struct gdbarch *current_gdbarch, struct ui_file *file)
+{
+  struct gdbarch_tdep *tdep = gdbarch_tdep (current_gdbarch);
+  fprintf_unfiltered (file, "mn10300_dump_tdep: am33_mode = %d\n",
+		      tdep->am33_mode);
+}
+
+static struct gdbarch *
+mn10300_gdbarch_init (struct gdbarch_info info,
+		      struct gdbarch_list *arches)
+{
+  static LONGEST mn10300_call_dummy_words[] = { 0 };
+  struct gdbarch *gdbarch;
+  struct gdbarch_tdep *tdep = NULL;
+  int am33_mode;
+  gdbarch_register_name_ftype *register_name;
+  int mach;
+  int num_regs;
+
+  arches = gdbarch_list_lookup_by_info (arches, &info);
+  if (arches != NULL)
+    return arches->gdbarch;
+  tdep = xmalloc (sizeof (struct gdbarch_tdep));
+  gdbarch = gdbarch_alloc (&info, tdep);
+
+  if (info.bfd_arch_info != NULL
+      && info.bfd_arch_info->arch == bfd_arch_mn10300)
+    mach = info.bfd_arch_info->mach;
+  else
+    mach = 0;
+  switch (mach)
+    {
+    case 0:
+    case bfd_mach_mn10300:
+      am33_mode = 0;
+      register_name = mn10300_generic_register_name;
+      num_regs = 32;
+      break;
+    case bfd_mach_am33:
+      am33_mode = 1;
+      register_name = am33_register_name;
+      num_regs = 32;
+      break;
+    default:
+      internal_error (__FILE__, __LINE__,
+		      "mn10300_gdbarch_init: Unknown mn10300 variant");
+      return NULL; /* keep GCC happy. */
+    }
+
+  /* Registers.  */
+  set_gdbarch_num_regs (gdbarch, num_regs);
+  set_gdbarch_register_name (gdbarch, register_name);
+  set_gdbarch_deprecated_register_size (gdbarch, 4);
+  set_gdbarch_deprecated_register_bytes (gdbarch, num_regs * gdbarch_deprecated_register_size (gdbarch));
+  set_gdbarch_deprecated_max_register_raw_size (gdbarch, 4);
+  set_gdbarch_deprecated_register_raw_size (gdbarch, mn10300_register_raw_size);
+  set_gdbarch_deprecated_register_byte (gdbarch, mn10300_register_byte);
+  set_gdbarch_deprecated_max_register_virtual_size (gdbarch, 4);
+  set_gdbarch_deprecated_register_virtual_size (gdbarch, mn10300_register_virtual_size);
+  set_gdbarch_deprecated_register_virtual_type (gdbarch, mn10300_register_virtual_type);
+  set_gdbarch_dwarf2_reg_to_regnum (gdbarch, mn10300_dwarf2_reg_to_regnum);
+  set_gdbarch_deprecated_do_registers_info (gdbarch, mn10300_do_registers_info);
+  set_gdbarch_sp_regnum (gdbarch, 8);
+  set_gdbarch_pc_regnum (gdbarch, 9);
+  set_gdbarch_deprecated_fp_regnum (gdbarch, 31);
+  set_gdbarch_virtual_frame_pointer (gdbarch, mn10300_virtual_frame_pointer);
+
+  /* Breakpoints.  */
+  set_gdbarch_breakpoint_from_pc (gdbarch, mn10300_breakpoint_from_pc);
+
+  /* Stack unwinding.  */
+  set_gdbarch_inner_than (gdbarch, core_addr_lessthan);
+  set_gdbarch_deprecated_saved_pc_after_call (gdbarch, mn10300_saved_pc_after_call);
+  set_gdbarch_deprecated_init_extra_frame_info (gdbarch, mn10300_init_extra_frame_info);
+  set_gdbarch_deprecated_frame_init_saved_regs (gdbarch, mn10300_frame_init_saved_regs);
+  set_gdbarch_deprecated_frame_chain (gdbarch, mn10300_frame_chain);
+  set_gdbarch_deprecated_frame_saved_pc (gdbarch, mn10300_frame_saved_pc);
+  set_gdbarch_deprecated_extract_return_value (gdbarch, mn10300_extract_return_value);
+  set_gdbarch_deprecated_store_return_value (gdbarch, mn10300_store_return_value);
+  set_gdbarch_deprecated_store_struct_return (gdbarch, mn10300_store_struct_return);
+  set_gdbarch_deprecated_pop_frame (gdbarch, mn10300_pop_frame);
+  set_gdbarch_skip_prologue (gdbarch, mn10300_skip_prologue);
+  /* That's right, we're using the stack pointer as our frame pointer.  */
+  set_gdbarch_deprecated_target_read_fp (gdbarch, mn10300_read_fp);
+
+  /* Calling functions in the inferior from GDB.  */
+  set_gdbarch_deprecated_call_dummy_words (gdbarch, mn10300_call_dummy_words);
+  set_gdbarch_deprecated_sizeof_call_dummy_words (gdbarch, sizeof (mn10300_call_dummy_words));
+  set_gdbarch_deprecated_push_arguments (gdbarch, mn10300_push_arguments);
+  set_gdbarch_deprecated_reg_struct_has_addr
+    (gdbarch, mn10300_reg_struct_has_addr);
+  set_gdbarch_deprecated_push_return_address (gdbarch, mn10300_push_return_address);
+  set_gdbarch_deprecated_save_dummy_frame_tos (gdbarch, generic_save_dummy_frame_tos);
+  set_gdbarch_use_struct_convention (gdbarch, mn10300_use_struct_convention);
+
+  tdep->am33_mode = am33_mode;
+
+  /* Should be using push_dummy_call.  */
+  set_gdbarch_deprecated_dummy_write_sp (gdbarch, deprecated_write_sp);
+
+  set_gdbarch_print_insn (gdbarch, print_insn_mn10300);
+
+  return gdbarch;
+}
+ 
 void
-_initialize_mn10300_tdep ()
+_initialize_mn10300_tdep (void)
 {
 /*  printf("_initialize_mn10300_tdep\n"); */
-
-  tm_print_insn = print_insn_mn10300;
-
-  specify_exec_file_hook (set_machine_hook);
+  gdbarch_register (bfd_arch_mn10300, mn10300_gdbarch_init, mn10300_dump_tdep);
 }

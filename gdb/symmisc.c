@@ -1,5 +1,8 @@
 /* Do various things to symbol tables (other than lookup), for GDB.
-   Copyright 1986, 1987, 1989, 1991-1996, 1998, 2000 Free Software Foundation, Inc.
+
+   Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994,
+   1995, 1996, 1997, 1998, 1999, 2000, 2002, 2003, 2004 Free Software
+   Foundation, Inc.
 
    This file is part of GDB.
 
@@ -26,11 +29,15 @@
 #include "objfiles.h"
 #include "breakpoint.h"
 #include "command.h"
-#include "obstack.h"
+#include "gdb_obstack.h"
 #include "language.h"
 #include "bcache.h"
+#include "block.h"
+#include "gdb_regex.h"
+#include "dictionary.h"
 
 #include "gdb_string.h"
+#include "readline/readline.h"
 
 #ifndef DEV_TTY
 #define DEV_TTY "/dev/tty"
@@ -56,16 +63,16 @@ static void dump_psymtab (struct objfile *, struct partial_symtab *,
 
 static void dump_msymbols (struct objfile *, struct ui_file *);
 
-static void dump_objfile PARAMS ((struct objfile *));
+static void dump_objfile (struct objfile *);
 
-static int block_depth PARAMS ((struct block *));
+static int block_depth (struct block *);
 
 static void print_partial_symbols (struct partial_symbol **, int,
 				   char *, struct ui_file *);
 
-static void free_symtab_block PARAMS ((struct objfile *, struct block *));
+static void free_symtab_block (struct objfile *, struct block *);
 
-void _initialize_symmisc PARAMS ((void));
+void _initialize_symmisc (void);
 
 struct print_symbol_args
   {
@@ -74,27 +81,30 @@ struct print_symbol_args
     struct ui_file *outfile;
   };
 
-static int print_symbol PARAMS ((PTR));
+static int print_symbol (void *);
 
-static void
-free_symtab_block PARAMS ((struct objfile *, struct block *));
+static void free_symtab_block (struct objfile *, struct block *);
 
 
 /* Free a struct block <- B and all the symbols defined in that block.  */
 
+/* FIXME: carlton/2003-04-28: I don't believe this is currently ever
+   used.  */
+
 static void
-free_symtab_block (objfile, b)
-     struct objfile *objfile;
-     struct block *b;
+free_symtab_block (struct objfile *objfile, struct block *b)
 {
-  register int i, n;
-  n = BLOCK_NSYMS (b);
-  for (i = 0; i < n; i++)
+  struct dict_iterator iter;
+  struct symbol *sym;
+
+  ALL_BLOCK_SYMBOLS (b, iter, sym)
     {
-      mfree (objfile->md, SYMBOL_NAME (BLOCK_SYM (b, i)));
-      mfree (objfile->md, (PTR) BLOCK_SYM (b, i));
+      xmfree (objfile->md, DEPRECATED_SYMBOL_NAME (sym));
+      xmfree (objfile->md, sym);
     }
-  mfree (objfile->md, (PTR) b);
+
+  dict_free (BLOCK_DICT (b));
+  xmfree (objfile->md, b);
 }
 
 /* Free all the storage associated with the struct symtab <- S.
@@ -106,11 +116,10 @@ free_symtab_block (objfile, b)
    It is s->free_code that says which alternative to use.  */
 
 void
-free_symtab (s)
-     register struct symtab *s;
+free_symtab (struct symtab *s)
 {
-  register int i, n;
-  register struct blockvector *bv;
+  int i, n;
+  struct blockvector *bv;
 
   switch (s->free_code)
     {
@@ -129,34 +138,34 @@ free_symtab (s)
       for (i = 0; i < n; i++)
 	free_symtab_block (s->objfile, BLOCKVECTOR_BLOCK (bv, i));
       /* Free the blockvector itself.  */
-      mfree (s->objfile->md, (PTR) bv);
+      xmfree (s->objfile->md, bv);
       /* Also free the linetable.  */
 
     case free_linetable:
-      /* Everything will be freed either by our `free_ptr'
+      /* Everything will be freed either by our `free_func'
          or by some other symtab, except for our linetable.
          Free that now.  */
       if (LINETABLE (s))
-	mfree (s->objfile->md, (PTR) LINETABLE (s));
+	xmfree (s->objfile->md, LINETABLE (s));
       break;
     }
 
   /* If there is a single block of memory to free, free it.  */
-  if (s->free_ptr != NULL)
-    mfree (s->objfile->md, s->free_ptr);
+  if (s->free_func != NULL)
+    s->free_func (s);
 
   /* Free source-related stuff */
   if (s->line_charpos != NULL)
-    mfree (s->objfile->md, (PTR) s->line_charpos);
+    xmfree (s->objfile->md, s->line_charpos);
   if (s->fullname != NULL)
-    mfree (s->objfile->md, s->fullname);
+    xmfree (s->objfile->md, s->fullname);
   if (s->debugformat != NULL)
-    mfree (s->objfile->md, s->debugformat);
-  mfree (s->objfile->md, (PTR) s);
+    xmfree (s->objfile->md, s->debugformat);
+  xmfree (s->objfile->md, s);
 }
 
 void
-print_symbol_bcache_statistics ()
+print_symbol_bcache_statistics (void)
 {
   struct objfile *objfile;
 
@@ -164,15 +173,18 @@ print_symbol_bcache_statistics ()
   ALL_OBJFILES (objfile)
   {
     printf_filtered ("Byte cache statistics for '%s':\n", objfile->name);
-    print_bcache_statistics (&objfile->psymbol_cache, "partial symbol cache");
+    print_bcache_statistics (objfile->psymbol_cache, "partial symbol cache");
   }
   immediate_quit--;
 }
 
 void
-print_objfile_statistics ()
+print_objfile_statistics (void)
 {
   struct objfile *objfile;
+  struct symtab *s;
+  struct partial_symtab *ps;
+  int i, linetables, blockvectors;
 
   immediate_quit++;
   ALL_OBJFILES (objfile)
@@ -193,24 +205,43 @@ print_objfile_statistics ()
     if (OBJSTAT (objfile, n_types) > 0)
       printf_filtered ("  Number of \"types\" defined: %d\n",
 		       OBJSTAT (objfile, n_types));
+    i = 0;
+    ALL_OBJFILE_PSYMTABS (objfile, ps)
+      {
+        if (ps->readin == 0)
+          i++;
+      }
+    printf_filtered ("  Number of psym tables (not yet expanded): %d\n", i);
+    i = linetables = blockvectors = 0;
+    ALL_OBJFILE_SYMTABS (objfile, s)
+      {
+        i++;
+        if (s->linetable != NULL)
+          linetables++;
+        if (s->primary == 1)
+          blockvectors++;
+      }
+    printf_filtered ("  Number of symbol tables: %d\n", i);
+    printf_filtered ("  Number of symbol tables with line tables: %d\n", 
+                     linetables);
+    printf_filtered ("  Number of symbol tables with blockvectors: %d\n", 
+                     blockvectors);
+    
     if (OBJSTAT (objfile, sz_strtab) > 0)
       printf_filtered ("  Space used by a.out string tables: %d\n",
 		       OBJSTAT (objfile, sz_strtab));
-    printf_filtered ("  Total memory used for psymbol obstack: %d\n",
-		     obstack_memory_used (&objfile->psymbol_obstack));
+    printf_filtered ("  Total memory used for objfile obstack: %d\n",
+		     obstack_memory_used (&objfile->objfile_obstack));
     printf_filtered ("  Total memory used for psymbol cache: %d\n",
-		     obstack_memory_used (&objfile->psymbol_cache.cache));
-    printf_filtered ("  Total memory used for symbol obstack: %d\n",
-		     obstack_memory_used (&objfile->symbol_obstack));
-    printf_filtered ("  Total memory used for type obstack: %d\n",
-		     obstack_memory_used (&objfile->type_obstack));
+		     bcache_memory_used (objfile->psymbol_cache));
+    printf_filtered ("  Total memory used for macro cache: %d\n",
+		     bcache_memory_used (objfile->macro_cache));
   }
   immediate_quit--;
 }
 
 static void
-dump_objfile (objfile)
-     struct objfile *objfile;
+dump_objfile (struct objfile *objfile)
 {
   struct symtab *symtab;
   struct partial_symtab *psymtab;
@@ -266,9 +297,7 @@ dump_objfile (objfile)
 /* Print minimal symbols from this objfile.  */
 
 static void
-dump_msymbols (objfile, outfile)
-     struct objfile *objfile;
-     struct ui_file *outfile;
+dump_msymbols (struct objfile *objfile, struct ui_file *outfile)
 {
   struct minimal_symbol *msymbol;
   int index;
@@ -281,7 +310,7 @@ dump_msymbols (objfile, outfile)
       return;
     }
   for (index = 0, msymbol = objfile->msymbols;
-       SYMBOL_NAME (msymbol) != NULL; msymbol++, index++)
+       DEPRECATED_SYMBOL_NAME (msymbol) != NULL; msymbol++, index++)
     {
       switch (msymbol->type)
 	{
@@ -318,7 +347,7 @@ dump_msymbols (objfile, outfile)
 	}
       fprintf_filtered (outfile, "[%2d] %c ", index, ms_type);
       print_address_numeric (SYMBOL_VALUE_ADDRESS (msymbol), 1, outfile);
-      fprintf_filtered (outfile, " %s", SYMBOL_NAME (msymbol));
+      fprintf_filtered (outfile, " %s", DEPRECATED_SYMBOL_NAME (msymbol));
       if (SYMBOL_BFD_SECTION (msymbol))
 	fprintf_filtered (outfile, " section %s",
 			  bfd_section_name (objfile->obfd,
@@ -342,10 +371,8 @@ dump_msymbols (objfile, outfile)
 }
 
 static void
-dump_psymtab (objfile, psymtab, outfile)
-     struct objfile *objfile;
-     struct partial_symtab *psymtab;
-     struct ui_file *outfile;
+dump_psymtab (struct objfile *objfile, struct partial_symtab *psymtab,
+	      struct ui_file *outfile)
 {
   int i;
 
@@ -365,7 +392,7 @@ dump_psymtab (objfile, psymtab, outfile)
 			"  Full symtab was read (at ");
       gdb_print_host_address (psymtab->symtab, outfile);
       fprintf_filtered (outfile, " by function at ");
-      gdb_print_host_address ((PTR) psymtab->read_symtab, outfile);
+      gdb_print_host_address (psymtab->read_symtab, outfile);
       fprintf_filtered (outfile, ")\n");
     }
 
@@ -411,16 +438,16 @@ dump_psymtab (objfile, psymtab, outfile)
 }
 
 static void
-dump_symtab (objfile, symtab, outfile)
-     struct objfile *objfile;
-     struct symtab *symtab;
-     struct ui_file *outfile;
+dump_symtab (struct objfile *objfile, struct symtab *symtab,
+	     struct ui_file *outfile)
 {
-  register int i, j;
+  int i;
+  struct dict_iterator iter;
   int len, blen;
-  register struct linetable *l;
+  struct linetable *l;
   struct blockvector *bv;
-  register struct block *b;
+  struct symbol *sym;
+  struct block *b;
   int depth;
 
   fprintf_filtered (outfile, "\nSymtab for file %s\n", symtab->filename);
@@ -464,14 +491,17 @@ dump_symtab (objfile, symtab, outfile)
 	      fprintf_filtered (outfile, " under ");
 	      gdb_print_host_address (BLOCK_SUPERBLOCK (b), outfile);
 	    }
-	  blen = BLOCK_NSYMS (b);
-	  fprintf_filtered (outfile, ", %d syms in ", blen);
+	  /* drow/2002-07-10: We could save the total symbols count
+	     even if we're using a hashtable, but nothing else but this message
+	     wants it.  */
+	  fprintf_filtered (outfile, ", %d syms/buckets in ",
+			    dict_size (BLOCK_DICT (b)));
 	  print_address_numeric (BLOCK_START (b), 1, outfile);
 	  fprintf_filtered (outfile, "..");
 	  print_address_numeric (BLOCK_END (b), 1, outfile);
 	  if (BLOCK_FUNCTION (b))
 	    {
-	      fprintf_filtered (outfile, ", function %s", SYMBOL_NAME (BLOCK_FUNCTION (b)));
+	      fprintf_filtered (outfile, ", function %s", DEPRECATED_SYMBOL_NAME (BLOCK_FUNCTION (b)));
 	      if (SYMBOL_DEMANGLED_NAME (BLOCK_FUNCTION (b)) != NULL)
 		{
 		  fprintf_filtered (outfile, ", %s",
@@ -481,11 +511,12 @@ dump_symtab (objfile, symtab, outfile)
 	  if (BLOCK_GCC_COMPILED (b))
 	    fprintf_filtered (outfile, ", compiled with gcc%d", BLOCK_GCC_COMPILED (b));
 	  fprintf_filtered (outfile, "\n");
-	  /* Now print each symbol in this block */
-	  for (j = 0; j < blen; j++)
+	  /* Now print each symbol in this block (in no particular order, if
+	     we're using a hashtable).  */
+	  ALL_BLOCK_SYMBOLS (b, iter, sym)
 	    {
 	      struct print_symbol_args s;
-	      s.symbol = BLOCK_SYM (b, j);
+	      s.symbol = sym;
 	      s.depth = depth + 1;
 	      s.outfile = outfile;
 	      catch_errors (print_symbol, &s, "Error printing symbol:\n",
@@ -501,9 +532,7 @@ dump_symtab (objfile, symtab, outfile)
 }
 
 void
-maintenance_print_symbols (args, from_tty)
-     char *args;
-     int from_tty;
+maintenance_print_symbols (char *args, int from_tty)
 {
   char **argv;
   struct ui_file *outfile;
@@ -537,7 +566,7 @@ Arguments missing: an output file name and an optional symbol file name");
     }
 
   filename = tilde_expand (filename);
-  make_cleanup (free, filename);
+  make_cleanup (xfree, filename);
 
   outfile = gdb_fopen (filename, FOPEN_WT);
   if (outfile == 0)
@@ -546,7 +575,7 @@ Arguments missing: an output file name and an optional symbol file name");
 
   immediate_quit++;
   ALL_SYMTABS (objfile, s)
-    if (symname == NULL || (STREQ (symname, s->filename)))
+    if (symname == NULL || strcmp (symname, s->filename) == 0)
     dump_symtab (objfile, s, outfile);
   immediate_quit--;
   do_cleanups (cleanups);
@@ -558,17 +587,16 @@ Arguments missing: an output file name and an optional symbol file name");
    1 for success.  */
 
 static int
-print_symbol (args)
-     PTR args;
+print_symbol (void *args)
 {
   struct symbol *symbol = ((struct print_symbol_args *) args)->symbol;
   int depth = ((struct print_symbol_args *) args)->depth;
   struct ui_file *outfile = ((struct print_symbol_args *) args)->outfile;
 
   print_spaces (depth, outfile);
-  if (SYMBOL_NAMESPACE (symbol) == LABEL_NAMESPACE)
+  if (SYMBOL_DOMAIN (symbol) == LABEL_DOMAIN)
     {
-      fprintf_filtered (outfile, "label %s at ", SYMBOL_SOURCE_NAME (symbol));
+      fprintf_filtered (outfile, "label %s at ", SYMBOL_PRINT_NAME (symbol));
       print_address_numeric (SYMBOL_VALUE_ADDRESS (symbol), 1, outfile);
       if (SYMBOL_BFD_SECTION (symbol))
 	fprintf_filtered (outfile, " section %s\n",
@@ -578,7 +606,7 @@ print_symbol (args)
 	fprintf_filtered (outfile, "\n");
       return 1;
     }
-  if (SYMBOL_NAMESPACE (symbol) == STRUCT_NAMESPACE)
+  if (SYMBOL_DOMAIN (symbol) == STRUCT_DOMAIN)
     {
       if (TYPE_TAG_NAME (SYMBOL_TYPE (symbol)))
 	{
@@ -591,7 +619,7 @@ print_symbol (args)
 			  ? "enum"
 		     : (TYPE_CODE (SYMBOL_TYPE (symbol)) == TYPE_CODE_STRUCT
 			? "struct" : "union")),
-			    SYMBOL_NAME (symbol));
+			    DEPRECATED_SYMBOL_NAME (symbol));
 	  LA_PRINT_TYPE (SYMBOL_TYPE (symbol), "", outfile, 1, depth);
 	}
       fprintf_filtered (outfile, ";\n");
@@ -603,14 +631,14 @@ print_symbol (args)
       if (SYMBOL_TYPE (symbol))
 	{
 	  /* Print details of types, except for enums where it's clutter.  */
-	  LA_PRINT_TYPE (SYMBOL_TYPE (symbol), SYMBOL_SOURCE_NAME (symbol),
+	  LA_PRINT_TYPE (SYMBOL_TYPE (symbol), SYMBOL_PRINT_NAME (symbol),
 			 outfile,
 			 TYPE_CODE (SYMBOL_TYPE (symbol)) != TYPE_CODE_ENUM,
 			 depth);
 	  fprintf_filtered (outfile, "; ");
 	}
       else
-	fprintf_filtered (outfile, "%s ", SYMBOL_SOURCE_NAME (symbol));
+	fprintf_filtered (outfile, "%s ", SYMBOL_PRINT_NAME (symbol));
 
       switch (SYMBOL_CLASS (symbol))
 	{
@@ -720,6 +748,11 @@ print_symbol (args)
 			       SYMBOL_BFD_SECTION (symbol)));
 	  break;
 
+	case LOC_COMPUTED:
+	case LOC_COMPUTED_ARG:
+	  fprintf_filtered (outfile, "computed at runtime");
+	  break;
+
 	case LOC_UNRESOLVED:
 	  fprintf_filtered (outfile, "unresolved");
 	  break;
@@ -739,9 +772,7 @@ print_symbol (args)
 }
 
 void
-maintenance_print_psymbols (args, from_tty)
-     char *args;
-     int from_tty;
+maintenance_print_psymbols (char *args, int from_tty)
 {
   char **argv;
   struct ui_file *outfile;
@@ -774,7 +805,7 @@ maintenance_print_psymbols (args, from_tty)
     }
 
   filename = tilde_expand (filename);
-  make_cleanup (free, filename);
+  make_cleanup (xfree, filename);
 
   outfile = gdb_fopen (filename, FOPEN_WT);
   if (outfile == 0)
@@ -783,44 +814,41 @@ maintenance_print_psymbols (args, from_tty)
 
   immediate_quit++;
   ALL_PSYMTABS (objfile, ps)
-    if (symname == NULL || (STREQ (symname, ps->filename)))
+    if (symname == NULL || strcmp (symname, ps->filename) == 0)
     dump_psymtab (objfile, ps, outfile);
   immediate_quit--;
   do_cleanups (cleanups);
 }
 
 static void
-print_partial_symbols (p, count, what, outfile)
-     struct partial_symbol **p;
-     int count;
-     char *what;
-     struct ui_file *outfile;
+print_partial_symbols (struct partial_symbol **p, int count, char *what,
+		       struct ui_file *outfile)
 {
   fprintf_filtered (outfile, "  %s partial symbols:\n", what);
   while (count-- > 0)
     {
-      fprintf_filtered (outfile, "    `%s'", SYMBOL_NAME (*p));
+      fprintf_filtered (outfile, "    `%s'", DEPRECATED_SYMBOL_NAME (*p));
       if (SYMBOL_DEMANGLED_NAME (*p) != NULL)
 	{
 	  fprintf_filtered (outfile, "  `%s'", SYMBOL_DEMANGLED_NAME (*p));
 	}
       fputs_filtered (", ", outfile);
-      switch (SYMBOL_NAMESPACE (*p))
+      switch (SYMBOL_DOMAIN (*p))
 	{
-	case UNDEF_NAMESPACE:
-	  fputs_filtered ("undefined namespace, ", outfile);
+	case UNDEF_DOMAIN:
+	  fputs_filtered ("undefined domain, ", outfile);
 	  break;
-	case VAR_NAMESPACE:
+	case VAR_DOMAIN:
 	  /* This is the usual thing -- don't print it */
 	  break;
-	case STRUCT_NAMESPACE:
-	  fputs_filtered ("struct namespace, ", outfile);
+	case STRUCT_DOMAIN:
+	  fputs_filtered ("struct domain, ", outfile);
 	  break;
-	case LABEL_NAMESPACE:
-	  fputs_filtered ("label namespace, ", outfile);
+	case LABEL_DOMAIN:
+	  fputs_filtered ("label domain, ", outfile);
 	  break;
 	default:
-	  fputs_filtered ("<invalid namespace>, ", outfile);
+	  fputs_filtered ("<invalid domain>, ", outfile);
 	  break;
 	}
       switch (SYMBOL_CLASS (*p))
@@ -876,6 +904,10 @@ print_partial_symbols (p, count, what, outfile)
 	case LOC_OPTIMIZED_OUT:
 	  fputs_filtered ("optimized out", outfile);
 	  break;
+	case LOC_COMPUTED:
+	case LOC_COMPUTED_ARG:
+	  fputs_filtered ("computed at runtime", outfile);
+	  break;
 	default:
 	  fputs_filtered ("<invalid location>", outfile);
 	  break;
@@ -888,9 +920,7 @@ print_partial_symbols (p, count, what, outfile)
 }
 
 void
-maintenance_print_msymbols (args, from_tty)
-     char *args;
-     int from_tty;
+maintenance_print_msymbols (char *args, int from_tty)
 {
   char **argv;
   struct ui_file *outfile;
@@ -922,7 +952,7 @@ maintenance_print_msymbols (args, from_tty)
     }
 
   filename = tilde_expand (filename);
-  make_cleanup (free, filename);
+  make_cleanup (xfree, filename);
 
   outfile = gdb_fopen (filename, FOPEN_WT);
   if (outfile == 0)
@@ -931,7 +961,7 @@ maintenance_print_msymbols (args, from_tty)
 
   immediate_quit++;
   ALL_OBJFILES (objfile)
-    if (symname == NULL || (STREQ (symname, objfile->name)))
+    if (symname == NULL || strcmp (symname, objfile->name) == 0)
     dump_msymbols (objfile, outfile);
   immediate_quit--;
   fprintf_filtered (outfile, "\n\n");
@@ -939,9 +969,7 @@ maintenance_print_msymbols (args, from_tty)
 }
 
 void
-maintenance_print_objfiles (ignore, from_tty)
-     char *ignore;
-     int from_tty;
+maintenance_print_objfiles (char *ignore, int from_tty)
 {
   struct objfile *objfile;
 
@@ -953,20 +981,157 @@ maintenance_print_objfiles (ignore, from_tty)
   immediate_quit--;
 }
 
+
+/* List all the symbol tables whose names match REGEXP (optional).  */
+void
+maintenance_info_symtabs (char *regexp, int from_tty)
+{
+  struct objfile *objfile;
+
+  if (regexp)
+    re_comp (regexp);
+
+  ALL_OBJFILES (objfile)
+    {
+      struct symtab *symtab;
+      
+      /* We don't want to print anything for this objfile until we
+         actually find a symtab whose name matches.  */
+      int printed_objfile_start = 0;
+
+      ALL_OBJFILE_SYMTABS (objfile, symtab)
+        if (! regexp
+            || re_exec (symtab->filename))
+          {
+            if (! printed_objfile_start)
+              {
+                printf_filtered ("{ objfile %s ", objfile->name);
+                wrap_here ("  ");
+                printf_filtered ("((struct objfile *) %p)\n", objfile);
+                printed_objfile_start = 1;
+              }
+
+            printf_filtered ("  { symtab %s ", symtab->filename);
+            wrap_here ("    ");
+            printf_filtered ("((struct symtab *) %p)\n", symtab);
+            printf_filtered ("    dirname %s\n",
+                             symtab->dirname ? symtab->dirname : "(null)");
+            printf_filtered ("    fullname %s\n",
+                             symtab->fullname ? symtab->fullname : "(null)");
+            printf_filtered ("    blockvector ((struct blockvector *) %p)%s\n",
+                             symtab->blockvector,
+                             symtab->primary ? " (primary)" : "");
+            printf_filtered ("    debugformat %s\n", symtab->debugformat);
+            printf_filtered ("  }\n");
+          }
+
+      if (printed_objfile_start)
+        printf_filtered ("}\n");
+    }
+}
+
+
+/* List all the partial symbol tables whose names match REGEXP (optional).  */
+void
+maintenance_info_psymtabs (char *regexp, int from_tty)
+{
+  struct objfile *objfile;
+
+  if (regexp)
+    re_comp (regexp);
+
+  ALL_OBJFILES (objfile)
+    {
+      struct partial_symtab *psymtab;
+
+      /* We don't want to print anything for this objfile until we
+         actually find a symtab whose name matches.  */
+      int printed_objfile_start = 0;
+
+      ALL_OBJFILE_PSYMTABS (objfile, psymtab)
+        if (! regexp
+            || re_exec (psymtab->filename))
+          {
+            if (! printed_objfile_start)
+              {
+                printf_filtered ("{ objfile %s ", objfile->name);
+                wrap_here ("  ");
+                printf_filtered ("((struct objfile *) %p)\n", objfile);
+                printed_objfile_start = 1;
+              }
+
+            printf_filtered ("  { psymtab %s ", psymtab->filename);
+            wrap_here ("    ");
+            printf_filtered ("((struct partial_symtab *) %p)\n", psymtab);
+            printf_filtered ("    readin %s\n",
+                             psymtab->readin ? "yes" : "no");
+            printf_filtered ("    fullname %s\n",
+                             psymtab->fullname ? psymtab->fullname : "(null)");
+            printf_filtered ("    text addresses ");
+            print_address_numeric (psymtab->textlow, 1, gdb_stdout);
+            printf_filtered (" -- ");
+            print_address_numeric (psymtab->texthigh, 1, gdb_stdout);
+            printf_filtered ("\n");
+            printf_filtered ("    globals ");
+            if (psymtab->n_global_syms)
+              {
+                printf_filtered ("(* (struct partial_symbol **) %p @ %d)\n",
+                                 (psymtab->objfile->global_psymbols.list
+                                  + psymtab->globals_offset),
+                                 psymtab->n_global_syms);
+              }
+            else
+              printf_filtered ("(none)\n");
+            printf_filtered ("    statics ");
+            if (psymtab->n_static_syms)
+              {
+                printf_filtered ("(* (struct partial_symbol **) %p @ %d)\n",
+                                 (psymtab->objfile->static_psymbols.list
+                                  + psymtab->statics_offset),
+                                 psymtab->n_static_syms);
+              }
+            else
+              printf_filtered ("(none)\n");
+            printf_filtered ("    dependencies ");
+            if (psymtab->number_of_dependencies)
+              {
+                int i;
+
+                printf_filtered ("{\n");
+                for (i = 0; i < psymtab->number_of_dependencies; i++)
+                  {
+                    struct partial_symtab *dep = psymtab->dependencies[i];
+
+                    /* Note the string concatenation there --- no comma.  */
+                    printf_filtered ("      psymtab %s "
+                                     "((struct partial_symtab *) %p)\n",
+                                     dep->filename, dep);
+                  }
+                printf_filtered ("    }\n");
+              }
+            else
+              printf_filtered ("(none)\n");
+            printf_filtered ("  }\n");
+          }
+
+      if (printed_objfile_start)
+        printf_filtered ("}\n");
+    }
+}
+
+
 /* Check consistency of psymtabs and symtabs.  */
 
 void
-maintenance_check_symtabs (ignore, from_tty)
-     char *ignore;
-     int from_tty;
+maintenance_check_symtabs (char *ignore, int from_tty)
 {
-  register struct symbol *sym;
-  register struct partial_symbol **psym;
-  register struct symtab *s = NULL;
-  register struct partial_symtab *ps;
+  struct symbol *sym;
+  struct partial_symbol **psym;
+  struct symtab *s = NULL;
+  struct partial_symtab *ps;
   struct blockvector *bv;
-  register struct objfile *objfile;
-  register struct block *b;
+  struct objfile *objfile;
+  struct block *b;
   int length;
 
   ALL_PSYMTABS (objfile, ps)
@@ -980,12 +1145,12 @@ maintenance_check_symtabs (ignore, from_tty)
     length = ps->n_static_syms;
     while (length--)
       {
-	sym = lookup_block_symbol (b, SYMBOL_NAME (*psym),
-				   SYMBOL_NAMESPACE (*psym));
+	sym = lookup_block_symbol (b, DEPRECATED_SYMBOL_NAME (*psym),
+				   NULL, SYMBOL_DOMAIN (*psym));
 	if (!sym)
 	  {
 	    printf_filtered ("Static symbol `");
-	    puts_filtered (SYMBOL_NAME (*psym));
+	    puts_filtered (DEPRECATED_SYMBOL_NAME (*psym));
 	    printf_filtered ("' only found in ");
 	    puts_filtered (ps->filename);
 	    printf_filtered (" psymtab\n");
@@ -997,12 +1162,12 @@ maintenance_check_symtabs (ignore, from_tty)
     length = ps->n_global_syms;
     while (length--)
       {
-	sym = lookup_block_symbol (b, SYMBOL_NAME (*psym),
-				   SYMBOL_NAMESPACE (*psym));
+	sym = lookup_block_symbol (b, DEPRECATED_SYMBOL_NAME (*psym),
+				   NULL, SYMBOL_DOMAIN (*psym));
 	if (!sym)
 	  {
 	    printf_filtered ("Global symbol `");
-	    puts_filtered (SYMBOL_NAME (*psym));
+	    puts_filtered (DEPRECATED_SYMBOL_NAME (*psym));
 	    printf_filtered ("' only found in ");
 	    puts_filtered (ps->filename);
 	    printf_filtered (" psymtab\n");
@@ -1043,10 +1208,9 @@ maintenance_check_symtabs (ignore, from_tty)
 /* Return the nexting depth of a block within other blocks in its symtab.  */
 
 static int
-block_depth (block)
-     struct block *block;
+block_depth (struct block *block)
 {
-  register int i = 0;
+  int i = 0;
   while ((block = BLOCK_SUPERBLOCK (block)) != NULL)
     {
       i++;
@@ -1060,9 +1224,8 @@ block_depth (block)
    be freed in free_objfile().  */
 
 void
-extend_psymbol_list (listp, objfile)
-     register struct psymbol_allocation_list *listp;
-     struct objfile *objfile;
+extend_psymbol_list (struct psymbol_allocation_list *listp,
+		     struct objfile *objfile)
 {
   int new_size;
   if (listp->size == 0)
@@ -1087,7 +1250,7 @@ extend_psymbol_list (listp, objfile)
 
 /* Do early runtime initializations. */
 void
-_initialize_symmisc ()
+_initialize_symmisc (void)
 {
   std_in = stdin;
   std_out = stdout;

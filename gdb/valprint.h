@@ -18,6 +18,8 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
+#ifndef VALPRINT_H
+#define VALPRINT_H
 
 extern int prettyprint_arrays;	/* Controls pretty printing of arrays.  */
 extern int prettyprint_structs;	/* Controls pretty printing of structures */
@@ -30,6 +32,17 @@ extern int objectprint;		/* Controls looking up an object's derived type
 				   using what we find in its vtables.  */
 
 extern unsigned int print_max;	/* Max # of chars for strings/vectors */
+
+/* Flag to low-level print routines that this value is being printed
+   in an epoch window.  We'd like to pass this as a parameter, but
+   every routine would need to take it.  Perhaps we can encapsulate
+   this in the I/O stream once we have GNU stdio. */
+extern int inspect_it;
+
+/* Print repeat counts if there are more than this many repetitions of an
+   element in an array.  Referenced by the low level language dependent
+   print routines. */
+extern unsigned int repeat_count_threshold;
 
 extern int output_format;
 
@@ -50,3 +63,10 @@ extern void print_octal_chars (struct ui_file *, unsigned char *,
 
 extern void print_decimal_chars (struct ui_file *, unsigned char *,
 				 unsigned int);
+
+extern void print_hex_chars (struct ui_file *, unsigned char *,
+			     unsigned int);
+
+extern void print_char_chars (struct ui_file *, unsigned char *,
+			      unsigned int);
+#endif
