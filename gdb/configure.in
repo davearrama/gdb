@@ -54,7 +54,6 @@ changequote(,)dnl
 dnl
 changequote([,])dnl
 
-AC_PROG_AWK
 AC_PROG_INSTALL
 AC_CHECK_TOOL(AR, ar)
 AC_CHECK_TOOL(RANLIB, ranlib, :)
@@ -70,12 +69,12 @@ AC_CHECK_HEADERS(ctype.h curses.h endian.h link.h \
 	memory.h objlist.h ptrace.h sgtty.h stddef.h stdlib.h \
 	string.h sys/procfs.h sys/ptrace.h sys/reg.h \
 	term.h termio.h termios.h unistd.h wait.h sys/wait.h \
-	wchar.h wctype.h asm/debugreg.h sys/debugreg.h sys/select.h)
+	wchar.h wctype.h asm/debugreg.h sys/debugreg.h)
 AC_HEADER_STAT
 
 AC_C_CONST
 
-AC_CHECK_FUNCS(setpgid sbrk sigaction isascii bzero bcopy btowc poll)
+AC_CHECK_FUNCS(setpgid sbrk sigaction isascii bzero bcopy btowc)
 AC_FUNC_ALLOCA
 
 BFD_NEED_DECLARATION(malloc)
@@ -83,7 +82,6 @@ BFD_NEED_DECLARATION(realloc)
 BFD_NEED_DECLARATION(free)
 BFD_NEED_DECLARATION(strerror)
 BFD_NEED_DECLARATION(strdup)
-BFD_NEED_DECLARATION(strstr)
 
 
 # The following save_state_t checkery is only necessary for HPUX 
@@ -411,23 +409,7 @@ if test x$want_mmalloc = xtrue; then
    MMALLOC='../mmalloc/libmmalloc.a'
 fi
 
-
-# In the Cygwin environment, we need some additional flags.
-AC_CACHE_CHECK([for cygwin], gdb_cv_os_cygwin,
-[AC_EGREP_CPP(lose, [
-#if defined (__CYGWIN__) || defined (__CYGWIN32__)
-lose
-#endif],[gdb_cv_os_cygwin=yes],[gdb_cv_os_cygwin=no])])
-
-DLLTOOL=${DLLTOOL-dlltool}
-WINDRES=${WINDRES-windres}
-AC_SUBST(DLLTOOL)
-AC_SUBST(WINDRES)
-
 dnl Figure out which term library to use.
-if test x$gdb_host = xgo32; then
-  TERM_LIB=
-else
 if test x$gdb_cv_os_cygwin = xyes; then
   TERM_LIB='`if test -r ../libtermcap/libtermcap.a; then echo ../libtermcap/libtermcap.a; else echo -ltermcap; fi`'
 else
@@ -444,52 +426,10 @@ else
     AC_MSG_ERROR(Could not find a term library, e.g. termcap or termlib!)
   fi
 fi
-fi
 AC_SUBST(TERM_LIB)
-
-# libreadline needs libuser32.a in a cygwin environment
-WIN32LIBS=
-if test x$gdb_cv_os_cygwin = xyes; then
-    WIN32LIBS="-luser32"
-fi
-AC_SUBST(WIN32LIBS)
 
 
 AC_PATH_X
-
- 
-# Unlike the sim directory, whether a simulator is linked is controlled by 
-# presence of a SIM= and a SIM_OBS= definition in the target '.mt' file.  
-# This code just checks for a few cases where we'd like to ignore those
-# definitions, even when they're present in the '.mt' file.  These cases
-# are when --disable-sim is specified, or if the simulator directory is
-# not part of the soruce tree.
-#
-AC_ARG_ENABLE(sim,
-[  --enable-sim            Link gdb with simulator],
-[echo "enable_sim = $enable_sim";
- echo "enableval = ${enableval}";
- case "${enableval}" in
-  yes) ignore_sim=false ;;
-  no)  ignore_sim=true ;;
-  *)   ignore_sim=false ;;
- esac],
-[ignore_sim=false])
-
-if test ! -d "${srcdir}/../sim"; then
-  ignore_sim=true
-fi
-
-if test "${ignore_sim}" = "true"; then
-    IGNORE_SIM="SIM="
-    IGNORE_SIM_OBS="SIM_OBS="
-else
-    IGNORE_SIM=""
-    IGNORE_SIM_OBS=""
-    AC_DEFINE(WITH_SIM)
-fi
-AC_SUBST(IGNORE_SIM)
-AC_SUBST(IGNORE_SIM_OBS)
 
 AC_SUBST(ENABLE_CFLAGS)
 
