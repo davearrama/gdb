@@ -1,11 +1,7 @@
-2002-03-05  Paul Koning  <pkoning@equallogic.com>
+2002-04-07  Andrew Cagney  <ac131313@redhat.com>
 
-	* pdp11-opc.c: Fix "mark" operand type.  Fix operand types
-	for float opcodes that take float operands.  Add alternate
-	names (xxxD vs. xxxF) for float opcodes.
-	* pdp11-dis.c (print_operand): Clean up formatting for mode 67.
-	(print_foperand): New function to handle float opcode operands.
-	(print_insn_pdp11): Use print_foperand to disassemble float ops.
+	Import 2002-03-11 Chris Demetriou <cgd@broadcom.com>
+	* mips-dis.c (is_newabi): Fix ABI decoding.
 
 2002-02-27  Nick Clifton  <nickc@cambridge.redhat.com>
 
