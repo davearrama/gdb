@@ -46,13 +46,13 @@
 
 #include <string.h>
 #include <ctype.h>
+#include <readline/readline.h>
 #include "defs.h"
 #include "command.h"
 #include "symtab.h"
 #include "breakpoint.h"
 #include "frame.h"
 #include "cli/cli-cmds.h"
-#include "top.h"
 
 #include "tui.h"
 #include "tuiData.h"
@@ -63,6 +63,11 @@
 #include "tuiSource.h"
 #include "tuiSourceWin.h"
 #include "tuiDataWin.h"
+
+/*******************************
+** External Declarations
+********************************/
+extern void init_page_info ();
 
 /*******************************
 ** Static Local Decls
@@ -392,21 +397,36 @@ Usage: w <#lines>\n");
   add_show_from_set (c, &tui_showlist);
 }
 
-/* Update gdb's knowledge of the terminal size.  */
-void
-tui_update_gdb_sizes ()
-{
-  char cmd[50];
-  extern int screenheight, screenwidth;		/* in readline */
 
-  /* Set to TUI command window dimension or use readline values.  */
-  sprintf (cmd, "set width %d",
-           tui_active ? cmdWin->generic.width : screenwidth);
-  execute_command (cmd, 0);
-  sprintf (cmd, "set height %d",
-           tui_active ? cmdWin->generic.height : screenheight);
-  execute_command (cmd, 0);
-}
+/*
+   ** tuiClearWinFocusFrom
+   **        Clear the logical focus from winInfo
+ */
+void
+tuiClearWinFocusFrom (TuiWinInfoPtr winInfo)
+{
+  if (m_winPtrNotNull (winInfo))
+    {
+      if (winInfo->generic.type != CMD_WIN)
+	unhighlightWin (winInfo);
+      tuiSetWinWithFocus ((TuiWinInfoPtr) NULL);
+    }
+
+  return;
+}				/* tuiClearWinFocusFrom */
+
+
+/*
+   ** tuiClearWinFocus().
+   **        Clear the window that has focus.
+ */
+void
+tuiClearWinFocus (void)
+{
+  tuiClearWinFocusFrom (tuiWinWithFocus ());
+
+  return;
+}				/* tuiClearWinFocus */
 
 
 /*
@@ -588,6 +608,9 @@ tuiRefreshAll (void)
 	    {
 	    case SRC_WIN:
 	    case DISASSEM_WIN:
+	      tuiClearWin (&winList[type]->generic);
+	      if (winList[type]->detail.sourceInfo.hasLocator)
+		tuiClearLocatorDisplay ();
 	      tuiShowSourceContent (winList[type]);
 	      checkAndDisplayHighlightIfNeeded (winList[type]);
 	      tuiEraseExecInfoContent (winList[type]);
@@ -601,8 +624,11 @@ tuiRefreshAll (void)
 	    }
 	}
     }
+  tuiClearLocatorDisplay ();
   tuiShowLocatorContent ();
-}
+
+  return;
+}				/* tuiRefreshAll */
 
 
 /*
@@ -614,8 +640,9 @@ void
 tuiResizeAll (void)
 {
   int heightDiff, widthDiff;
-  extern int screenheight, screenwidth;		/* in readline */
+  int screenheight, screenwidth;
 
+  rl_get_screen_size (&screenheight, &screenwidth);
   widthDiff = screenwidth - termWidth ();
   heightDiff = screenheight - termHeight ();
   if (heightDiff || widthDiff)
@@ -625,12 +652,12 @@ tuiResizeAll (void)
       TuiWinInfoPtr firstWin, secondWin;
       TuiGenWinInfoPtr locator = locatorWinInfoPtr ();
       TuiWinType winType;
-      int newHeight, splitDiff, cmdSplitDiff, numWinsDisplayed = 2;
+      int i, newHeight, splitDiff, cmdSplitDiff, numWinsDisplayed = 2;
 
       /* turn keypad off while we resize */
       if (winWithFocus != cmdWin)
 	keypad (cmdWin->generic.handle, FALSE);
-      tui_update_gdb_sizes ();
+      init_page_info ();
       setTermHeightTo (screenheight);
       setTermWidthTo (screenwidth);
       if (curLayout == SRC_DISASSEM_COMMAND ||
@@ -1051,7 +1078,7 @@ The window name specified must be valid and visible.\n");
 			warning ("Invalid window height specified.\n%s",
 				 WIN_HEIGHT_USAGE);
 		      else
-                        tui_update_gdb_sizes ();
+			init_page_info ();
 		    }
 		  else
 		    warning ("Invalid window height specified.\n%s",
@@ -1143,7 +1170,7 @@ _tuiAdjustWinHeights (TuiWinInfoPtr primaryWinInfo, int newHeight)
       status = TUI_SUCCESS;
       if (newHeight != primaryWinInfo->generic.height)
 	{
-	  int diff;
+	  int i, diff;
 	  TuiWinInfoPtr winInfo;
 	  TuiGenWinInfoPtr locator = locatorWinInfoPtr ();
 	  TuiLayoutType curLayout = currentLayout ();
@@ -1291,6 +1318,7 @@ static void
 _makeInvisibleAndSetNewHeight (TuiWinInfoPtr winInfo, int height)
 {
   int i;
+  struct symtab *s;
   TuiGenWinInfoPtr genWinInfo;
 
 
@@ -1339,7 +1367,9 @@ _makeInvisibleAndSetNewHeight (TuiWinInfoPtr winInfo, int height)
     default:
       break;
     }
-}
+
+  return;
+}				/* _makeInvisibleAndSetNewHeight */
 
 
 /*
@@ -1351,6 +1381,7 @@ _makeInvisibleAndSetNewHeight (TuiWinInfoPtr winInfo, int height)
 static void
 _makeVisibleWithNewHeight (TuiWinInfoPtr winInfo)
 {
+  int i;
   struct symtab *s;
 
   m_beVisible (&winInfo->generic);
@@ -1392,6 +1423,7 @@ _makeVisibleWithNewHeight (TuiWinInfoPtr winInfo)
       if (m_hasLocator (winInfo))
 	{
 	  m_beVisible (locatorWinInfoPtr ());
+	  tuiClearLocatorDisplay ();
 	  tuiShowLocatorContent ();
 	}
       break;
@@ -1420,7 +1452,7 @@ _newHeightOk (TuiWinInfoPtr primaryWinInfo, int newHeight)
 
   if (ok)
     {
-      int diff;
+      int diff, curHeight;
       TuiLayoutType curLayout = currentLayout ();
 
       diff = (newHeight - primaryWinInfo->generic.height) * (-1);
