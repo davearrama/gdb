@@ -1,6 +1,6 @@
 2005-03-08  Daniel Jacobowitz  <dan@codesourcery.com>
 
-	* configure.in: Bump version to 2.16.90.
+	* configure.in: Bump version to 2.15.96.
 	* configure: Regenerated.
 
 2005-03-07  Jakub Jelinek  <jakub@redhat.com>
