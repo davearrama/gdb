@@ -215,6 +215,16 @@ void inheritance1 (void)
 
   // ????? = 11;  (g_D.A::a = 11; is ambiguous)
   // ????? = 12;  (g_D.A::x = 12; is ambiguous)
+/* djb 6-3-2000
+
+	This should take care of it. Rather than try to initialize using an ambiguous
+	construct, use 2 unambiguous ones for each. Since the ambiguous a/x member is
+	coming from C, and B, initialize D's C::a, and B::a, and D's C::x and B::x.
+ */
+  g_D.C::a = 15;
+  g_D.C::x = 12;
+  g_D.B::a = 11;
+  g_D.B::x = 12;
   g_D.B::b = 13;
   g_D.B::x = 14;
   // ????? = 15;
@@ -258,6 +268,14 @@ void inheritance1 (void)
 
   inheritance2 ();	
 }
+
+// ======================== static member functions =====================
+
+class Static {
+public:
+  static void ii(int, int);
+};
+void Static::ii (int, int) { }
 
 // ======================== virtual base classes=========================
 
@@ -383,13 +401,6 @@ class Bar : public Base1, public Foo {
   Bar (int i, int j, int k) : Base1 (10*k), Foo (i, j) { z = k; }
 };
 
-class ClassWithEnum {
-public:
-  enum PrivEnum { red, green, blue, yellow = 42 };
-  PrivEnum priv_enum;
-  int x;
-};
-
 int Foo::operator! () { return !x; }
 
 int Foo::times (int y) { return x * y; }
@@ -400,6 +411,41 @@ Foo::operator int() { return x; }
 
 Foo foo(10, 11);
 Bar bar(20, 21, 22);
+
+class ClassWithEnum {
+public:
+  enum PrivEnum { red, green, blue, yellow = 42 };
+  PrivEnum priv_enum;
+  int x;
+};
+
+void enums2 (void)
+{
+}
+
+/* classes.exp relies on statement order in this function for testing
+   enumeration fields.  */
+
+void enums1 ()
+{
+  ClassWithEnum obj_with_enum;
+  obj_with_enum.priv_enum = ClassWithEnum::red;
+  obj_with_enum.x = 0;
+  enums2 ();
+  obj_with_enum.priv_enum = ClassWithEnum::green;
+}
+
+class ClassParam {
+public:
+  int Aptr_a (A *a) { return a->a; }
+  int Aptr_x (A *a) { return a->x; }
+  int Aref_a (A &a) { return a.a; }
+  int Aref_x (A &a) { return a.x; }
+  int Aval_a (A a) { return a.a; }
+  int Aval_x (A a) { return a.x; }
+};
+
+ClassParam class_param;
 
 class Contains_static_instance
 {
@@ -488,6 +534,18 @@ void dummy()
   v_bool_array[1] = v_bool;
 }
 
+void use_methods ()
+{
+  /* Refer to methods so that they don't get optimized away. */
+  int i;
+  i = class_param.Aptr_a (&g_A);
+  i = class_param.Aptr_x (&g_A);
+  i = class_param.Aref_a (g_A);
+  i = class_param.Aref_x (g_A);
+  i = class_param.Aval_a (g_A);
+  i = class_param.Aval_x (g_A);
+}
+
 
 int
 main()
@@ -499,6 +557,7 @@ main()
   dummy();
   inheritance1 ();
   inheritance3 ();
+  enums1 ();
   register_class ();
 
   /* FIXME: pmi gets optimized out.  Need to do some more computation with
@@ -509,11 +568,7 @@ main()
   /* Make sure the AIX linker doesn't remove the variable.  */
   v_tagless.one = 5;
 
-  /* Class with enumeration inside it */ 
-  ClassWithEnum obj_with_enum;
-  obj_with_enum.priv_enum = ClassWithEnum::red;
-  obj_with_enum.x = 0;
-  obj_with_enum.priv_enum = ClassWithEnum::green;
+  use_methods ();
 
   return foo.*pmi;
 }
