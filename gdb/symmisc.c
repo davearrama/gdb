@@ -1,5 +1,8 @@
 /* Do various things to symbol tables (other than lookup), for GDB.
-   Copyright 1986, 1987, 1989, 1991-1996, 1998, 2000 Free Software Foundation, Inc.
+
+   Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994,
+   1995, 1996, 1997, 1998, 1999, 2000, 2002 Free Software Foundation,
+   Inc.
 
    This file is part of GDB.
 
@@ -26,7 +29,7 @@
 #include "objfiles.h"
 #include "breakpoint.h"
 #include "command.h"
-#include "obstack.h"
+#include "gdb_obstack.h"
 #include "language.h"
 #include "bcache.h"
 
@@ -56,16 +59,16 @@ static void dump_psymtab (struct objfile *, struct partial_symtab *,
 
 static void dump_msymbols (struct objfile *, struct ui_file *);
 
-static void dump_objfile PARAMS ((struct objfile *));
+static void dump_objfile (struct objfile *);
 
-static int block_depth PARAMS ((struct block *));
+static int block_depth (struct block *);
 
 static void print_partial_symbols (struct partial_symbol **, int,
 				   char *, struct ui_file *);
 
-static void free_symtab_block PARAMS ((struct objfile *, struct block *));
+static void free_symtab_block (struct objfile *, struct block *);
 
-void _initialize_symmisc PARAMS ((void));
+void _initialize_symmisc (void);
 
 struct print_symbol_args
   {
@@ -74,27 +77,30 @@ struct print_symbol_args
     struct ui_file *outfile;
   };
 
-static int print_symbol PARAMS ((PTR));
+static int print_symbol (PTR);
 
-static void
-free_symtab_block PARAMS ((struct objfile *, struct block *));
+static void free_symtab_block (struct objfile *, struct block *);
 
 
 /* Free a struct block <- B and all the symbols defined in that block.  */
 
 static void
-free_symtab_block (objfile, b)
-     struct objfile *objfile;
-     struct block *b;
+free_symtab_block (struct objfile *objfile, struct block *b)
 {
   register int i, n;
-  n = BLOCK_NSYMS (b);
+  struct symbol *sym, *next_sym;
+
+  n = BLOCK_BUCKETS (b);
   for (i = 0; i < n; i++)
     {
-      mfree (objfile->md, SYMBOL_NAME (BLOCK_SYM (b, i)));
-      mfree (objfile->md, (PTR) BLOCK_SYM (b, i));
+      for (sym = BLOCK_BUCKET (b, i); sym; sym = next_sym)
+	{
+	  next_sym = sym->hash_next;
+	  xmfree (objfile->md, SYMBOL_NAME (sym));
+	  xmfree (objfile->md, (PTR) sym);
+	}
     }
-  mfree (objfile->md, (PTR) b);
+  xmfree (objfile->md, (PTR) b);
 }
 
 /* Free all the storage associated with the struct symtab <- S.
@@ -106,8 +112,7 @@ free_symtab_block (objfile, b)
    It is s->free_code that says which alternative to use.  */
 
 void
-free_symtab (s)
-     register struct symtab *s;
+free_symtab (register struct symtab *s)
 {
   register int i, n;
   register struct blockvector *bv;
@@ -129,34 +134,34 @@ free_symtab (s)
       for (i = 0; i < n; i++)
 	free_symtab_block (s->objfile, BLOCKVECTOR_BLOCK (bv, i));
       /* Free the blockvector itself.  */
-      mfree (s->objfile->md, (PTR) bv);
+      xmfree (s->objfile->md, (PTR) bv);
       /* Also free the linetable.  */
 
     case free_linetable:
-      /* Everything will be freed either by our `free_ptr'
+      /* Everything will be freed either by our `free_func'
          or by some other symtab, except for our linetable.
          Free that now.  */
       if (LINETABLE (s))
-	mfree (s->objfile->md, (PTR) LINETABLE (s));
+	xmfree (s->objfile->md, (PTR) LINETABLE (s));
       break;
     }
 
-  /* If there is a single block of memory to free, free it.  */
-  if (s->free_ptr != NULL)
-    mfree (s->objfile->md, s->free_ptr);
+  /* If there is other memory to free, free it.  */
+  if (s->free_func != NULL)
+    s->free_func (s);
 
   /* Free source-related stuff */
   if (s->line_charpos != NULL)
-    mfree (s->objfile->md, (PTR) s->line_charpos);
+    xmfree (s->objfile->md, (PTR) s->line_charpos);
   if (s->fullname != NULL)
-    mfree (s->objfile->md, s->fullname);
+    xmfree (s->objfile->md, s->fullname);
   if (s->debugformat != NULL)
-    mfree (s->objfile->md, s->debugformat);
-  mfree (s->objfile->md, (PTR) s);
+    xmfree (s->objfile->md, s->debugformat);
+  xmfree (s->objfile->md, (PTR) s);
 }
 
 void
-print_symbol_bcache_statistics ()
+print_symbol_bcache_statistics (void)
 {
   struct objfile *objfile;
 
@@ -164,13 +169,13 @@ print_symbol_bcache_statistics ()
   ALL_OBJFILES (objfile)
   {
     printf_filtered ("Byte cache statistics for '%s':\n", objfile->name);
-    print_bcache_statistics (&objfile->psymbol_cache, "partial symbol cache");
+    print_bcache_statistics (objfile->psymbol_cache, "partial symbol cache");
   }
   immediate_quit--;
 }
 
 void
-print_objfile_statistics ()
+print_objfile_statistics (void)
 {
   struct objfile *objfile;
 
@@ -199,7 +204,9 @@ print_objfile_statistics ()
     printf_filtered ("  Total memory used for psymbol obstack: %d\n",
 		     obstack_memory_used (&objfile->psymbol_obstack));
     printf_filtered ("  Total memory used for psymbol cache: %d\n",
-		     obstack_memory_used (&objfile->psymbol_cache.cache));
+		     bcache_memory_used (objfile->psymbol_cache));
+    printf_filtered ("  Total memory used for macro cache: %d\n",
+		     bcache_memory_used (objfile->macro_cache));
     printf_filtered ("  Total memory used for symbol obstack: %d\n",
 		     obstack_memory_used (&objfile->symbol_obstack));
     printf_filtered ("  Total memory used for type obstack: %d\n",
@@ -209,8 +216,7 @@ print_objfile_statistics ()
 }
 
 static void
-dump_objfile (objfile)
-     struct objfile *objfile;
+dump_objfile (struct objfile *objfile)
 {
   struct symtab *symtab;
   struct partial_symtab *psymtab;
@@ -266,9 +272,7 @@ dump_objfile (objfile)
 /* Print minimal symbols from this objfile.  */
 
 static void
-dump_msymbols (objfile, outfile)
-     struct objfile *objfile;
-     struct ui_file *outfile;
+dump_msymbols (struct objfile *objfile, struct ui_file *outfile)
 {
   struct minimal_symbol *msymbol;
   int index;
@@ -342,10 +346,8 @@ dump_msymbols (objfile, outfile)
 }
 
 static void
-dump_psymtab (objfile, psymtab, outfile)
-     struct objfile *objfile;
-     struct partial_symtab *psymtab;
-     struct ui_file *outfile;
+dump_psymtab (struct objfile *objfile, struct partial_symtab *psymtab,
+	      struct ui_file *outfile)
 {
   int i;
 
@@ -411,15 +413,14 @@ dump_psymtab (objfile, psymtab, outfile)
 }
 
 static void
-dump_symtab (objfile, symtab, outfile)
-     struct objfile *objfile;
-     struct symtab *symtab;
-     struct ui_file *outfile;
+dump_symtab (struct objfile *objfile, struct symtab *symtab,
+	     struct ui_file *outfile)
 {
   register int i, j;
   int len, blen;
   register struct linetable *l;
   struct blockvector *bv;
+  struct symbol *sym;
   register struct block *b;
   int depth;
 
@@ -464,8 +465,14 @@ dump_symtab (objfile, symtab, outfile)
 	      fprintf_filtered (outfile, " under ");
 	      gdb_print_host_address (BLOCK_SUPERBLOCK (b), outfile);
 	    }
-	  blen = BLOCK_NSYMS (b);
-	  fprintf_filtered (outfile, ", %d syms in ", blen);
+	  /* drow/2002-07-10: We could save the total symbols count
+	     even if we're using a hashtable, but nothing else but this message
+	     wants it.  */
+	  blen = BLOCK_BUCKETS (b);
+	  if (BLOCK_HASHTABLE (b))
+	    fprintf_filtered (outfile, ", %d buckets in ", blen);
+	  else
+	    fprintf_filtered (outfile, ", %d syms in ", blen);
 	  print_address_numeric (BLOCK_START (b), 1, outfile);
 	  fprintf_filtered (outfile, "..");
 	  print_address_numeric (BLOCK_END (b), 1, outfile);
@@ -481,11 +488,12 @@ dump_symtab (objfile, symtab, outfile)
 	  if (BLOCK_GCC_COMPILED (b))
 	    fprintf_filtered (outfile, ", compiled with gcc%d", BLOCK_GCC_COMPILED (b));
 	  fprintf_filtered (outfile, "\n");
-	  /* Now print each symbol in this block */
-	  for (j = 0; j < blen; j++)
+	  /* Now print each symbol in this block (in no particular order, if
+	     we're using a hashtable).  */
+	  ALL_BLOCK_SYMBOLS (b, j, sym)
 	    {
 	      struct print_symbol_args s;
-	      s.symbol = BLOCK_SYM (b, j);
+	      s.symbol = sym;
 	      s.depth = depth + 1;
 	      s.outfile = outfile;
 	      catch_errors (print_symbol, &s, "Error printing symbol:\n",
@@ -501,9 +509,7 @@ dump_symtab (objfile, symtab, outfile)
 }
 
 void
-maintenance_print_symbols (args, from_tty)
-     char *args;
-     int from_tty;
+maintenance_print_symbols (char *args, int from_tty)
 {
   char **argv;
   struct ui_file *outfile;
@@ -537,7 +543,7 @@ Arguments missing: an output file name and an optional symbol file name");
     }
 
   filename = tilde_expand (filename);
-  make_cleanup (free, filename);
+  make_cleanup (xfree, filename);
 
   outfile = gdb_fopen (filename, FOPEN_WT);
   if (outfile == 0)
@@ -558,8 +564,7 @@ Arguments missing: an output file name and an optional symbol file name");
    1 for success.  */
 
 static int
-print_symbol (args)
-     PTR args;
+print_symbol (PTR args)
 {
   struct symbol *symbol = ((struct print_symbol_args *) args)->symbol;
   int depth = ((struct print_symbol_args *) args)->depth;
@@ -739,9 +744,7 @@ print_symbol (args)
 }
 
 void
-maintenance_print_psymbols (args, from_tty)
-     char *args;
-     int from_tty;
+maintenance_print_psymbols (char *args, int from_tty)
 {
   char **argv;
   struct ui_file *outfile;
@@ -774,7 +777,7 @@ maintenance_print_psymbols (args, from_tty)
     }
 
   filename = tilde_expand (filename);
-  make_cleanup (free, filename);
+  make_cleanup (xfree, filename);
 
   outfile = gdb_fopen (filename, FOPEN_WT);
   if (outfile == 0)
@@ -790,11 +793,8 @@ maintenance_print_psymbols (args, from_tty)
 }
 
 static void
-print_partial_symbols (p, count, what, outfile)
-     struct partial_symbol **p;
-     int count;
-     char *what;
-     struct ui_file *outfile;
+print_partial_symbols (struct partial_symbol **p, int count, char *what,
+		       struct ui_file *outfile)
 {
   fprintf_filtered (outfile, "  %s partial symbols:\n", what);
   while (count-- > 0)
@@ -888,9 +888,7 @@ print_partial_symbols (p, count, what, outfile)
 }
 
 void
-maintenance_print_msymbols (args, from_tty)
-     char *args;
-     int from_tty;
+maintenance_print_msymbols (char *args, int from_tty)
 {
   char **argv;
   struct ui_file *outfile;
@@ -922,7 +920,7 @@ maintenance_print_msymbols (args, from_tty)
     }
 
   filename = tilde_expand (filename);
-  make_cleanup (free, filename);
+  make_cleanup (xfree, filename);
 
   outfile = gdb_fopen (filename, FOPEN_WT);
   if (outfile == 0)
@@ -939,9 +937,7 @@ maintenance_print_msymbols (args, from_tty)
 }
 
 void
-maintenance_print_objfiles (ignore, from_tty)
-     char *ignore;
-     int from_tty;
+maintenance_print_objfiles (char *ignore, int from_tty)
 {
   struct objfile *objfile;
 
@@ -956,9 +952,7 @@ maintenance_print_objfiles (ignore, from_tty)
 /* Check consistency of psymtabs and symtabs.  */
 
 void
-maintenance_check_symtabs (ignore, from_tty)
-     char *ignore;
-     int from_tty;
+maintenance_check_symtabs (char *ignore, int from_tty)
 {
   register struct symbol *sym;
   register struct partial_symbol **psym;
@@ -981,7 +975,7 @@ maintenance_check_symtabs (ignore, from_tty)
     while (length--)
       {
 	sym = lookup_block_symbol (b, SYMBOL_NAME (*psym),
-				   SYMBOL_NAMESPACE (*psym));
+				   NULL, SYMBOL_NAMESPACE (*psym));
 	if (!sym)
 	  {
 	    printf_filtered ("Static symbol `");
@@ -998,7 +992,7 @@ maintenance_check_symtabs (ignore, from_tty)
     while (length--)
       {
 	sym = lookup_block_symbol (b, SYMBOL_NAME (*psym),
-				   SYMBOL_NAMESPACE (*psym));
+				   NULL, SYMBOL_NAMESPACE (*psym));
 	if (!sym)
 	  {
 	    printf_filtered ("Global symbol `");
@@ -1043,8 +1037,7 @@ maintenance_check_symtabs (ignore, from_tty)
 /* Return the nexting depth of a block within other blocks in its symtab.  */
 
 static int
-block_depth (block)
-     struct block *block;
+block_depth (struct block *block)
 {
   register int i = 0;
   while ((block = BLOCK_SUPERBLOCK (block)) != NULL)
@@ -1060,9 +1053,8 @@ block_depth (block)
    be freed in free_objfile().  */
 
 void
-extend_psymbol_list (listp, objfile)
-     register struct psymbol_allocation_list *listp;
-     struct objfile *objfile;
+extend_psymbol_list (register struct psymbol_allocation_list *listp,
+		     struct objfile *objfile)
 {
   int new_size;
   if (listp->size == 0)
@@ -1087,7 +1079,7 @@ extend_psymbol_list (listp, objfile)
 
 /* Do early runtime initializations. */
 void
-_initialize_symmisc ()
+_initialize_symmisc (void)
 {
   std_in = stdin;
   std_out = stdout;

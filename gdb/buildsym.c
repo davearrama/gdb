@@ -1,5 +1,6 @@
 /* Support routines for building symbol tables in GDB's internal format.
-   Copyright 1986-2000 Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995,
+   1996, 1997, 1998, 1999, 2000, 2001, 2002 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -27,14 +28,20 @@
 
 #include "defs.h"
 #include "bfd.h"
-#include "obstack.h"
+#include "gdb_obstack.h"
 #include "symtab.h"
 #include "symfile.h"		/* Needed for "struct complaint" */
 #include "objfiles.h"
 #include "gdbtypes.h"
 #include "complaints.h"
 #include "gdb_string.h"
-
+#include "expression.h"		/* For "enum exp_opcode" used by... */
+#include "language.h"		/* For "local_hex_string" */
+#include "bcache.h"
+#include "filenames.h"		/* For DOSish file names */
+#include "macrotab.h"
+#include "demangle.h"		/* Needed by SYMBOL_INIT_DEMANGLED_NAME.  */
+#include "dictionary.h"
 /* Ask buildsym.h to define the vars it normally declares `extern'.  */
 #define	EXTERN
 /**/
@@ -81,10 +88,24 @@ struct complaint innerblock_anon_complaint =
 {"inner block (0x%lx-0x%lx) not inside outer block (0x%lx-0x%lx)", 0, 0};
 
 struct complaint blockvector_complaint =
-{"block at 0x%lx out of order", 0, 0};
+{"block at %s out of order", 0, 0};
 
 /* maintain the lists of symbols and blocks */
 
+/* Add a pending list to free_pendings. */
+void
+add_free_pendings (struct pending *list)
+{
+  register struct pending *link = list;
+
+  if (list)
+    {
+      while (link->next) link = link->next;
+      link->next = free_pendings;
+      free_pendings = list;
+    }
+}
+      
 /* Add a symbol to one of the lists of symbols.  */
 
 void
@@ -155,7 +176,7 @@ really_free_pendings (PTR dummy)
   for (next = free_pendings; next; next = next1)
     {
       next1 = next->next;
-      free ((void *) next);
+      xfree ((void *) next);
     }
   free_pendings = NULL;
 
@@ -164,16 +185,19 @@ really_free_pendings (PTR dummy)
   for (next = file_symbols; next != NULL; next = next1)
     {
       next1 = next->next;
-      free ((void *) next);
+      xfree ((void *) next);
     }
   file_symbols = NULL;
 
   for (next = global_symbols; next != NULL; next = next1)
     {
       next1 = next->next;
-      free ((void *) next);
+      xfree ((void *) next);
     }
   global_symbols = NULL;
+
+  if (pending_macros)
+    free_macro_table (pending_macros);
 }
 
 /* This function is called to discard any pending blocks. */
@@ -189,7 +213,7 @@ free_pending_blocks (void)
   for (bnext = pending_blocks; bnext; bnext = bnext1)
     {
       bnext1 = bnext->next;
-      free ((void *) bnext);
+      xfree ((void *) bnext);
     }
 #endif
   pending_blocks = NULL;
@@ -221,17 +245,49 @@ finish_block (struct symbol *symbol, struct pending **listhead,
       /* EMPTY */ ;
     }
 
-  block = (struct block *) obstack_alloc (&objfile->symbol_obstack,
-	    (sizeof (struct block) + ((i - 1) * sizeof (struct symbol *))));
-
   /* Copy the symbols into the block.  */
 
-  BLOCK_NSYMS (block) = i;
-  for (next = *listhead; next; next = next->next)
+  if (symbol)
     {
-      for (j = next->nsyms - 1; j >= 0; j--)
+      block = (struct block *) 
+	obstack_alloc (&objfile->symbol_obstack,
+		       (sizeof (struct block) + 
+			((i - 1) * sizeof (struct symbol *))));
+      BLOCK_NSYMS (block) = i;
+      for (next = *listhead; next; next = next->next)
+	for (j = next->nsyms - 1; j >= 0; j--)
+	  {
+	    BLOCK_SYM (block, --i) = next->symbol[j];
+	  }
+    }
+  else
+    {
+      int htab_size = BLOCK_HASHTABLE_SIZE (i);
+
+      block = (struct block *) 
+	obstack_alloc (&objfile->symbol_obstack,
+		       (sizeof (struct block) + 
+			((htab_size - 1) * sizeof (struct symbol *))));
+      for (j = 0; j < htab_size; j++)
 	{
-	  BLOCK_SYM (block, --i) = next->symbol[j];
+	  BLOCK_BUCKET (block, j) = 0;
+	}
+      BLOCK_BUCKETS (block) = htab_size;
+      for (next = *listhead; next; next = next->next)
+	{
+	  for (j = next->nsyms - 1; j >= 0; j--)
+	    {
+	      struct symbol *sym;
+	      unsigned int hash_index;
+	      const char *name = SYMBOL_DEMANGLED_NAME (next->symbol[j]);
+	      if (name == NULL)
+		name = SYMBOL_NAME (next->symbol[j]);
+	      hash_index = msymbol_hash_iw (name);
+	      hash_index = hash_index % BLOCK_BUCKETS (block);
+	      sym = BLOCK_BUCKET (block, hash_index);
+	      BLOCK_BUCKET (block, hash_index) = next->symbol[j];
+	      next->symbol[j]->hash_next = sym;
+	    }
 	}
     }
 
@@ -239,6 +295,7 @@ finish_block (struct symbol *symbol, struct pending **listhead,
   BLOCK_END (block) = end;
   /* Superblock filled in when containing block is made */
   BLOCK_SUPERBLOCK (block) = NULL;
+  BLOCK_DICT (block) = dict_create_block (block);
 
   BLOCK_GCC_COMPILED (block) = processing_gcc_compilation;
 
@@ -249,6 +306,7 @@ finish_block (struct symbol *symbol, struct pending **listhead,
       struct type *ftype = SYMBOL_TYPE (symbol);
       SYMBOL_BLOCK_VALUE (symbol) = block;
       BLOCK_FUNCTION (block) = symbol;
+      BLOCK_HASHTABLE (block) = 0;
 
       if (TYPE_NFIELDS (ftype) <= 0)
 	{
@@ -257,9 +315,8 @@ finish_block (struct symbol *symbol, struct pending **listhead,
 	     parameter symbols. */
 	  int nparams = 0, iparams;
 	  struct symbol *sym;
-	  for (i = 0; i < BLOCK_NSYMS (block); i++)
+	  ALL_BLOCK_SYMBOLS (block, i, sym)
 	    {
-	      sym = BLOCK_SYM (block, i);
 	      switch (SYMBOL_CLASS (sym))
 		{
 		case LOC_ARG:
@@ -305,6 +362,7 @@ finish_block (struct symbol *symbol, struct pending **listhead,
 		    case LOC_BASEREG_ARG:
 		    case LOC_LOCAL_ARG:
 		      TYPE_FIELD_TYPE (ftype, iparams) = SYMBOL_TYPE (sym);
+		      TYPE_FIELD_ARTIFICIAL (ftype, iparams) = 0;
 		      iparams++;
 		      break;
 		    case LOC_UNDEF:
@@ -330,6 +388,7 @@ finish_block (struct symbol *symbol, struct pending **listhead,
   else
     {
       BLOCK_FUNCTION (block) = NULL;
+      BLOCK_HASHTABLE (block) = 1;
     }
 
   /* Now "free" the links of the list, and empty the list.  */
@@ -365,7 +424,9 @@ finish_block (struct symbol *symbol, struct pending **listhead,
      start of this scope that don't have superblocks yet.  */
 
   opblock = NULL;
-  for (pblock = pending_blocks; pblock != old_blocks; pblock = pblock->next)
+  for (pblock = pending_blocks; 
+       pblock && pblock != old_blocks; 
+       pblock = pblock->next)
     {
       if (BLOCK_SUPERBLOCK (pblock->block) == NULL)
 	{
@@ -429,11 +490,11 @@ record_pending_block (struct objfile *objfile, struct block *block,
     }
 }
 
-/* Note that this is only used in this file and in dstread.c, which
-   should be fixed to not need direct access to this function.  When
-   that is done, it can be made static again. */
+/* OBSOLETE Note that this is only used in this file and in dstread.c, which */
+/* OBSOLETE should be fixed to not need direct access to this function.  When */
+/* OBSOLETE that is done, it can be made static again. */
 
-struct blockvector *
+static struct blockvector *
 make_blockvector (struct objfile *objfile)
 {
   register struct pending_block *next;
@@ -470,7 +531,7 @@ make_blockvector (struct objfile *objfile)
   for (next = pending_blocks; next; next = next1)
     {
       next1 = next->next;
-      free (next);
+      xfree (next);
     }
 #endif
   pending_blocks = NULL;
@@ -487,17 +548,11 @@ make_blockvector (struct objfile *objfile)
 	  if (BLOCK_START (BLOCKVECTOR_BLOCK (blockvector, i - 1))
 	      > BLOCK_START (BLOCKVECTOR_BLOCK (blockvector, i)))
 	    {
-
-	      /* FIXME-32x64: loses if CORE_ADDR doesn't fit in a
-	         long.  Possible solutions include a version of
-	         complain which takes a callback, a
-	         sprintf_address_numeric to match
-	         print_address_numeric, or a way to set up a UI_FILE
-	         which causes sprintf rather than fprintf to be
-	         called.  */
+	      CORE_ADDR start
+		= BLOCK_START (BLOCKVECTOR_BLOCK (blockvector, i));
 
 	      complain (&blockvector_complaint,
-			(unsigned long) BLOCK_START (BLOCKVECTOR_BLOCK (blockvector, i)));
+			local_hex_string ((LONGEST) start));
 	    }
 	}
     }
@@ -521,7 +576,7 @@ start_subfile (char *name, char *dirname)
 
   for (subfile = subfiles; subfile; subfile = subfile->next)
     {
-      if (STREQ (subfile->name, name))
+      if (FILENAME_CMP (subfile->name, name) == 0)
 	{
 	  current_subfile = subfile;
 	  return;
@@ -533,6 +588,7 @@ start_subfile (char *name, char *dirname)
      source file.  */
 
   subfile = (struct subfile *) xmalloc (sizeof (struct subfile));
+  memset ((char *) subfile, 0, sizeof (struct subfile));
   subfile->next = subfiles;
   subfiles = subfile;
   current_subfile = subfile;
@@ -656,7 +712,7 @@ push_subfile (void)
   subfile_stack = tem;
   if (current_subfile == NULL || current_subfile->name == NULL)
     {
-      abort ();
+      internal_error (__FILE__, __LINE__, "failed internal consistency check");
     }
   tem->name = current_subfile->name;
 }
@@ -669,11 +725,11 @@ pop_subfile (void)
 
   if (link == NULL)
     {
-      abort ();
+      internal_error (__FILE__, __LINE__, "failed internal consistency check");
     }
   name = link->name;
   subfile_stack = link->next;
-  free ((void *) link);
+  xfree ((void *) link);
   return (name);
 }
 
@@ -714,7 +770,7 @@ record_line (register struct subfile *subfile, int line, CORE_ADDR pc)
 
   e = subfile->line_vector->item + subfile->line_vector->nitems++;
   e->line = line;
-  e->pc = pc;
+  e->pc = ADDR_BITS_REMOVE(pc);
 }
 
 /* Needed in order to sort line tables from IBM xcoff files.  Sigh!  */
@@ -870,7 +926,8 @@ end_symtab (CORE_ADDR end_addr, struct objfile *objfile, int section)
   if (pending_blocks == NULL
       && file_symbols == NULL
       && global_symbols == NULL
-      && have_line_numbers == 0)
+      && have_line_numbers == 0
+      && pending_macros == NULL)
     {
       /* Ignore symtabs that have no functions with real debugging
          info.  */
@@ -931,6 +988,7 @@ end_symtab (CORE_ADDR end_addr, struct objfile *objfile, int section)
 
 	  /* Fill in its components.  */
 	  symtab->blockvector = blockvector;
+          symtab->macro_table = pending_macros;
 	  if (subfile->line_vector)
 	    {
 	      /* Reallocate the line table on the symbol obstack */
@@ -956,7 +1014,7 @@ end_symtab (CORE_ADDR end_addr, struct objfile *objfile, int section)
 	      symtab->dirname = NULL;
 	    }
 	  symtab->free_code = free_linetable;
-	  symtab->free_ptr = NULL;
+	  symtab->free_func = NULL;
 
 	  /* Use whatever language we have been using for this
 	     subfile, not the one that was deduced in allocate_symtab
@@ -982,23 +1040,23 @@ end_symtab (CORE_ADDR end_addr, struct objfile *objfile, int section)
 	}
       if (subfile->name != NULL)
 	{
-	  free ((void *) subfile->name);
+	  xfree ((void *) subfile->name);
 	}
       if (subfile->dirname != NULL)
 	{
-	  free ((void *) subfile->dirname);
+	  xfree ((void *) subfile->dirname);
 	}
       if (subfile->line_vector != NULL)
 	{
-	  free ((void *) subfile->line_vector);
+	  xfree ((void *) subfile->line_vector);
 	}
       if (subfile->debugformat != NULL)
 	{
-	  free ((void *) subfile->debugformat);
+	  xfree ((void *) subfile->debugformat);
 	}
 
       nextsub = subfile->next;
-      free ((void *) subfile);
+      xfree ((void *) subfile);
     }
 
   /* Set this for the main source file.  */
@@ -1009,6 +1067,7 @@ end_symtab (CORE_ADDR end_addr, struct objfile *objfile, int section)
 
   last_source_file = NULL;
   current_subfile = NULL;
+  pending_macros = NULL;
 
   return symtab;
 }
@@ -1044,33 +1103,13 @@ push_context (int desc, CORE_ADDR valu)
   return new;
 }
 
+
 /* Compute a small integer hash code for the given name. */
 
 int
 hashname (char *name)
 {
-  register char *p = name;
-  register int total = p[0];
-  register int c;
-
-  c = p[1];
-  total += c << 2;
-  if (c)
-    {
-      c = p[2];
-      total += c << 4;
-      if (c)
-	{
-	  total += p[3] << 6;
-	}
-    }
-
-  /* Ensure result is positive.  */
-  if (total < 0)
-    {
-      total += (1000 << 6);
-    }
-  return (total % HASHSIZE);
+    return (hash(name,strlen(name)) % HASHSIZE);
 }
 
 
@@ -1113,12 +1152,13 @@ merge_symbol_lists (struct pending **srclist, struct pending **targetlist)
    corresponding to a psymtab.  */
 
 void
-buildsym_init ()
+buildsym_init (void)
 {
   free_pendings = NULL;
   file_symbols = NULL;
   global_symbols = NULL;
   pending_blocks = NULL;
+  pending_macros = NULL;
 }
 
 /* Initialize anything that needs initializing when a completely new
@@ -1126,7 +1166,7 @@ buildsym_init ()
    file, e.g. a shared library).  */
 
 void
-buildsym_new_init ()
+buildsym_new_init (void)
 {
   buildsym_init ();
 }

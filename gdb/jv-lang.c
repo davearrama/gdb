@@ -1,5 +1,5 @@
 /* Java language support routines for GDB, the GNU debugger.
-   Copyright 1997, 1998, 1999-2000 Free Software Foundation, Inc.
+   Copyright 1997, 1998, 1999, 2000 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -33,6 +33,7 @@
 #include "c-lang.h"
 #include "jv-lang.h"
 #include "gdbcore.h"
+#include "dictionary.h"
 #include <ctype.h>
 
 struct type *java_int_type;
@@ -47,16 +48,16 @@ struct type *java_void_type;
 
 /* Local functions */
 
-extern void _initialize_java_language PARAMS ((void));
+extern void _initialize_java_language (void);
 
-static int java_demangled_signature_length PARAMS ((char *));
-static void java_demangled_signature_copy PARAMS ((char *, char *));
+static int java_demangled_signature_length (char *);
+static void java_demangled_signature_copy (char *, char *);
 
-static struct symtab *get_java_class_symtab PARAMS ((void));
-static char *get_java_utf8_name PARAMS ((struct obstack * obstack, value_ptr name));
-static int java_class_is_primitive PARAMS ((value_ptr clas));
-static struct type *java_lookup_type PARAMS ((char *signature));
-static value_ptr java_value_string PARAMS ((char *ptr, int len));
+static struct symtab *get_java_class_symtab (void);
+static char *get_java_utf8_name (struct obstack *obstack, struct value *name);
+static int java_class_is_primitive (struct value *clas);
+static struct type *java_lookup_type (char *signature);
+static struct value *java_value_string (char *ptr, int len);
 
 static void java_emit_char (int c, struct ui_file * stream, int quoter);
 
@@ -66,10 +67,10 @@ static void java_emit_char (int c, struct ui_file * stream, int quoter);
 
 static struct objfile *dynamics_objfile = NULL;
 
-static struct type *java_link_class_type PARAMS ((struct type *, value_ptr));
+static struct type *java_link_class_type (struct type *, struct value *);
 
 static struct objfile *
-get_dynamics_objfile ()
+get_dynamics_objfile (void)
 {
   if (dynamics_objfile == NULL)
     {
@@ -83,12 +84,10 @@ get_dynamics_objfile ()
 
 static struct symtab *class_symtab = NULL;
 
-/* Maximum number of class in class_symtab before relocation is needed. */
-
-static int class_symtab_space;
+static void free_class_block (struct symtab *symtab);
 
 static struct symtab *
-get_java_class_symtab ()
+get_java_class_symtab (void)
 {
   if (class_symtab == NULL)
     {
@@ -106,55 +105,40 @@ get_java_class_symtab ()
       bl = (struct block *)
 	obstack_alloc (&objfile->symbol_obstack, sizeof (struct block));
       BLOCK_NSYMS (bl) = 0;
+      BLOCK_HASHTABLE (bl) = 0;
       BLOCK_START (bl) = 0;
       BLOCK_END (bl) = 0;
       BLOCK_FUNCTION (bl) = NULL;
       BLOCK_SUPERBLOCK (bl) = NULL;
+      BLOCK_DICT (bl) = dict_create_block (bl);
       BLOCK_GCC_COMPILED (bl) = 0;
       BLOCKVECTOR_BLOCK (bv, STATIC_BLOCK) = bl;
 
       /* Allocate GLOBAL_BLOCK.  This has to be relocatable. */
-      class_symtab_space = 128;
-      bl = (struct block *)
-	mmalloc (objfile->md,
-		 sizeof (struct block)
-		 + ((class_symtab_space - 1) * sizeof (struct symbol *)));
+      bl = xmalloc (sizeof (struct block));
       *bl = *BLOCKVECTOR_BLOCK (bv, STATIC_BLOCK);
+      BLOCK_DICT (bl) = dict_create_block_expandable (bl);
       BLOCKVECTOR_BLOCK (bv, GLOBAL_BLOCK) = bl;
-      class_symtab->free_ptr = (char *) bl;
+      class_symtab->free_func = free_class_block;
     }
   return class_symtab;
 }
 
 static void
-add_class_symtab_symbol (sym)
-     struct symbol *sym;
+add_class_symtab_symbol (struct symbol *sym)
 {
   struct symtab *symtab = get_java_class_symtab ();
   struct blockvector *bv = BLOCKVECTOR (symtab);
-  struct block *bl = BLOCKVECTOR_BLOCK (bv, GLOBAL_BLOCK);
-  if (BLOCK_NSYMS (bl) >= class_symtab_space)
-    {
-      /* Need to re-allocate. */
-      class_symtab_space *= 2;
-      bl = (struct block *)
-	mrealloc (symtab->objfile->md, bl,
-		  sizeof (struct block)
-		  + ((class_symtab_space - 1) * sizeof (struct symbol *)));
-      class_symtab->free_ptr = (char *) bl;
-      BLOCKVECTOR_BLOCK (bv, GLOBAL_BLOCK) = bl;
-    }
-
-  BLOCK_SYM (bl, BLOCK_NSYMS (bl)) = sym;
-  BLOCK_NSYMS (bl) = BLOCK_NSYMS (bl) + 1;
+  BLOCKVECTOR_BLOCK (bv, GLOBAL_BLOCK)
+    = dict_add_symbol_block (BLOCK_DICT (BLOCKVECTOR_BLOCK (bv,
+							    GLOBAL_BLOCK)),
+			     sym);
 }
 
-static struct symbol *add_class_symbol PARAMS ((struct type * type, CORE_ADDR addr));
+static struct symbol *add_class_symbol (struct type *type, CORE_ADDR addr);
 
 static struct symbol *
-add_class_symbol (type, addr)
-     struct type *type;
-     CORE_ADDR addr;
+add_class_symbol (struct type *type, CORE_ADDR addr)
 {
   struct symbol *sym;
   sym = (struct symbol *)
@@ -169,11 +153,21 @@ add_class_symbol (type, addr)
   SYMBOL_VALUE_ADDRESS (sym) = addr;
   return sym;
 }
+
+/* Free the dynamic symbols block.  */
+static void
+free_class_block (struct symtab *symtab)
+{
+  struct blockvector *bv = BLOCKVECTOR (symtab);
+  struct block *bl = BLOCKVECTOR_BLOCK (bv, GLOBAL_BLOCK);
+
+  dict_free (BLOCK_DICT (bl));
+  xfree (bl);
+}
 #endif
 
 struct type *
-java_lookup_class (name)
-     char *name;
+java_lookup_class (char *name)
 {
   struct symbol *sym;
   sym = lookup_symbol (name, expression_context_block, STRUCT_NAMESPACE,
@@ -210,12 +204,10 @@ java_lookup_class (name)
    a name given by NAME (which has type Utf8Const*). */
 
 char *
-get_java_utf8_name (obstack, name)
-     struct obstack *obstack;
-     value_ptr name;
+get_java_utf8_name (struct obstack *obstack, struct value *name)
 {
   char *chrs;
-  value_ptr temp = name;
+  struct value *temp = name;
   int name_length;
   CORE_ADDR data_addr;
   temp = value_struct_elt (&temp, NULL, "length", NULL, "structure");
@@ -224,22 +216,21 @@ get_java_utf8_name (obstack, name)
     + TYPE_LENGTH (VALUE_TYPE (temp));
   chrs = obstack_alloc (obstack, name_length + 1);
   chrs[name_length] = '\0';
-  read_memory_section (data_addr, chrs, name_length, NULL);
+  read_memory (data_addr, chrs, name_length);
   return chrs;
 }
 
-value_ptr
-java_class_from_object (obj_val)
-     value_ptr obj_val;
+struct value *
+java_class_from_object (struct value *obj_val)
 {
   /* This is all rather inefficient, since the offsets of vtable and
      class are fixed.  FIXME */
-  value_ptr vtable_val;
+  struct value *vtable_val;
 
   if (TYPE_CODE (VALUE_TYPE (obj_val)) == TYPE_CODE_PTR
       && TYPE_LENGTH (TYPE_TARGET_TYPE (VALUE_TYPE (obj_val))) == 0)
     obj_val = value_at (get_java_object_type (),
-			value_as_pointer (obj_val), NULL);
+			value_as_address (obj_val), NULL);
 
   vtable_val = value_struct_elt (&obj_val, NULL, "vtable", NULL, "structure");
   return value_struct_elt (&vtable_val, NULL, "class", NULL, "structure");
@@ -247,25 +238,23 @@ java_class_from_object (obj_val)
 
 /* Check if CLASS_IS_PRIMITIVE(value of clas): */
 static int
-java_class_is_primitive (clas)
-     value_ptr clas;
+java_class_is_primitive (struct value *clas)
 {
-  value_ptr vtable = value_struct_elt (&clas, NULL, "vtable", NULL, "struct");
-  CORE_ADDR i = value_as_pointer (vtable);
+  struct value *vtable = value_struct_elt (&clas, NULL, "vtable", NULL, "struct");
+  CORE_ADDR i = value_as_address (vtable);
   return (int) (i & 0x7fffffff) == (int) 0x7fffffff;
 }
 
 /* Read a GCJ Class object, and generated a gdb (TYPE_CODE_STRUCT) type. */
 
 struct type *
-type_from_class (clas)
-     value_ptr clas;
+type_from_class (struct value *clas)
 {
   struct type *type;
   char *name;
-  value_ptr temp;
+  struct value *temp;
   struct objfile *objfile;
-  value_ptr utf8_name;
+  struct value *utf8_name;
   char *nptr;
   CORE_ADDR addr;
   struct block *bl;
@@ -295,7 +284,7 @@ type_from_class (clas)
   objfile = get_dynamics_objfile ();
   if (java_class_is_primitive (clas))
     {
-      value_ptr sig;
+      struct value *sig;
       temp = clas;
       sig = value_struct_elt (&temp, NULL, "method_count", NULL, "structure");
       return java_primitive_type (value_as_long (sig));
@@ -346,18 +335,19 @@ type_from_class (clas)
 /* Fill in class TYPE with data from the CLAS value. */
 
 struct type *
-java_link_class_type (type, clas)
-     struct type *type;
-     value_ptr clas;
+java_link_class_type (struct type *type, struct value *clas)
 {
-  value_ptr temp;
+  struct value *temp;
   char *unqualified_name;
   char *name = TYPE_TAG_NAME (type);
   int ninterfaces, nfields, nmethods;
   int type_is_object = 0;
   struct fn_field *fn_fields;
   struct fn_fieldlist *fn_fieldlists;
-  value_ptr fields, field, method, methods;
+  struct value *fields;
+  struct value *methods;
+  struct value *method = NULL;
+  struct value *field = NULL;
   int i, j;
   struct objfile *objfile = get_dynamics_objfile ();
   struct type *tsuper;
@@ -583,7 +573,7 @@ java_link_class_type (type, clas)
 static struct type *java_object_type;
 
 struct type *
-get_java_object_type ()
+get_java_object_type (void)
 {
   if (java_object_type == NULL)
     {
@@ -598,7 +588,7 @@ get_java_object_type ()
 }
 
 int
-get_java_object_header_size ()
+get_java_object_header_size (void)
 {
   struct type *objtype = get_java_object_type ();
   if (objtype == NULL)
@@ -608,8 +598,7 @@ get_java_object_header_size ()
 }
 
 int
-is_object_type (type)
-     struct type *type;
+is_object_type (struct type *type)
 {
   CHECK_TYPEDEF (type);
   if (TYPE_CODE (type) == TYPE_CODE_PTR)
@@ -635,8 +624,7 @@ is_object_type (type)
 }
 
 struct type *
-java_primitive_type (signature)
-     int signature;
+java_primitive_type (int signature)
 {
   switch (signature)
     {
@@ -666,9 +654,7 @@ java_primitive_type (signature)
    return that type.  Otherwise, return NULL. */
 
 struct type *
-java_primitive_type_from_name (name, namelen)
-     char *name;
-     int namelen;
+java_primitive_type_from_name (char *name, int namelen)
 {
   switch (name[0])
     {
@@ -713,8 +699,7 @@ java_primitive_type_from_name (name, namelen)
    signature string SIGNATURE. */
 
 static int
-java_demangled_signature_length (signature)
-     char *signature;
+java_demangled_signature_length (char *signature)
 {
   int array = 0;
   for (; *signature == '['; signature++)
@@ -732,9 +717,7 @@ java_demangled_signature_length (signature)
 /* Demangle the Java type signature SIGNATURE, leaving the result in RESULT. */
 
 static void
-java_demangled_signature_copy (result, signature)
-     char *result;
-     char *signature;
+java_demangled_signature_copy (char *result, char *signature)
 {
   int array = 0;
   char *ptr;
@@ -776,8 +759,7 @@ java_demangled_signature_copy (result, signature)
    as a freshly allocated copy. */
 
 char *
-java_demangle_type_signature (signature)
-     char *signature;
+java_demangle_type_signature (char *signature)
 {
   int length = java_demangled_signature_length (signature);
   char *result = xmalloc (length + 1);
@@ -787,8 +769,7 @@ java_demangle_type_signature (signature)
 }
 
 struct type *
-java_lookup_type (signature)
-     char *signature;
+java_lookup_type (char *signature)
 {
   switch (signature[0])
     {
@@ -804,9 +785,7 @@ java_lookup_type (signature)
    If DIMS == 0, TYPE is returned. */
 
 struct type *
-java_array_type (type, dims)
-     struct type *type;
-     int dims;
+java_array_type (struct type *type, int dims)
 {
   struct type *range_type;
 
@@ -822,10 +801,8 @@ java_array_type (type, dims)
 
 /* Create a Java string in the inferior from a (Utf8) literal. */
 
-static value_ptr
-java_value_string (ptr, len)
-     char *ptr;
-     int len;
+static struct value *
+java_value_string (char *ptr, int len)
 {
   error ("not implemented - java_value_string");	/* FIXME */
 }
@@ -835,10 +812,7 @@ java_value_string (ptr, len)
    characters and strings is language specific. */
 
 static void
-java_emit_char (c, stream, quoter)
-     int c;
-     struct ui_file *stream;
-     int quoter;
+java_emit_char (int c, struct ui_file *stream, int quoter)
 {
   switch (c)
     {
@@ -870,18 +844,16 @@ java_emit_char (c, stream, quoter)
     }
 }
 
-static value_ptr
-evaluate_subexp_java (expect_type, exp, pos, noside)
-     struct type *expect_type;
-     register struct expression *exp;
-     register int *pos;
-     enum noside noside;
+static struct value *
+evaluate_subexp_java (struct type *expect_type, register struct expression *exp,
+		      register int *pos, enum noside noside)
 {
   int pc = *pos;
   int i;
   char *name;
   enum exp_opcode op = exp->elts[*pos].opcode;
-  value_ptr arg1, arg2;
+  struct value *arg1;
+  struct value *arg2;
   struct type *type;
   switch (op)
     {
@@ -927,8 +899,8 @@ evaluate_subexp_java (expect_type, exp, pos, noside)
 	  struct type *el_type;
 	  char buf4[4];
 
-	  value_ptr clas = java_class_from_object (arg1);
-	  value_ptr temp = clas;
+	  struct value *clas = java_class_from_object (arg1);
+	  struct value *temp = clas;
 	  /* Get CLASS_ELEMENT_TYPE of the array type. */
 	  temp = value_struct_elt (&temp, NULL, "methods",
 				   NULL, "structure");
@@ -939,7 +911,7 @@ evaluate_subexp_java (expect_type, exp, pos, noside)
 
 	  if (noside == EVAL_AVOID_SIDE_EFFECTS)
 	    return value_zero (el_type, VALUE_LVAL (arg1));
-	  address = value_as_pointer (arg1);
+	  address = value_as_address (arg1);
 	  address += JAVA_OBJECT_SIZE;
 	  read_memory (address, buf4, 4);
 	  length = (long) extract_signed_integer (buf4, 4);
@@ -986,9 +958,7 @@ nosideret:
 }
 
 static struct type *
-java_create_fundamental_type (objfile, typeid)
-     struct objfile *objfile;
-     int typeid;
+java_create_fundamental_type (struct objfile *objfile, int typeid)
 {
   switch (typeid)
     {
@@ -1065,6 +1035,7 @@ const struct language_defn java_language_defn =
   c_builtin_types,
   range_check_off,
   type_check_off,
+  case_sensitive_on,
   java_parse,
   java_error,
   evaluate_subexp_java,
@@ -1087,7 +1058,7 @@ const struct language_defn java_language_defn =
 };
 
 void
-_initialize_java_language ()
+_initialize_java_language (void)
 {
 
   java_int_type = init_type (TYPE_CODE_INT, 4, 0, "int", NULL);
@@ -1107,9 +1078,9 @@ _initialize_java_language ()
    We should use make_run_cleanup to have this be called.
    But will that mess up values in value histry?  FIXME */
 
-extern void java_rerun_cleanup PARAMS ((void));
+extern void java_rerun_cleanup (void);
 void
-java_rerun_cleanup ()
+java_rerun_cleanup (void)
 {
   if (class_symtab != NULL)
     {
