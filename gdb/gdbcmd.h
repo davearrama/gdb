@@ -1,5 +1,13 @@
+/* ***DEPRECATED***  The gdblib files must not be calling/using things in any
+   of the possible command languages.  If necessary, a hook (that may be
+   present or not) must be used and set to the appropriate routine by any
+   command language that cares about it.  If you are having to include this
+   file you are possibly doing things the old way.  This file will disapear.
+   fnasser@redhat.com    */
+
 /* Header file for GDB-specific command-line stuff.
-   Copyright 1986, 1989, 1990, 1992, 2000 Free Software Foundation, Inc.
+   Copyright 1986, 1989, 1990, 1991, 1992, 1993, 1994, 1998, 1999,
+   2000, 2002 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,9 +28,7 @@
 #define GDBCMD_H 1
 
 #include "command.h"
-#ifdef UI_OUT
 #include "ui-out.h"
-#endif
 
 /* Chain containing all defined commands.  */
 
@@ -92,32 +98,33 @@ extern struct cmd_list_element *maintenanceinfolist;
 
 extern struct cmd_list_element *maintenanceprintlist;
 
+/* Chain containing all defined "maintenance set" subcommands. */
+
+extern struct cmd_list_element *maintenance_set_cmdlist;
+
+/* Chain containing all defined "maintenance show" subcommands. */
+
+extern struct cmd_list_element *maintenance_show_cmdlist;
+
 extern struct cmd_list_element *setprintlist;
 
 extern struct cmd_list_element *showprintlist;
+
+extern struct cmd_list_element *setdebuglist;
+
+extern struct cmd_list_element *showdebuglist;
 
 extern struct cmd_list_element *setchecklist;
 
 extern struct cmd_list_element *showchecklist;
 
-extern void
-execute_user_command PARAMS ((struct cmd_list_element *, char *));
+extern void execute_command (char *, int);
 
-extern void
-execute_command PARAMS ((char *, int));
-
-enum command_control_type
-execute_control_command PARAMS ((struct command_line *));
+enum command_control_type execute_control_command (struct command_line *);
 
 extern void print_command_line (struct command_line *, unsigned int,
 				struct ui_file *);
-#ifdef UI_OUT
-extern void print_command_lines PARAMS ((struct ui_out *,
-				      struct command_line *, unsigned int));
-#endif
-
-extern char **noop_completer PARAMS ((char *, char *));
-
-extern char **filename_completer PARAMS ((char *, char *));
+extern void print_command_lines (struct ui_out *,
+				 struct command_line *, unsigned int);
 
 #endif /* !defined (GDBCMD_H) */
