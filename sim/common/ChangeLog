@@ -1,7 +1,7 @@
-2004-07-10  Ben Elliston  <bje@au.ibm.com>
+2004-07-26  Andrew Cagney  <cagney@gnu.org>
 
-	* hw-tree.c (parse_integer_property): Typo fix in comments.
-	* sim-options.c	(sim_args_command): Likewise.
+	Problem from Olaf Hering <olh@suse.de>.
+	* Makefile.in (install-man, installdirs): Add DESTDIR prefix.
 
 2004-06-28  Andrew Cagney  <cagney@gnu.org>
 
