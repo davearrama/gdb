@@ -1,8 +1,5 @@
 /* Target-dependent code for the MIPS architecture, for GDB, the GNU Debugger.
-
-   Copyright 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
-   1997, 1998, 1999, 2000, Free Software Foundation, Inc.
-
+   Copyright 1988-1999, Free Software Foundation, Inc.
    Contributed by Alessandro Forin(af@cs.cmu.edu) at CMU
    and by Per Bothner(bothner@cs.wisc.edu) at U.Wisconsin.
 
@@ -43,14 +40,6 @@
 #include "elf-bfd.h"
 
 
-/* The sizes of floating point registers.  */
-
-enum
-{
-  MIPS_FPU_SINGLE_REGSIZE = 4,
-  MIPS_FPU_DOUBLE_REGSIZE = 8
-};
-
 /* All the possible MIPS ABIs. */
 
 enum mips_abi
@@ -73,11 +62,11 @@ struct frame_extra_info
    overridden dynamically.  Establish an enum/array for managing
    them. */
 
-static const char size_auto[] = "auto";
-static const char size_32[] = "32";
-static const char size_64[] = "64";
+static char size_auto[] = "auto";
+static char size_32[] = "32";
+static char size_64[] = "64";
 
-static const char *size_enums[] = {
+static char *size_enums[] = {
   size_auto,
   size_32,
   size_64,
@@ -154,7 +143,7 @@ struct gdbarch_tdep
 #define MIPS_DEFAULT_SAVED_REGSIZE MIPS_REGSIZE
 #endif
 
-static const char *mips_saved_regsize_string = size_auto;
+static char *mips_saved_regsize_string = size_auto;
 
 #define MIPS_SAVED_REGSIZE (mips_saved_regsize())
 
@@ -202,7 +191,7 @@ mips_saved_regsize ()
 
 #define MIPS_STACK_ARGSIZE (mips_stack_argsize ())
 
-static const char *mips_stack_argsize_string = size_auto;
+static char *mips_stack_argsize_string = size_auto;
 
 static unsigned int
 mips_stack_argsize (void)
@@ -3840,7 +3829,6 @@ mips_gdbarch_init (info, arches)
   struct gdbarch *gdbarch;
   struct gdbarch_tdep *tdep;
   int elf_flags;
-  char *ef_mips_abi;
   int ef_mips_bitptrs;
   int ef_mips_arch;
   enum mips_abi mips_abi;
@@ -3871,28 +3859,10 @@ mips_gdbarch_init (info, arches)
       mips_abi = MIPS_ABI_UNKNOWN;
       break;
     }
-  /* Try the architecture for any hint of the corect ABI */
-  if (mips_abi == MIPS_ABI_UNKNOWN
-      && info.bfd_arch_info != NULL
-      && info.bfd_arch_info->arch == bfd_arch_mips)
-    {
-      switch (info.bfd_arch_info->mach)
-	{
-	case bfd_mach_mips3900:
-	  mips_abi = MIPS_ABI_EABI32;
-	  break;
-	case bfd_mach_mips4100:
-	case bfd_mach_mips5000:
-	  mips_abi = MIPS_ABI_EABI64;
-	  break;
-	}
-    }
 #ifdef MIPS_DEFAULT_ABI
   if (mips_abi == MIPS_ABI_UNKNOWN)
     mips_abi = MIPS_DEFAULT_ABI;
 #endif
-  if (mips_abi == MIPS_ABI_UNKNOWN)
-    mips_abi = MIPS_ABI_O32;
 
   /* try to find a pre-existing architecture */
   for (arches = gdbarch_list_lookup_by_info (arches, &info);
@@ -3923,7 +3893,6 @@ mips_gdbarch_init (info, arches)
   switch (mips_abi)
     {
     case MIPS_ABI_O32:
-      ef_mips_abi = "o32";
       tdep->mips_default_saved_regsize = 4;
       tdep->mips_default_stack_argsize = 4;
       tdep->mips_fp_register_double = 0;
@@ -3935,7 +3904,6 @@ mips_gdbarch_init (info, arches)
       set_gdbarch_long_long_bit (gdbarch, 64);
       break;
     case MIPS_ABI_O64:
-      ef_mips_abi = "o64";
       tdep->mips_default_saved_regsize = 8;
       tdep->mips_default_stack_argsize = 8;
       tdep->mips_fp_register_double = 1;
@@ -3947,7 +3915,6 @@ mips_gdbarch_init (info, arches)
       set_gdbarch_long_long_bit (gdbarch, 64);
       break;
     case MIPS_ABI_EABI32:
-      ef_mips_abi = "eabi32";
       tdep->mips_default_saved_regsize = 4;
       tdep->mips_default_stack_argsize = 4;
       tdep->mips_fp_register_double = 0;
@@ -3959,7 +3926,6 @@ mips_gdbarch_init (info, arches)
       set_gdbarch_long_long_bit (gdbarch, 64);
       break;
     case MIPS_ABI_EABI64:
-      ef_mips_abi = "eabi64";
       tdep->mips_default_saved_regsize = 8;
       tdep->mips_default_stack_argsize = 8;
       tdep->mips_fp_register_double = 1;
@@ -3971,7 +3937,6 @@ mips_gdbarch_init (info, arches)
       set_gdbarch_long_long_bit (gdbarch, 64);
       break;
     case MIPS_ABI_N32:
-      ef_mips_abi = "n32";
       tdep->mips_default_saved_regsize = 4;
       tdep->mips_default_stack_argsize = 8;
       tdep->mips_fp_register_double = 1;
@@ -3983,7 +3948,6 @@ mips_gdbarch_init (info, arches)
       set_gdbarch_long_long_bit (gdbarch, 64);
       break;
     default:
-      ef_mips_abi = "default";
       tdep->mips_default_saved_regsize = MIPS_REGSIZE;
       tdep->mips_default_stack_argsize = MIPS_REGSIZE;
       tdep->mips_fp_register_double = (REGISTER_VIRTUAL_SIZE (FP0_REGNUM) == 8);
@@ -4059,13 +4023,9 @@ mips_gdbarch_init (info, arches)
 	   && info.bfd_arch_info->arch == bfd_arch_mips)
     switch (info.bfd_arch_info->mach)
       {
-      case bfd_mach_mips3900:
       case bfd_mach_mips4100:
       case bfd_mach_mips4111:
 	tdep->mips_fpu_type = MIPS_FPU_NONE;
-	break;
-      case bfd_mach_mips4650:
-	tdep->mips_fpu_type = MIPS_FPU_SINGLE;
 	break;
       default:
 	tdep->mips_fpu_type = MIPS_FPU_DOUBLE;
@@ -4111,58 +4071,70 @@ mips_gdbarch_init (info, arches)
   set_gdbarch_frame_chain_valid (gdbarch, func_frame_chain_valid);
   set_gdbarch_get_saved_register (gdbarch, mips_get_saved_register);
 
-  if (gdbarch_debug)
-    {
-      fprintf_unfiltered (gdb_stdlog,
-			  "mips_gdbarch_init: (info)ef_mips_abi = %s\n",
-			  ef_mips_abi);
-      fprintf_unfiltered (gdb_stdlog,
-			  "mips_gdbarch_init: (info)ef_mips_arch = %d\n",
-			  ef_mips_arch);
-      fprintf_unfiltered (gdb_stdlog,
-			  "mips_gdbarch_init: (info)ef_mips_bitptrs = %d\n",
-			  ef_mips_bitptrs);
-      fprintf_unfiltered (gdb_stdlog,
-			  "mips_gdbarch_init: MIPS_REGSIZE = %d\n",
-			  MIPS_REGSIZE);
-      fprintf_unfiltered (gdb_stdlog,
-			  "mips_gdbarch_init: tdep->elf_flags = 0x%x\n",
-			  tdep->elf_flags);
-      fprintf_unfiltered (gdb_stdlog,
-			  "mips_gdbarch_init: tdep->mips_abi = %d\n",
-			  tdep->mips_abi);
-      fprintf_unfiltered (gdb_stdlog,
-			  "mips_gdbarch_init: tdep->mips_fpu_type = %d (%s)\n",
-			  tdep->mips_fpu_type,
-			  (tdep->mips_fpu_type == MIPS_FPU_NONE ? "none"
-			   : tdep->mips_fpu_type == MIPS_FPU_SINGLE ? "single"
-			   : tdep->mips_fpu_type == MIPS_FPU_DOUBLE ? "double"
-			   : "???"));
-      fprintf_unfiltered (gdb_stdlog,
-			  "mips_gdbarch_init: tdep->mips_last_arg_regnum = %d\n",
-			  tdep->mips_last_arg_regnum);
-      fprintf_unfiltered (gdb_stdlog,
-			  "mips_gdbarch_init: tdep->mips_last_fp_arg_regnum = %d (%d)\n",
-			  tdep->mips_last_fp_arg_regnum,
-			  tdep->mips_last_fp_arg_regnum - FP0_REGNUM);
-      fprintf_unfiltered (gdb_stdlog,
-			  "mips_gdbarch_init: tdep->mips_default_saved_regsize = %d\n",
-			  tdep->mips_default_saved_regsize);
-      fprintf_unfiltered (gdb_stdlog,
-			  "mips_gdbarch_init: tdep->mips_fp_register_double = %d (%s)\n",
-			  tdep->mips_fp_register_double,
-			  (tdep->mips_fp_register_double ? "true" : "false"));
-      fprintf_unfiltered (gdb_stdlog,
-			  "mips_gdbarch_init: tdep->mips_regs_have_home_p = %d\n",
-			  tdep->mips_regs_have_home_p);
-      fprintf_unfiltered (gdb_stdlog,
-			  "mips_gdbarch_init: tdep->mips_default_stack_argsize = %d\n",
-			  tdep->mips_default_stack_argsize);
-    }
-
   return gdbarch;
 }
 
+static void
+mips_dump_tdep (struct gdbarch *current_gdbarch, struct ui_file *file)
+{
+  struct gdbarch_tdep *tdep = gdbarch_tdep (current_gdbarch);
+  if (tdep != NULL)
+    {
+      fprintf_unfiltered (file,
+			  "mips_dump_tdep: tdep->elf_flags = 0x%x\n",
+			  tdep->elf_flags);
+      fprintf_unfiltered (file,
+			  "mips_dump_tdep: tdep->mips_abi = %d\n",
+			  tdep->mips_abi);
+    }
+  fprintf_unfiltered (file,
+		      "mips_dump_tdep: FP_REGISTER_DOUBLE = %d\n",
+		      FP_REGISTER_DOUBLE);
+  fprintf_unfiltered (file,
+		      "mips_dump_tdep: MIPS_DEFAULT_FPU_TYPE = %d (%s)\n",
+		      MIPS_DEFAULT_FPU_TYPE,
+		      (MIPS_DEFAULT_FPU_TYPE == MIPS_FPU_NONE ? "none"
+		       : MIPS_DEFAULT_FPU_TYPE == MIPS_FPU_SINGLE ? "single"
+		       : MIPS_DEFAULT_FPU_TYPE == MIPS_FPU_DOUBLE ? "double"
+		       : "???"));
+  fprintf_unfiltered (file,
+		      "mips_dump_tdep: MIPS_EABI = %d\n",
+		      MIPS_EABI);
+  fprintf_unfiltered (file,
+		      "mips_dump_tdep: MIPS_LAST_FP_ARG_REGNUM = %d\n",
+		      MIPS_LAST_FP_ARG_REGNUM);
+  fprintf_unfiltered (file,
+		      "mips_dump_tdep: MIPS_LAST_ARG_REGNUM = %d\n",
+		      MIPS_LAST_ARG_REGNUM);
+  fprintf_unfiltered (file,
+		      "mips_dump_tdep: MIPS_FPU_TYPE = %d (%s)\n",
+		      MIPS_FPU_TYPE,
+		      (MIPS_FPU_TYPE == MIPS_FPU_NONE ? "none"
+		       : MIPS_FPU_TYPE == MIPS_FPU_SINGLE ? "single"
+		       : MIPS_FPU_TYPE == MIPS_FPU_DOUBLE ? "double"
+		       : "???"));
+  fprintf_unfiltered (file,
+		      "mips_dump_tdep: MIPS_DEFAULT_SAVED_REGSIZE = %d\n",
+		      MIPS_DEFAULT_SAVED_REGSIZE);
+  fprintf_unfiltered (file,
+		      "mips_dump_tdep: MIPS_SAVED_REGSIZE = %d\n",
+		      MIPS_SAVED_REGSIZE);
+  fprintf_unfiltered (file,
+		      "mips_dump_tdep: FP_REGISTER_DOUBLE = %d\n",
+		      FP_REGISTER_DOUBLE);
+  fprintf_unfiltered (file,
+		      "mips_dump_tdep: MIPS_REGS_HAVE_HOME_P = %d\n",
+		      MIPS_REGS_HAVE_HOME_P);
+  fprintf_unfiltered (file,
+		      "mips_dump_tdep: MIPS_DEFAULT_STACK_ARGSIZE = %d\n",
+		      MIPS_DEFAULT_STACK_ARGSIZE);
+  fprintf_unfiltered (file,
+		      "mips_dump_tdep: MIPS_STACK_ARGSIZE = %d\n",
+		      MIPS_STACK_ARGSIZE);
+  fprintf_unfiltered (file,
+		      "mips_dump_tdep: MIPS_REGSIZE = %d\n",
+		      MIPS_REGSIZE);
+}
 
 void
 _initialize_mips_tdep ()
@@ -4170,8 +4142,7 @@ _initialize_mips_tdep ()
   static struct cmd_list_element *mipsfpulist = NULL;
   struct cmd_list_element *c;
 
-  if (GDB_MULTI_ARCH)
-    register_gdbarch_init (bfd_arch_mips, mips_gdbarch_init);
+  gdbarch_register (bfd_arch_mips, mips_gdbarch_init, mips_dump_tdep);
   if (!tm_print_insn)		/* Someone may have already set it */
     tm_print_insn = gdb_print_insn_mips;
 

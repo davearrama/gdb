@@ -1,119 +1,21 @@
-2000-06-08  Fernando Nasser  <fnasser@cygnus.com>
+Fri Jun  9 15:06:37 2000  Andrew Cagney  <cagney@b1.cygnus.com>
 
-	* configure.in: Replace misplaced CONFIG_ADD by the correct
-	CONFIG_CLEAN.
-	* configure, config.in: Regenerate.
-
-2000-06-08  Fernando Nasser  <fnasser@cygnus.com>
-
-	* values.c (value_primitive_field): Copy VALUE_REGNO as well.
-	With typed registers we may have the location information in this field,
-	in addition to VALUE_ADDRESS (which was already being copied).
-
-Thu Jun  8 15:26:44 2000  Andrew Cagney  <cagney@b1.cygnus.com>
-
-	* config/mips/tm-mips.h (GDB_MULTI_ARCH): Define as 1.
-	(CALL_DUMMY, TARGET_BYTE_ORDER_SELECTABLE_P,
- 	COERCE_FLOAT_TO_DOUBLE): Delete.
-	* config/mips/tm-vr5000el.h, config/mips/tm-vr5000.h,
- 	config/mips/tm-vr4xxxel.h, config/mips/tm-vr4xxx.h,
- 	config/mips/tm-vr4100.h, config/mips/tm-tx39l.h
- 	config/mips/tm-tx39.h, config/mips/tm-irix5.h: Delete
- 	GDB_MULTI_ARCH.
-
-	* config/mips/tm-mips64.h (TARGET_LONG_BIT, TARGET_LONG_LONG_BIT,
- 	TARGET_PTR_BIT): Delete definitions.
-	* config/mips/tm-vr5000el.h, config/mips/tm-vr5000.h,
- 	config/mips/tm-tx39l.h, config/mips/tm-vr4100.h,
- 	config/mips/tm-tx39.h: Delete definition of MIPS_EABI.
-	* mips-tdep.c (mips_gdbarch_init): Use the ISA to determine the
- 	ABI.  If all else fails, assume O32.
-
-	* TODO, NEWS: Update.  Mention MIPS is multi-arch.
-
-Thu Jun  8 14:23:12 2000  Andrew Cagney  <cagney@b1.cygnus.com>
-
-	* config/mips/tm-vr4xxxel.h, config/mips/tm-vr4xxx.h,
- 	config/mips/tm-vr4100.h, config/mips/tm-tx39l.h,
- 	config/mips/tm-tx39.h: Delete definition of
- 	MIPS_DEFAULT_FPU_TYPE. Enable multi-arch.
-	* mips-tdep.c: (mips_gdbarch_init): The bfd_mach_mips3900 has no
- 	FPU.  bfd_mach_mips4650 FPU is single precision.
-
-	* config/mips/tm-mips.h (MIPS_FPU_SINGLE_REGSIZE): 
-	(MIPS_FPU_DOUBLE_REGSIZE): Move from here.
-	* mips-tdep.c: To here.  Change to an enum.
-
-Wed Jun  7 18:27:51 2000  Andrew Cagney  <cagney@b1.cygnus.com>
-
-	* configure.in (DEFAULT_BFD_ARCH, DEFAULT_BFD_VEC): Use config.bfd
- 	to determine the default architecture / target.
-	* acconfig (DEFAULT_BFD_ARCH, DEFAULT_BFD_VEC): Add.
-	* configure, config.in: Regenerate.
+	* gdbarch.sh (struct gdbarch): Add member dump_tdep.
+	(struct gdbarch_registration): Ditto.
+	(gdbarch_dump): Add ui_file and gdbarch arguments.  Add support
+ 	for external dump functions.  Dump the macro value.  Call target
+ 	dump routine.
+	(gdbarch_register): New function.
+	(gdbarch_registrary): Replace gdbarch_init_registrary.
+	* gdbarch.h, gdbarch.c: Re-generate.
+	* arch-utils.c (set_arch): Update.
 	
-	* arch-utils.c (set_endian): Better separate multi-arch and non-
- 	multi-arch cases.
-	(set_endian_from_file): Call internal_error when multi-arch.
-	(initialize_current_architecture): Rewrite logic selecting a byte
- 	order.  Use DEFAULT_BFD_ARCH DEFAULT_BFD_VEC.
-	(version.h): Include.
+	* mips-tdep.c (mips_dump_tdep): New function. Move dump code here.
+	(mips_gdbarch_init): From here.
 
-	* config/mips/tm-mips.h, config/mips/tm-bigmips64.h,
- 	config/mips/tm-bigmips.h: Delete definition of
- 	TARGET_BYTE_ORDER_DEFAULT.
-
-Thu Jun  8 11:41:41 2000  Andrew Cagney  <cagney@b1.cygnus.com>
-
-	* infrun.c (follow_inferior_fork): Bad merge from below.  Compare
- 	strings using follow_fork_mode_ask and not "ask".
-
-Wed Jun  7 15:13:04 2000  Andrew Cagney  <cagney@b1.cygnus.com>
-
-	* command.h (add_set_enum_cmd): Make ``enumlist'' and ``var''
- 	constant char pointers.
-	(complete_on_enum): Change ``enumlist'' to a constant char
- 	pointer.
-	(struct cmd_list_element): Ditto for member ``enums''.
-	* command.c (complete_on_enum, add_set_enum_cmd,
- 	do_setshow_command): Update.
-
-	* infrun.c (follow_fork_mode_ask, follow_fork_mode_parent,
- 	follow_fork_mode_both, follow_fork_mode_child): New.  Use to
- 	construct the follow_fork_mode_kind_names.
-	(set_follow_fork_mode_command): Delete function.
-	(_initialize_infrun): Update.
-	(follow_inferior_fork): Do not strdup follow_fork_mode_string.
-  	Use follow_fork_mode_* variables directly instead.  Call
- 	internal_error instead of error when unimplemented "ask" mode.
-
-	* infrun.c (scheduler_enums, scheduler_mode, schedlock_off,
- 	schedlock_on, schedlock_step): Update.
-	* serial.c (serial_logbase, logbase_hex, logbase_octal,
- 	logbase_ascii, logbase_enums): Update.
-	* remote.c (packet_support_enums, packet_support_auto,
- 	packet_enable, packet_disable, struct packet_config): Update.
-	* arch-utils.c (initialize_current_architecture,
- 	set_architecture_string): Update.
-	(endian_big, endian_little, endian_auto, endian_enum,
- 	set_endian_string): Update.
-	* i386-tdep.c (valid_flavors, att_flavor, intel_flavor,
- 	disassembly_flavor): Update.
-	* mips-tdep.c (size_enums, size_64, size_32, size_auto,
- 	mips_stack_argsize_string, mips_saved_regsize_string): Update.
-	* arm-tdep.c (disassembly_flavor, valid_flavors): Update.
-	(_initialize_arm_tdep): Ditto.
-
-	* TODO: Update.
-
-Mon Jun  5 18:44:14 2000  Andrew Cagney  <cagney@b1.cygnus.com>
-
-	* thread.c (make_cleanup_restore_current_thread,
- 	do_restore_current_thread_cleanup): New functions.
-	(thread_apply_all_command, thread_apply_command): Use. Call
- 	do_cleanups when finished.
-
-	* defs.h (make_cleanup_func): Delete typedef.
-	* TODO: Update.
+	* maint.c (maintenance_print_architecture): New function.
+	(_initialize_maint_cmds): Add command ``maintenance print
+ 	architecture''.
 
 Wed Jun  7 11:34:54 2000  Andrew Cagney  <cagney@b1.cygnus.com>
 
@@ -133,36 +35,6 @@ Wed Jun  7 11:34:54 2000  Andrew Cagney  <cagney@b1.cygnus.com>
 	* gdbarch.sh: Update.
 	* gdbarch.h, gdbarch.c: Re-generate.
 
-	* TODO: Update.
-
-	* v850-tdep.c, sh3-rom.c, sh-tdep.c, i386-tdep.c: Include
- 	"arch-utils.h".
-	* Makefile.in (v850-tdep.o): Specify dependencies.
-	(i386-tdep.o, sh3-rom.o, sh-tdep.o): Add arch-utils.h to
- 	dependency list.
-
-2000-06-06  Michael Snyder  <msnyder@seadog.cygnus.com>
-
-	* configure.in: Enable autoconf to find curses.h on Solaris 2.8.
-	* configure: Regenerate.
-
-Tue Jun  6 21:14:47 2000  Andrew Cagney  <cagney@b1.cygnus.com>
-
-	* command.c (do_setshow_command): Accept an enum option immediatly
- 	when it is an exact match.
-
-Tue Jun  6 16:46:37 2000  Andrew Cagney  <cagney@b1.cygnus.com>
-
-	* config/mips/tm-vr5000el.h, config/mips/tm-vr5000.h,
- 	config/mips/tm-vr4xxxel.h, config/mips/tm-vr4xxx.h,
- 	config/mips/tm-vr4300el.h, config/mips/tm-vr4100.h,
- 	config/mips/tm-vr4300.h, config/mips/tm-tx39l.h,
- 	config/mips/tm-tx39.h, config/mips/tm-embedl64.h,
- 	config/mips/tm-embedl.h, config/mips/tm-embed64.h,
- 	config/mips/tm-embed.h: Delete TARGET_BYTE_ORDER_SELECTABLE_P.
-
-	* tm-mips.h (TARGET_BYTE_ORDER_SELECTABLE_P): Define as 1.
-	
 Tue Jun  6 16:21:14 2000  Andrew Cagney  <cagney@b1.cygnus.com>
 
 	* gdbarch.sh (generic_register_convertible_not,
@@ -172,32 +44,16 @@ Tue Jun  6 16:21:14 2000  Andrew Cagney  <cagney@b1.cygnus.com>
 	* arch-utils.h (frame_num_args_unknown): Add declaration.
 	* gdbarch.h, gdbarch.c: Re-generate.
 
-Tue Jun  6 15:07:08 2000  Andrew Cagney  <cagney@b1.cygnus.com>
-
-	* remote-mips.c (mips_open): Select the default monitor prompt
- 	based on the target ISA.
-
-	* config/mips/tm-vr4100.h (TARGET_MONITOR_PROMPT),
- 	config/mips/tm-vr4300el.h (TARGET_MONITOR_PROMPT),
- 	config/mips/tm-vr4300.h (TARGET_MONITOR_PROMPT),
- 	config/mips/tm-vr4xxx.h (TARGET_MONITOR_PROMPT),
- 	config/mips/tm-vr4xxxel.h (TARGET_MONITOR_PROMPT),
- 	config/mips/tm-vr5000el.h (TARGET_MONITOR_PROMPT),
- 	config/mips/tm-vr5000.h (TARGET_MONITOR_PROMPT),
-	config/mips/tm-mips.h (TARGET_MONITOR_PROMPT): Delete macro.
-
 2000-06-05  Daniel Berlin  <dan@cgsoftware.com>
 
 	* c-exp.y (yylex): template handling fixes.
 
 2000-06-03  Daniel Berlin  <dan@cgsoftware.com>
 
-	* symtab.h (VTBL_PREFIX_P): Add newer g++ vtbl prefix to prefix
-	list.
+	* symtab.h (VTBL_PREFIX_P): Add newer g++ vtbl prefix to prefix list.
 
-	* symtab.c (lookup_partial_symbol): Change to stop forcing linear
-	searches on C++ when we fail the binary search, by doing the
-	binary search right.
+	* symtab.c (lookup_partial_symbol): Change to stop forcing linear searches
+	on C++ when we fail the binary search, by doing the binary search right.
 
 2000-05-30  Daniel Berlin  <dan@cgsoftware.com>
 

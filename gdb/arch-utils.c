@@ -413,7 +413,7 @@ set_arch (const struct bfd_arch_info *arch,
       break;
     }
   if (gdbarch_debug)
-    gdbarch_dump ();
+    gdbarch_dump (current_gdbarch, gdb_stdlog);
 }
 
 /* Set the architecture from arch/machine (deprecated) */
@@ -564,7 +564,7 @@ set_gdbarch_from_file (abfd)
 extern const bfd_arch_info_type DEFAULT_BFD_ARCH;
 static const bfd_arch_info_type *default_bfd_arch = &DEFAULT_BFD_ARCH;
 #else
-static const bfd_arch_info_type *default_bfd_arch
+static const bfd_arch_info_type *default_bfd_arch;
 #endif
 
 #ifdef DEFAULT_BFD_VEC
@@ -659,7 +659,7 @@ initialize_current_architecture (void)
        of ``const char *''.  We just happen to know that the casts are
        safe. */
     c = add_set_enum_cmd ("architecture", class_support,
-			  arches, &set_architecture_string,
+			  (char **) arches, (char **) &set_architecture_string,
 			  "Set architecture of target.",
 			  &setlist);
     c->function.sfunc = set_architecture;
@@ -684,7 +684,7 @@ _initialize_gdbarch_utils (void)
 {
   struct cmd_list_element *c;
   c = add_set_enum_cmd ("endian", class_support,
-			endian_enum, &set_endian_string,
+			(char **) endian_enum, (char **) &set_endian_string,
 			"Set endianness of target.",
 			&setlist);
   c->function.sfunc = set_endian;
