@@ -1,5 +1,6 @@
 /* Source-language-related definitions for GDB.
-   Copyright 1991, 1992, 2000 Free Software Foundation, Inc.
+   Copyright 1991, 1992, 1993, 1994, 1995, 1998, 1999, 2000
+   Free Software Foundation, Inc.
    Contributed by the Department of Computer Science at the State University
    of New York at Buffalo.
 
@@ -30,12 +31,13 @@ struct expression;
 /* enum exp_opcode;     ANSI's `wisdom' didn't include forward enum decls. */
 
 /* This used to be included to configure GDB for one or more specific
-   languages.  Now it is shortcutted to configure for all of them.  FIXME.  */
+   languages.  Now it is left out to configure for all of them.  FIXME.  */
 /* #include "lang_def.h" */
 #define	_LANG_c
 #define	_LANG_m2
-#define	_LANG_chill
-#define _LANG_fortran
+/* OBSOLETE #define	_LANG_chill */
+#define  _LANG_fortran
+#define  _LANG_pascal
 
 #define MAX_FORTRAN_DIMS  7	/* Maximum number of F77 array dims */
 
@@ -80,6 +82,26 @@ extern enum type_check
     type_check_off, type_check_warn, type_check_on
   }
 type_check;
+
+/* case_mode ==
+   case_mode_auto:   case_sensitivity set upon selection of scope 
+   case_mode_manual: case_sensitivity set only by user.  */
+
+extern enum case_mode
+  {
+    case_mode_auto, case_mode_manual
+  }
+case_mode;
+
+/* case_sensitivity ==
+   case_sensitive_on:   Case sensitivity in name matching is used
+   case_sensitive_off:  Case sensitivity in name matching is not used  */
+
+extern enum case_sensitivity
+  {
+    case_sensitive_on, case_sensitive_off
+  }
+case_sensitivity;
 
 /* Information for doing language dependent formatting of printed values. */
 
@@ -139,17 +161,20 @@ struct language_defn
 
     enum type_check la_type_check;
 
+    /* Default case sensitivity */
+    enum case_sensitivity la_case_sensitivity;
+
     /* Parser function. */
 
-    int (*la_parser) PARAMS ((void));
+    int (*la_parser) (void);
 
     /* Parser error function */
 
-    void (*la_error) PARAMS ((char *));
+    void (*la_error) (char *);
 
     /* Evaluate an expression. */
-    struct value *(*evaluate_exp) PARAMS ((struct type *, struct expression *,
-					   int *, enum noside));
+    struct value *(*evaluate_exp) (struct type *, struct expression *,
+				   int *, enum noside);
 
     void (*la_printchar) (int ch, struct ui_file * stream);
 
@@ -159,7 +184,7 @@ struct language_defn
 
     void (*la_emitchar) (int ch, struct ui_file * stream, int quoter);
 
-    struct type *(*la_fund_type) PARAMS ((struct objfile *, int));
+    struct type *(*la_fund_type) (struct objfile *, int);
 
     /* Print a type using syntax appropriate for this language. */
 
@@ -231,7 +256,7 @@ struct language_defn
    its own language and we should keep track of that regardless of the
    language when symbols are read.  If we want some manual setting for
    the language of symbol files (e.g. detecting when ".c" files are
-   C++), it should be a seprate setting from the current_language.  */
+   C++), it should be a separate setting from the current_language.  */
 
 extern const struct language_defn *current_language;
 
@@ -263,13 +288,12 @@ language_mode;
 /* "cast" really means conversion */
 /* FIXME -- should be a setting in language_defn */
 #define CAST_IS_CONVERSION (current_language->la_language == language_c  || \
-			    current_language->la_language == language_cplus)
+			    current_language->la_language == language_cplus || \
+			    current_language->la_language == language_objc)
 
-extern void
-language_info PARAMS ((int));
+extern void language_info (int);
 
-extern enum language
-set_language PARAMS ((enum language));
+extern enum language set_language (enum language);
 
 
 /* This page contains functions that return things that are
@@ -353,119 +377,91 @@ set_language PARAMS ((enum language));
    overwritten by the next call.  Takes printf options like "08" or "l"
    (to produce e.g. %08x or %lx).  */
 
-extern char *
-  local_decimal_format_custom PARAMS ((char *));	/* language.c */
+extern char *local_decimal_format_custom (char *);	/* language.c */
 
-extern char *
-  local_octal_format_custom PARAMS ((char *));	/* language.c */
+extern char *local_octal_format_custom (char *);	/* language.c */
 
-extern char *
-  local_hex_format_custom PARAMS ((char *));	/* language.c */
+extern char *local_hex_format_custom (char *);	/* language.c */
 
+#if 0
+/* FIXME: cagney/2000-03-04: This function does not appear to be used.
+   It can be deleted once 5.0 has been released. */
 /* Return a string that contains the hex digits of the number.  No preceeding
    "0x" */
 
-extern char *
-  longest_raw_hex_string PARAMS ((LONGEST));
+extern char *longest_raw_hex_string (LONGEST);
+#endif
 
 /* Return a string that contains a number formatted in one of the local
    (language-specific) formats.  Result is static and is overwritten by
    the next call.  Takes printf options like "08l" or "l".  */
 
-extern char *
-  local_hex_string PARAMS ((unsigned long));	/* language.c */
+extern char *local_hex_string (LONGEST);	/* language.c */
 
-extern char *
-  longest_local_hex_string PARAMS ((LONGEST));	/* language.c */
-
-extern char *
-  local_hex_string_custom PARAMS ((unsigned long, char *));	/* language.c */
-
-extern char *
-  longest_local_hex_string_custom PARAMS ((LONGEST, char *));	/* language.c */
+extern char *local_hex_string_custom (LONGEST, char *);	/* language.c */
 
 /* Type predicates */
 
-extern int
-simple_type PARAMS ((struct type *));
+extern int simple_type (struct type *);
 
-extern int
-ordered_type PARAMS ((struct type *));
+extern int ordered_type (struct type *);
 
-extern int
-same_type PARAMS ((struct type *, struct type *));
+extern int same_type (struct type *, struct type *);
 
-extern int
-integral_type PARAMS ((struct type *));
+extern int integral_type (struct type *);
 
-extern int
-numeric_type PARAMS ((struct type *));
+extern int numeric_type (struct type *);
 
-extern int
-character_type PARAMS ((struct type *));
+extern int character_type (struct type *);
 
-extern int
-boolean_type PARAMS ((struct type *));
+extern int boolean_type (struct type *);
 
-extern int
-float_type PARAMS ((struct type *));
+extern int float_type (struct type *);
 
-extern int
-pointer_type PARAMS ((struct type *));
+extern int pointer_type (struct type *);
 
-extern int
-structured_type PARAMS ((struct type *));
+extern int structured_type (struct type *);
 
 /* Checks Binary and Unary operations for semantic type correctness */
 /* FIXME:  Does not appear to be used */
 #define unop_type_check(v,o) binop_type_check((v),NULL,(o))
 
-extern void
-binop_type_check PARAMS ((struct value *, struct value *, int));
+extern void binop_type_check (struct value *, struct value *, int);
 
 /* Error messages */
 
-extern void
-op_error PARAMS ((char *fmt, enum exp_opcode, int));
+extern void op_error (char *fmt, enum exp_opcode, int);
 
 #define type_op_error(f,o) \
    op_error((f),(o),type_check==type_check_on ? 1 : 0)
 #define range_op_error(f,o) \
    op_error((f),(o),range_check==range_check_on ? 1 : 0)
 
-extern void
-  type_error
-PARAMS ((char *,...))
-ATTR_FORMAT (printf, 1, 2);
+extern void type_error (const char *, ...) ATTR_FORMAT (printf, 1, 2);
 
-     void
-     range_error PARAMS ((char *,...))
-  ATTR_FORMAT (printf, 1, 2);
+extern void range_error (const char *, ...) ATTR_FORMAT (printf, 1, 2);
 
 /* Data:  Does this value represent "truth" to the current language?  */
 
-     extern int
-     value_true PARAMS ((struct value *));
+extern int value_true (struct value *);
 
-     extern struct type *lang_bool_type PARAMS ((void));
+extern struct type *lang_bool_type (void);
 
 /* The type used for Boolean values in the current language. */
 #define LA_BOOL_TYPE lang_bool_type ()
 
 /* Misc:  The string representing a particular enum language.  */
 
-     extern enum language language_enum PARAMS ((char *str));
+extern enum language language_enum (char *str);
 
-     extern const struct language_defn *language_def PARAMS ((enum language));
+extern const struct language_defn *language_def (enum language);
 
-     extern char *language_str PARAMS ((enum language));
+extern char *language_str (enum language);
 
 /* Add a language to the set known by GDB (at initialization time).  */
 
-     extern void
-     add_language PARAMS ((const struct language_defn *));
+extern void add_language (const struct language_defn *);
 
-     extern enum language
-     get_frame_language PARAMS ((void));	/* In stack.c */
+extern enum language get_frame_language (void);	/* In stack.c */
 
 #endif /* defined (LANGUAGE_H) */
