@@ -50,18 +50,26 @@ case "${target}" in
 	sim_target=arm
 	extra_subdirs="${extra_subdirs} testsuite"
 	;;
-  strongarm*-*-*)	sim_target=arm ;;
-  d10v-*-*)		sim_target=d10v ;;
-  d30v-*-*)
-	sim_target=d30v
-	only_if_gcc=yes
-	extra_subdirs="${extra_subdirs} igen"
+  strongarm*-*-*)
+  	sim_target=arm
+	extra_subdirs="${extra_subdirs} testsuite"
 	;;
-  fr30-*-*)		sim_target=fr30 ;;
+  xscale-*-*)
+  	sim_target=arm
+	extra_subdirs="${extra_subdirs} testsuite"
+	;;
+  d10v-*-*)		sim_target=d10v ;;
+# OBSOLETE   d30v-*-*)
+# OBSOLETE 	sim_target=d30v
+# OBSOLETE 	only_if_gcc=yes
+# OBSOLETE 	extra_subdirs="${extra_subdirs} igen"
+# OBSOLETE 	;;
+# OBSOLETE   fr30-*-*)		sim_target=fr30 ;;
   h8300*-*-*)		sim_target=h8300 ;;
   h8500-*-*)		sim_target=h8500 ;;
   i960-*-*)		sim_target=i960 ;;
   m32r-*-*)		sim_target=m32r ;;
+  m68hc11-*-*|m6811-*-*) sim_target=m68hc11 ;;
   mcore-*-*)		sim_target=mcore ;;
   mips*-*-*)
 	# The MIPS simulator can only be compiled by gcc.
@@ -79,13 +87,19 @@ case "${target}" in
 	sim_target=mn10200
 	;;
   sh*-*-*)		sim_target=sh ;;
-  powerpc*-*-eabi* | powerpc*-*-solaris* | powerpc*-*-sysv4* | powerpc*-*-elf* | powerpc*-*-linux* )
+  powerpc*-*-eabi* | powerpc*-*-solaris* | powerpc*-*-sysv4* | \
+  powerpc*-*-elf* | powerpc*-*-linux* | powerpc*-*-netbsd* )
 	# The PowerPC simulator uses the GCC extension long long as well as
 	# ANSI prototypes, so don't enable it for random host compilers
 	# unless asked to.
 	sim_target=ppc
 	only_if_gcc=yes
 	#extra_subdirs="${extra_subdirs}"
+	;;
+  tic80-*-*)
+	sim_target=tic80
+	only_if_gcc=yes
+	extra_subdirs="${extra_subdirs} igen"
 	;;
   v850-*-*)
 	# The V850 simulator can only be compiled by gcc.

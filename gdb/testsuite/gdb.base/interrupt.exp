@@ -1,4 +1,5 @@
-# Copyright (C) 1994, 1995, 1997, 1998 Free Software Foundation, Inc.
+# Copyright 1994, 1995, 1996, 1997, 1998, 1999, 2000
+# Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,11 +18,9 @@
 # Please email any bugs, comments, and/or additions to this file to:
 # bug-gdb@prep.ai.mit.edu
 
-if [host_info exists name] {
-    if [board_info host exists gdb,nointerrupts] {
-	verbose "Skipping interrupt.exp because of nointerrupts."
-	continue
-    }
+if [target_info exists gdb,nointerrupts] {
+    verbose "Skipping interrupt.exp because of nointerrupts."
+    continue
 }
 
 if [target_info exists gdb,noinferiorio] {
@@ -100,7 +99,7 @@ if ![file exists $binfile] then {
 	send_gdb "p func1 ()\n"
 	gdb_expect {
 	    -re " = 4.*$gdb_prompt $" { pass "call function when asleep" }
-	    -re ".*Program received signal SIGSEGV.*$gdb_prompt $" {
+	    -re ".*Program received signal SIG(SEGV|ILL).*$gdb_prompt $" {
 		setup_xfail "i*86-pc-linux*-gnu*"
 		fail "child died when we called func1, skipped rest of tests"
 		return
@@ -121,7 +120,7 @@ if ![file exists $binfile] then {
 
 		setup_xfail "sparc*-*-solaris2*"
 		setup_xfail "mips-*-ultrix*"
-		setup_xfail "i386*-*-bsd*"
+		setup_xfail "i*86-*-*bsd*"
 		setup_xfail "i*86-*-solaris2*"
 		setup_xfail "*-*-sysv4*"
 		setup_xfail "vax-*-*"
@@ -173,7 +172,7 @@ if ![file exists $binfile] then {
 	send_gdb "\004"
 	gdb_expect {
 	    -re "end of file.*Program exited normally.*$gdb_prompt $" {
-		pass "send_gdb end of file"
+		pass "send end of file"
 	    }
 	    -re "$gdb_prompt $" { fail "send end of file" }
 	    timeout { fail "send end of file (timeout)" }

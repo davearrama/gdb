@@ -1,5 +1,7 @@
 /* Memory-access and commands for remote es1800 processes, for GDB.
-   Copyright (C) 1988, 1992 Free Software Foundation, Inc.
+
+   Copyright 1988, 1992, 1993, 1994, 1995, 1996, 1998, 1999, 2000,
+   2001, 2002 Free Software Foundation, Inc.
 
    This file is added to GDB to make it possible to do debugging via an
    ES-1800 emulator. The code was originally written by Johan Holmberg
@@ -104,140 +106,103 @@
 #include "frame.h"
 #include "inferior.h"
 #include "target.h"
-#include "wait.h"
 #include "command.h"
+#include "symfile.h"
 #include "remote-utils.h"
 #include "gdbcore.h"
 #include "serial.h"
+#include "regcache.h"
+#include "value.h"
 
 /* Prototypes for local functions */
 
-static void
-es1800_child_detach PARAMS ((char *, int));
+static void es1800_child_detach (char *, int);
 
-static void
-es1800_child_open PARAMS ((char *, int));
+static void es1800_child_open (char *, int);
 
-static void
-es1800_transparent PARAMS ((char *, int));
+static void es1800_transparent (char *, int);
 
-static void
-es1800_create_inferior PARAMS ((char *, char *, char **));
+static void es1800_create_inferior (char *, char *, char **);
 
-static void
-es1800_load PARAMS ((char *, int));
+static void es1800_load (char *, int);
 
-static void
-es1800_kill PARAMS ((void));
+static void es1800_kill (void);
 
-static int
-verify_break PARAMS ((int));
+static int verify_break (int);
 
-static int
-es1800_remove_breakpoint PARAMS ((CORE_ADDR, char *));
+static int es1800_remove_breakpoint (CORE_ADDR, char *);
 
-static int
-es1800_insert_breakpoint PARAMS ((CORE_ADDR, char *));
+static int es1800_insert_breakpoint (CORE_ADDR, char *);
 
-static void
-es1800_files_info PARAMS ((struct target_ops *));
+static void es1800_files_info (struct target_ops *);
 
-static int
-es1800_xfer_inferior_memory PARAMS ((CORE_ADDR, char *, int, int,
-				     struct target_ops *));
+static int es1800_xfer_inferior_memory (CORE_ADDR, char *, int, int,
+					struct mem_attrib *,
+					struct target_ops *);
 
-static void
-es1800_prepare_to_store PARAMS ((void));
+static void es1800_prepare_to_store (void);
 
-static int es1800_wait PARAMS ((int, struct target_waitstatus *));
+static ptid_t es1800_wait (ptid_t, struct target_waitstatus *);
 
-static void es1800_resume PARAMS ((int, int, enum target_signal));
+static void es1800_resume (ptid_t, int, enum target_signal);
 
-static void
-es1800_detach PARAMS ((char *, int));
+static void es1800_detach (char *, int);
 
-static void
-es1800_attach PARAMS ((char *, int));
+static void es1800_attach (char *, int);
 
-static int
-damn_b PARAMS ((char *));
+static int damn_b (char *);
 
-static void
-es1800_open PARAMS ((char *, int));
+static void es1800_open (char *, int);
 
-static void
-es1800_timer PARAMS ((void));
+static void es1800_timer (void);
 
-static void
-es1800_reset PARAMS ((char *));
+static void es1800_reset (char *);
 
-static void
-es1800_request_quit PARAMS ((void));
+static void es1800_request_quit (void);
 
-static int
-readchar PARAMS ((void));
+static int readchar (void);
 
-static void
-expect PARAMS ((char *, int));
+static void expect (char *, int);
 
-static void
-expect_prompt PARAMS ((void));
+static void expect_prompt (void);
 
-static void
-download PARAMS ((FILE *, int, int));
+static void download (FILE *, int, int);
 
 #if 0
-static void
-bfd_copy PARAMS ((bfd *, bfd *));
+static void bfd_copy (bfd *, bfd *);
 #endif
 
-static void
-get_break_addr PARAMS ((int, CORE_ADDR *));
+static void get_break_addr (int, CORE_ADDR *);
 
-static int
-fromhex PARAMS ((int));
+static int fromhex (int);
 
-static int
-tohex PARAMS ((int));
+static int tohex (int);
 
-static void
-es1800_close PARAMS ((int));
+static void es1800_close (int);
 
-static void
-es1800_fetch_registers PARAMS ((void));
+static void es1800_fetch_registers (void);
 
-static void
-es1800_fetch_register PARAMS ((int));
+static void es1800_fetch_register (int);
 
-static void
-es1800_store_register PARAMS ((int));
+static void es1800_store_register (int);
 
-static void
-es1800_read_bytes PARAMS ((CORE_ADDR, char *, int));
+static void es1800_read_bytes (CORE_ADDR, char *, int);
 
-static void
-es1800_write_bytes PARAMS ((CORE_ADDR, char *, int));
+static void es1800_write_bytes (CORE_ADDR, char *, int);
 
-static void
-send_with_reply PARAMS ((char *, char *, int));
+static void send_with_reply (char *, char *, int);
 
-static void
-send_command PARAMS ((char *));
+static void send_command (char *);
 
-static void
-send PARAMS ((char *));
+static void send (char *);
 
-static void
-getmessage PARAMS ((char *, int));
+static void getmessage (char *, int);
 
-static void
-es1800_mourn_inferior PARAMS ((void));
+static void es1800_mourn_inferior (void);
 
-static void
-es1800_create_break_insn PARAMS ((char *, int));
+static void es1800_create_break_insn (char *, int);
 
-static void
-es1800_init_break PARAMS ((char *, int));
+static void es1800_init_break (char *, int);
 
 /* Local variables */
 
@@ -268,7 +233,7 @@ static int m68020;
    es1800_open knows that we don't have a file open when the program
    starts.  */
 
-static serial_t es1800_desc = NULL;
+static struct serial *es1800_desc = NULL;
 
 #define	PBUFSIZ	1000
 #define HDRLEN sizeof("@.BAAAAAAAA=$VV\r")
@@ -288,7 +253,7 @@ static jmp_buf interrupt;
    Rely on global variables: old_sigint(), interrupt */
 
 static void
-es1800_request_quit ()
+es1800_request_quit (void)
 {
   /* restore original signalhandler */
   signal (SIGINT, old_sigint);
@@ -301,8 +266,7 @@ es1800_request_quit ()
    quit - return to '(esgdb)' prompt or continue        */
 
 static void
-es1800_reset (quit)
-     char *quit;
+es1800_reset (char *quit)
 {
   char buf[80];
 
@@ -329,9 +293,7 @@ es1800_reset (quit)
    from_tty - says whether to be verbose or not */
 
 static void
-es1800_open (name, from_tty)
-     char *name;
-     int from_tty;
+es1800_open (char *name, int from_tty)
 {
   char buf[PBUFSIZ];
   char *p;
@@ -351,41 +313,41 @@ es1800_open (name, from_tty)
 
 #ifndef DEBUG_STDIN
 
-  es1800_desc = SERIAL_OPEN (name);
+  es1800_desc = serial_open (name);
   if (es1800_desc == NULL)
     {
       perror_with_name (name);
     }
   savename = savestring (name, strlen (name));
 
-  es1800_saved_ttystate = SERIAL_GET_TTY_STATE (es1800_desc);
+  es1800_saved_ttystate = serial_get_tty_state (es1800_desc);
 
-  if ((fcflag = fcntl (DEPRECATED_SERIAL_FD (es1800_desc), F_GETFL, 0)) == -1)
+  if ((fcflag = fcntl (deprecated_serial_fd (es1800_desc), F_GETFL, 0)) == -1)
     {
       perror_with_name ("fcntl serial");
     }
   es1800_fc_save = fcflag;
 
   fcflag = (fcflag & (FREAD | FWRITE));		/* mask out any funny stuff */
-  if (fcntl (DEPRECATED_SERIAL_FD (es1800_desc), F_SETFL, fcflag) == -1)
+  if (fcntl (deprecated_serial_fd (es1800_desc), F_SETFL, fcflag) == -1)
     {
       perror_with_name ("fcntl serial");
     }
 
   if (baud_rate != -1)
     {
-      if (SERIAL_SETBAUDRATE (es1800_desc, baud_rate))
+      if (serial_setbaudrate (es1800_desc, baud_rate))
 	{
-	  SERIAL_CLOSE (es1800_desc);
+	  serial_close (es1800_desc);
 	  perror_with_name (name);
 	}
     }
 
-  SERIAL_RAW (es1800_desc);
+  serial_raw (es1800_desc);
 
   /* If there is something sitting in the buffer we might take it as a
      response to a command, which would be bad.  */
-  SERIAL_FLUSH_INPUT (es1800_desc);
+  serial_flush_input (es1800_desc);
 
 #endif /* DEBUG_STDIN */
 
@@ -462,21 +424,20 @@ es1800_open (name, from_tty)
    quitting - are we quitting gdb now? */
 
 static void
-es1800_close (quitting)
-     int quitting;
+es1800_close (int quitting)
 {
   if (es1800_desc != NULL)
     {
       printf ("\nClosing connection to emulator...\n");
-      if (SERIAL_SET_TTY_STATE (es1800_desc, es1800_saved_ttystate) < 0)
+      if (serial_set_tty_state (es1800_desc, es1800_saved_ttystate) < 0)
 	print_sys_errmsg ("warning: unable to restore tty state", errno);
-      fcntl (DEPRECATED_SERIAL_FD (es1800_desc), F_SETFL, es1800_fc_save);
-      SERIAL_CLOSE (es1800_desc);
+      fcntl (deprecated_serial_fd (es1800_desc), F_SETFL, es1800_fc_save);
+      serial_close (es1800_desc);
       es1800_desc = NULL;
     }
   if (savename != NULL)
     {
-      free (savename);
+      xfree (savename);
     }
   savename = NULL;
 
@@ -504,9 +465,7 @@ es1800_close (quitting)
    from_tty - says whether to be verbose or not */
 
 static void
-es1800_attach (args, from_tty)
-     char *args;
-     int from_tty;
+es1800_attach (char *args, int from_tty)
 {
   error ("Cannot attach to pid %s, this feature is not implemented yet.",
 	 args);
@@ -524,9 +483,7 @@ es1800_attach (args, from_tty)
    from_tty - says whether to be verbose or not */
 
 static void
-es1800_detach (args, from_tty)
-     char *args;
-     int from_tty;
+es1800_detach (char *args, int from_tty)
 {
   if (args)
     {
@@ -545,10 +502,7 @@ es1800_detach (args, from_tty)
    siggnal - the signal value to be given to the target (0 = no signal) */
 
 static void
-es1800_resume (pid, step, siggnal)
-     int pid;
-     int step;
-     enum target_signal siggnal;
+es1800_resume (ptid_t ptid, int step, enum target_signal siggnal)
 {
   char buf[PBUFSIZ];
 
@@ -571,10 +525,8 @@ es1800_resume (pid, step, siggnal)
    storing status in STATUS just as `wait' would.
    status -  */
 
-static int
-es1800_wait (pid, status)
-     int pid;
-     struct target_waitstatus *status;
+static ptid_t
+es1800_wait (ptid_t ptid, struct target_waitstatus *status)
 {
   unsigned char buf[PBUFSIZ];
   int old_timeout = timeout;
@@ -639,7 +591,7 @@ es1800_wait (pid, status)
     }
   signal (SIGINT, old_sigint);
   timeout = old_timeout;
-  return (0);
+  return inferior_ptid;
 }
 
 
@@ -647,8 +599,7 @@ es1800_wait (pid, status)
    regno - the register to be fetched (fetch all registers if -1) */
 
 static void
-es1800_fetch_register (regno)
-     int regno;
+es1800_fetch_register (int regno)
 {
   char buf[PBUFSIZ];
   int k;
@@ -685,7 +636,7 @@ es1800_fetch_register (regno)
    Always fetches all registers. */
 
 static void
-es1800_fetch_registers ()
+es1800_fetch_registers (void)
 {
   char buf[PBUFSIZ];
   char SR_buf[PBUFSIZ];
@@ -857,8 +808,7 @@ es1800_fetch_registers ()
    FIXME: Return errno value.  */
 
 static void
-es1800_store_register (regno)
-     int regno;
+es1800_store_register (int regno)
 {
 
   static char regtab[18][4] =
@@ -956,7 +906,7 @@ es1800_store_register (regno)
 /* Prepare to store registers.  */
 
 static void
-es1800_prepare_to_store ()
+es1800_prepare_to_store (void)
 {
   /* Do nothing, since we can store individual regs */
 }
@@ -964,8 +914,7 @@ es1800_prepare_to_store ()
 /* Convert hex digit A to a number.  */
 
 static int
-fromhex (a)
-     int a;
+fromhex (int a)
 {
   if (a >= '0' && a <= '9')
     {
@@ -990,8 +939,7 @@ fromhex (a)
 /* Convert number NIB to a hex digit.  */
 
 static int
-tohex (nib)
-     int nib;
+tohex (int nib)
 {
   if (nib < 10)
     {
@@ -1010,15 +958,13 @@ tohex (nib)
    memaddr - the target's address
    myaddr  - gdb's address
    len     - number of bytes 
-   write   - write if != 0 otherwise read       */
+   write   - write if != 0 otherwise read
+   tops    - unused */
 
 static int
-es1800_xfer_inferior_memory (memaddr, myaddr, len, write, tops)
-     CORE_ADDR memaddr;
-     char *myaddr;
-     int len;
-     int write;
-     struct target_ops *tops;	/* Unused */
+es1800_xfer_inferior_memory (CORE_ADDR memaddr, char *myaddr, int len,
+			     int write, struct mem_attrib *attrib,
+			     struct target_ops *target)
 {
   int origlen = len;
   int xfersize;
@@ -1053,10 +999,7 @@ es1800_xfer_inferior_memory (memaddr, myaddr, len, write, tops)
    len     - number of bytes   */
 
 static void
-es1800_write_bytes (memaddr, myaddr, len)
-     CORE_ADDR memaddr;
-     char *myaddr;
-     int len;
+es1800_write_bytes (CORE_ADDR memaddr, char *myaddr, int len)
 {
   char buf[PBUFSIZ];
   int i;
@@ -1079,10 +1022,7 @@ es1800_write_bytes (memaddr, myaddr, len)
    len     - number of bytes   */
 
 static void
-es1800_read_bytes (memaddr, myaddr, len)
-     CORE_ADDR memaddr;
-     char *myaddr;
-     int len;
+es1800_read_bytes (CORE_ADDR memaddr, char *myaddr, int len)
 {
   static int DB_tab[16] =
   {8, 11, 14, 17, 20, 23, 26, 29, 34, 37, 40, 43, 46, 49, 52, 55};
@@ -1094,7 +1034,7 @@ es1800_read_bytes (memaddr, myaddr, len)
 
   if (len > PBUFSIZ / 2 - 1)
     {
-      abort ();
+      internal_error (__FILE__, __LINE__, "failed internal consistency check");
     }
 
   if (len == 1)			/* The emulator does not like expressions like:  */
@@ -1127,11 +1067,10 @@ es1800_read_bytes (memaddr, myaddr, len)
     }
 }
 
-/* Information about the current target  */
+/* Display information about the current target.  TOPS is unused.  */
 
 static void
-es1800_files_info (tops)
-     struct target_ops *tops;	/* Unused */
+es1800_files_info (struct target_ops *tops)
 {
   printf ("ES1800 Attached to %s at %d baud in %s mode\n", savename, 19200,
 	  MODE);
@@ -1150,9 +1089,7 @@ es1800_files_info (tops)
    the target_arch transfer vector, if we ever have one...  */
 
 static int
-es1800_insert_breakpoint (addr, contents_cache)
-     CORE_ADDR addr;
-     char *contents_cache;
+es1800_insert_breakpoint (CORE_ADDR addr, char *contents_cache)
 {
   int val;
 
@@ -1176,9 +1113,7 @@ es1800_insert_breakpoint (addr, contents_cache)
    BREAKPOINT bytes.    */
 
 static int
-es1800_remove_breakpoint (addr, contents_cache)
-     CORE_ADDR addr;
-     char *contents_cache;
+es1800_remove_breakpoint (CORE_ADDR addr, char *contents_cache)
 {
 
   return (target_write_memory (addr, contents_cache,
@@ -1189,9 +1124,7 @@ es1800_remove_breakpoint (addr, contents_cache)
    Primitive datastructures containing the es1800 breakpoint instruction  */
 
 static void
-es1800_create_break_insn (ins, vec)
-     char *ins;
-     int vec;
+es1800_create_break_insn (char *ins, int vec)
 {
   if (vec == 15)
     {
@@ -1207,8 +1140,7 @@ es1800_create_break_insn (ins, vec)
    vec - trap vector used for breakpoints  */
 
 static int
-verify_break (vec)
-     int vec;
+verify_break (int vec)
 {
   CORE_ADDR memaddress;
   char buf[8];
@@ -1224,21 +1156,19 @@ verify_break (vec)
 	{
 	  memory_error (status, memaddress);
 	}
-      return (STRCMP (instr, buf));
+      return (strcmp (instr, buf));
     }
   return (-1);
 }
 
 
 /* get_break_addr ()
-   find address of breakpint routine
+   find address of breakpoint routine
    vec - trap vector used for breakpoints
    addrp - store the address here       */
 
 static void
-get_break_addr (vec, addrp)
-     int vec;
-     CORE_ADDR *addrp;
+get_break_addr (int vec, CORE_ADDR *addrp)
 {
   CORE_ADDR memaddress = 0;
   int status;
@@ -1275,11 +1205,11 @@ get_break_addr (vec, addrp)
 /* Kill an inferior process */
 
 static void
-es1800_kill ()
+es1800_kill (void)
 {
-  if (inferior_pid != 0)
+  if (!ptid_equal (inferior_ptid, null_ptid))
     {
-      inferior_pid = 0;
+      inferior_ptid = null_ptid;
       es1800_mourn_inferior ();
     }
 }
@@ -1294,9 +1224,7 @@ es1800_kill ()
    FIXME Uses emulator overlay memory for trap routine  */
 
 static void
-es1800_load (filename, from_tty)
-     char *filename;
-     int from_tty;
+es1800_load (char *filename, int from_tty)
 {
 
   FILE *instream;
@@ -1312,7 +1240,7 @@ es1800_load (filename, from_tty)
     }
 
   filename = tilde_expand (filename);
-  make_cleanup (free, filename);
+  make_cleanup (xfree, filename);
 
   switch (es1800_load_format)
     {
@@ -1346,7 +1274,7 @@ es1800_load (filename, from_tty)
     }
 
   breakpoint_init_inferior ();
-  inferior_pid = 0;
+  inferior_ptid = null_ptid;
   if (from_tty)
     {
       printf ("Downloading \"%s\" to the ES 1800\n", filename);
@@ -1393,7 +1321,7 @@ es1800_load (filename, from_tty)
       system (buf);
     }
 
-  symbol_file_command (filename, from_tty);	/* reading symbol table */
+  symbol_file_add_main (filename, from_tty);	/* reading symbol table */
   immediate_quit--;
 }
 
@@ -1402,9 +1330,7 @@ es1800_load (filename, from_tty)
 #define NUMCPYBYTES 20
 
 static void
-bfd_copy (from_bfd, to_bfd)
-     bfd *from_bfd;
-     bfd *to_bfd;
+bfd_copy (bfd *from_bfd, bfd *to_bfd)
 {
   asection *p, *new;
   int i;
@@ -1449,17 +1375,14 @@ bfd_copy (from_bfd, to_bfd)
 
 #endif
 
-/* Start an process on the es1800 and set inferior_pid to the new
+/* Start an process on the es1800 and set inferior_ptid to the new
    process' pid.
    execfile - the file to run
    args     - arguments passed to the program
    env      - the environment vector to pass    */
 
 static void
-es1800_create_inferior (execfile, args, env)
-     char *execfile;
-     char *args;
-     char **env;
+es1800_create_inferior (char *execfile, char *args, char **env)
 {
   int entry_pt;
   int pid;
@@ -1505,7 +1428,7 @@ es1800_create_inferior (execfile, args, env)
   /* The "process" (board) is already stopped awaiting our commands, and
      the program is already downloaded.  We just set its PC and go.  */
 
-  inferior_pid = pid;		/* Needed for wait_for_inferior below */
+  inferior_ptid = pid_to_ptid (pid);	/* Needed for wait_for_inferior below */
 
   clear_proceed_status ();
 
@@ -1535,7 +1458,7 @@ es1800_create_inferior (execfile, args, env)
 /* The process has died, clean up.  */
 
 static void
-es1800_mourn_inferior ()
+es1800_mourn_inferior (void)
 {
   remove_breakpoints ();
   unpush_target (&es1800_child_ops);
@@ -1551,9 +1474,7 @@ es1800_mourn_inferior ()
    read until string is found (== 0)   */
 
 static void
-expect (string, nowait)
-     char *string;
-     int nowait;
+expect (char *string, int nowait)
 {
   char c;
   char *p = string;
@@ -1591,7 +1512,7 @@ expect (string, nowait)
 /* Keep discarding input until we see the prompt.  */
 
 static void
-expect_prompt ()
+expect_prompt (void)
 {
   expect (">", 0);
 }
@@ -1604,7 +1525,7 @@ expect_prompt ()
 /* read from stdin */
 
 static int
-readchar ()
+readchar (void)
 {
   char buf[1];
 
@@ -1625,11 +1546,11 @@ readchar ()
    timeout stuff.  */
 
 static int
-readchar ()
+readchar (void)
 {
   int ch;
 
-  ch = SERIAL_READCHAR (es1800_desc, timeout);
+  ch = serial_readchar (es1800_desc, timeout);
 
   /* FIXME: doing an error() here will probably cause trouble, at least if from
      es1800_wait.  */
@@ -1656,12 +1577,10 @@ readchar ()
    len    - size of buf  */
 
 static void
-send_with_reply (string, buf, len)
-     char *string, *buf;
-     int len;
+send_with_reply (char *string, char *buf, int len)
 {
   send (string);
-  SERIAL_WRITE (es1800_desc, "\r", 1);
+  serial_write (es1800_desc, "\r", 1);
 
 #ifndef DEBUG_STDIN
   expect (string, 1);
@@ -1677,11 +1596,10 @@ send_with_reply (string, buf, len)
    string - the es1800 command  */
 
 static void
-send_command (string)
-     char *string;
+send_command (char *string)
 {
   send (string);
-  SERIAL_WRITE (es1800_desc, "\r", 1);
+  serial_write (es1800_desc, "\r", 1);
 
 #ifndef DEBUG_STDIN
   expect (string, 0);
@@ -1694,14 +1612,13 @@ send_command (string)
    string - the es1800 command  */
 
 static void
-send (string)
-     char *string;
+send (char *string)
 {
   if (kiodebug)
     {
-      fprintf (stderr, "Sending: %s\n", string);
+      fprintf_unfiltered (gdb_stderr, "Sending: %s\n", string);
     }
-  SERIAL_WRITE (es1800_desc, string, strlen (string));
+  serial_write (es1800_desc, string, strlen (string));
 }
 
 
@@ -1710,9 +1627,7 @@ send (string)
    len    - size of buf  */
 
 static void
-getmessage (buf, len)
-     char *buf;
-     int len;
+getmessage (char *buf, int len)
 {
   char *bp;
   int c;
@@ -1748,15 +1663,12 @@ getmessage (buf, len)
 
   if (kiodebug)
     {
-      fprintf (stderr, "message received :%s\n", buf);
+      fprintf_unfiltered (gdb_stderr, "message received :%s\n", buf);
     }
 }
 
 static void
-download (instream, from_tty, format)
-     FILE *instream;
-     int from_tty;
-     int format;
+download (FILE *instream, int from_tty, int format)
 {
   char c;
   char buf[160];
@@ -1812,9 +1724,7 @@ download (instream, from_tty, format)
 
 /*ARGSUSED */
 static void
-es1800_transparent (args, from_tty)
-     char *args;
-     int from_tty;
+es1800_transparent (char *args, int from_tty)
 {
   int console;
   struct sgttyb modebl;
@@ -1876,7 +1786,7 @@ es1800_transparent (args, from_tty)
       perror_with_name ("ioctl console");
     }
 
-  if ((fcflag = fcntl (DEPRECATED_SERIAL_FD (es1800_desc), F_GETFL, 0)) == -1)
+  if ((fcflag = fcntl (deprecated_serial_fd (es1800_desc), F_GETFL, 0)) == -1)
     {
       perror_with_name ("fcntl serial");
     }
@@ -1884,7 +1794,7 @@ es1800_transparent (args, from_tty)
   es1800_fc_save = fcflag;
   fcflag = fcflag | FNDELAY;
 
-  if (fcntl (DEPRECATED_SERIAL_FD (es1800_desc), F_SETFL, fcflag) == -1)
+  if (fcntl (deprecated_serial_fd (es1800_desc), F_SETFL, fcflag) == -1)
     {
       perror_with_name ("fcntl serial");
     }
@@ -1902,7 +1812,7 @@ es1800_transparent (args, from_tty)
 	    {
 	      es1800_buf[es1800_cnt++] = inputbuf[i++];
 	    }
-	  if ((cc = SERIAL_WRITE (es1800_desc, es1800_buf, es1800_cnt)) == -1)
+	  if ((cc = serial_write (es1800_desc, es1800_buf, es1800_cnt)) == -1)
 	    {
 	      perror_with_name ("FEL! write:");
 	    }
@@ -1920,7 +1830,7 @@ es1800_transparent (args, from_tty)
 	  perror_with_name ("FEL! read:");
 	}
 
-      cc = read (DEPRECATED_SERIAL_FD (es1800_desc), inputbuf, inputcnt);
+      cc = read (deprecated_serial_fd (es1800_desc), inputbuf, inputcnt);
       if (cc != -1)
 	{
 	  for (i = 0; i < cc;)
@@ -1959,7 +1869,7 @@ es1800_transparent (args, from_tty)
 
   close (console);
 
-  if (fcntl (DEPRECATED_SERIAL_FD (es1800_desc), F_SETFL, es1800_fc_save) == -1)
+  if (fcntl (deprecated_serial_fd (es1800_desc), F_SETFL, es1800_fc_save) == -1)
     {
       perror_with_name ("FEL! fcntl");
     }
@@ -1970,9 +1880,7 @@ es1800_transparent (args, from_tty)
 #endif /* PROVIDE_TRANSPARENT */
 
 static void
-es1800_init_break (args, from_tty)
-     char *args;
-     int from_tty;
+es1800_init_break (char *args, int from_tty)
 {
   CORE_ADDR memaddress = 0;
   char buf[PBUFSIZ];
@@ -2038,17 +1946,13 @@ es1800_init_break (args, from_tty)
 }
 
 static void
-es1800_child_open (arg, from_tty)
-     char *arg;
-     int from_tty;
+es1800_child_open (char *arg, int from_tty)
 {
   error ("Use the \"run\" command to start a child process.");
 }
 
 static void
-es1800_child_detach (args, from_tty)
-     char *args;
-     int from_tty;
+es1800_child_detach (char *args, int from_tty)
 {
   if (args)
     {
@@ -2058,7 +1962,7 @@ es1800_child_detach (args, from_tty)
   pop_target ();
   if (from_tty)
     {
-      printf ("Ending debugging the process %d.\n", inferior_pid);
+      printf ("Ending debugging the process %d.\n", PIDGET (inferior_ptid));
     }
 }
 
@@ -2123,7 +2027,6 @@ Specify the serial device it is connected to (e.g. /dev/ttya).";
   es1800_ops.to_thread_alive = 0;
   es1800_ops.to_stop = 0;
   es1800_ops.to_pid_to_exec_file = NULL;
-  es1800_ops.to_core_file_to_sym_file = NULL;
   es1800_ops.to_stratum = core_stratum;
   es1800_ops.DONT_USE = 0;
   es1800_ops.to_has_all_memory = 0;
@@ -2196,7 +2099,6 @@ Specify the serial device it is connected to (e.g. /dev/ttya).";
   es1800_child_ops.to_thread_alive = 0;
   es1800_child_ops.to_stop = 0;
   es1800_child_ops.to_pid_to_exec_file = NULL;
-  es1800_child_ops.to_core_file_to_sym_file = NULL;
   es1800_child_ops.to_stratum = process_stratum;
   es1800_child_ops.DONT_USE = 0;
   es1800_child_ops.to_has_all_memory = 1;
@@ -2210,7 +2112,7 @@ Specify the serial device it is connected to (e.g. /dev/ttya).";
 }
 
 void
-_initialize_es1800 ()
+_initialize_es1800 (void)
 {
   init_es1800_ops ();
   init_es1800_child_ops ();
