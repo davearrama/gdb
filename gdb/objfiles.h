@@ -1,5 +1,7 @@
 /* Definitions for symbol file management in GDB.
-   Copyright (C) 1992, 1993, 1994, 1995 Free Software Foundation, Inc.
+
+   Copyright 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
+   2001, 2002, 2003 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -20,6 +22,12 @@
 
 #if !defined (OBJFILES_H)
 #define OBJFILES_H
+
+#include "gdb_obstack.h"	/* For obstack internals.  */
+#include "symfile.h"		/* For struct psymbol_allocation_list */
+
+struct bcache;
+struct htab;
 
 /* This structure maintains information on a per-objfile basis about the
    "entry point" of the objfile, and the scope within which the entry point
@@ -57,14 +65,15 @@
    confused.  However, we almost always have debugging information
    available for main().
 
-   These variables are used to save the range of PC values which are valid
-   within the main() function and within the function containing the process
-   entry point.  If we always consider the frame for main() as the outermost
-   frame when debugging user code, and the frame for the process entry
-   point function as the outermost frame when debugging startup code, then
-   all we have to do is have FRAME_CHAIN_VALID return false whenever a
-   frame's current PC is within the range specified by these variables.
-   In essence, we set "ceilings" in the frame chain beyond which we will
+   These variables are used to save the range of PC values which are
+   valid within the main() function and within the function containing
+   the process entry point.  If we always consider the frame for
+   main() as the outermost frame when debugging user code, and the
+   frame for the process entry point function as the outermost frame
+   when debugging startup code, then all we have to do is have
+   DEPRECATED_FRAME_CHAIN_VALID return false whenever a frame's
+   current PC is within the range specified by these variables.  In
+   essence, we set "ceilings" in the frame chain beyond which we will
    not proceed when following the frame chain back up the stack.
 
    A nice side effect is that we can still debug startup code without
@@ -75,9 +84,10 @@
    information but we do have usable information for main(), backtraces
    from user code don't go wandering off into the startup code.
 
-   To use this method, define your FRAME_CHAIN_VALID macro like:
+   To use this method, define your DEPRECATED_FRAME_CHAIN_VALID macro
+   like:
 
-   #define FRAME_CHAIN_VALID(chain, thisframe)     \
+   #define DEPRECATED_FRAME_CHAIN_VALID(chain, thisframe)     \
    (chain != 0                                   \
    && !(inside_main_func ((thisframe)->pc))     \
    && !(inside_entry_func ((thisframe)->pc)))
@@ -197,8 +207,11 @@ struct objstats
 
 #define OBJSTAT(objfile, expr) (objfile -> stats.expr)
 #define OBJSTATS struct objstats stats
-extern void print_objfile_statistics PARAMS ((void));
-extern void print_symbol_bcache_statistics PARAMS ((void));
+extern void print_objfile_statistics (void);
+extern void print_symbol_bcache_statistics (void);
+
+/* Number of entries in the minimal symbol hash table.  */
+#define MINIMAL_SYMBOL_HASH_SIZE 2039
 
 /* Master structure for keeping track of each file from which
    gdb reads symbols.  There are several ways these get allocated: 1.
@@ -228,7 +241,8 @@ struct objfile
 
     struct objfile *next;
 
-    /* The object file's name.  Malloc'd; free it if you free this struct.  */
+    /* The object file's name, tilde-expanded and absolute.
+       Malloc'd; free it if you free this struct.  */
 
     char *name;
 
@@ -272,7 +286,15 @@ struct objfile
     /* A byte cache where we can stash arbitrary "chunks" of bytes that
        will not change. */
 
-    struct bcache psymbol_cache;	/* Byte cache for partial syms */
+    struct bcache *psymbol_cache;	/* Byte cache for partial syms */
+    struct bcache *macro_cache;          /* Byte cache for macros */
+
+    /* Hash table for mapping symbol names to demangled names.  Each
+       entry in the hash table is actually two consecutive strings,
+       both null-terminated; the first one is a mangled or linkage
+       name, and the second is the demangled name or just a zero byte
+       if the name doesn't demangle.  */
+    struct htab *demangled_names_hash;
 
     /* Vectors of all partial symbols read in from file.  The actual data
        is stored in the psymbol_obstack. */
@@ -292,6 +314,15 @@ struct objfile
     struct minimal_symbol *msymbols;
     int minimal_symbol_count;
 
+    /* This is a hash table used to index the minimal symbols by name.  */
+
+    struct minimal_symbol *msymbol_hash[MINIMAL_SYMBOL_HASH_SIZE];
+
+    /* This hash table is used to index the minimal symbols by their
+       demangled names.  */
+
+    struct minimal_symbol *msymbol_demangled_hash[MINIMAL_SYMBOL_HASH_SIZE];
+
     /* For object file formats which don't specify fundamental types, gdb
        can create such types.  For now, it maintains a vector of pointers
        to these internally created fundamental types on a per objfile basis,
@@ -308,7 +339,7 @@ struct objfile
        the memory mapped malloc() package to manage storage for this objfile's
        data.  NULL if we are not. */
 
-    PTR md;
+    void *md;
 
     /* The file descriptor that was used to obtain the mmalloc descriptor
        for this objfile.  If we call mmalloc_detach with the malloc descriptor
@@ -339,14 +370,21 @@ struct objfile
        typically a pointer to malloc'd memory.  The symbol reader's finish
        function is responsible for freeing the memory thusly allocated.  */
 
-    PTR sym_private;
+    void *sym_private;
 
     /* Hook for target-architecture-specific information.  This must
        point to memory allocated on one of the obstacks in this objfile,
        so that it gets freed automatically when reading a new object
        file. */
 
-    PTR obj_private;
+    void *obj_private;
+
+    /* Per objfile data-pointers required by other GDB modules.  */
+    /* FIXME: kettenis/20030711: This mechanism could replace
+       sym_stab_info, sym_private and obj_private entirely.  */
+
+    void **data;
+    unsigned num_data;
 
     /* Set of relocation offsets to apply to each section.
        Currently on the psymbol_obstack (which makes no sense, but I'm
@@ -359,6 +397,18 @@ struct objfile
 
     struct section_offsets *section_offsets;
     int num_sections;
+
+    /* Indexes in the section_offsets array. These are initialized by the
+       *_symfile_offsets() family of functions (som_symfile_offsets,
+       xcoff_symfile_offsets, default_symfile_offsets). In theory they
+       should correspond to the section indexes used by bfd for the
+       current objfile. The exception to this for the time being is the
+       SOM version. */
+
+    int sect_index_text;
+    int sect_index_data;
+    int sect_index_bss;
+    int sect_index_rodata;
 
     /* These pointers are used to locate the section table, which
        among other things, is used to map pc addresses into sections.
@@ -382,6 +432,15 @@ struct objfile
     ExportEntry *export_list;
     int export_list_size;
 
+    /* Link to objfile that contains the debug symbols for this one.
+       One is loaded if this file has an debug link to an existing
+       debug file with the right checksum */
+    struct objfile *separate_debug_objfile;
+
+    /* If this is a separate debug object, this is used as a link to the
+       actual executable objfile. */
+    struct objfile *separate_debug_objfile_backlink;
+    
     /* Place to stash various statistics about this objfile */
       OBJSTATS;
   };
@@ -469,56 +528,59 @@ extern struct objfile *object_files;
 
 /* Declarations for functions defined in objfiles.c */
 
-extern struct objfile *
-allocate_objfile PARAMS ((bfd *, int));
+extern struct objfile *allocate_objfile (bfd *, int);
 
-extern int
-build_objfile_section_table PARAMS ((struct objfile *));
+extern int build_objfile_section_table (struct objfile *);
 
-extern void objfile_to_front PARAMS ((struct objfile *));
+extern void terminate_minimal_symbol_table (struct objfile *objfile);
 
-extern void
-unlink_objfile PARAMS ((struct objfile *));
+extern void put_objfile_before (struct objfile *, struct objfile *);
 
-extern void
-free_objfile PARAMS ((struct objfile *));
+extern void objfile_to_front (struct objfile *);
 
-extern void
-free_all_objfiles PARAMS ((void));
+extern void unlink_objfile (struct objfile *);
 
-extern void
-objfile_relocate PARAMS ((struct objfile *, struct section_offsets *));
+extern void free_objfile (struct objfile *);
 
-extern int
-have_partial_symbols PARAMS ((void));
+extern struct cleanup *make_cleanup_free_objfile (struct objfile *);
 
-extern int
-have_full_symbols PARAMS ((void));
+extern void free_all_objfiles (void);
+
+extern void objfile_relocate (struct objfile *, struct section_offsets *);
+
+extern int have_partial_symbols (void);
+
+extern int have_full_symbols (void);
 
 /* This operation deletes all objfile entries that represent solibs that
    weren't explicitly loaded by the user, via e.g., the add-symbol-file
    command.
  */
-extern void
-objfile_purge_solibs PARAMS ((void));
+extern void objfile_purge_solibs (void);
 
 /* Functions for dealing with the minimal symbol table, really a misc
    address<->symbol mapping for things we don't have debug symbols for.  */
 
-extern int
-have_minimal_symbols PARAMS ((void));
+extern int have_minimal_symbols (void);
 
-extern struct obj_section *
-  find_pc_section PARAMS ((CORE_ADDR pc));
+extern struct obj_section *find_pc_section (CORE_ADDR pc);
 
-extern struct obj_section *
-  find_pc_sect_section PARAMS ((CORE_ADDR pc, asection * section));
+extern struct obj_section *find_pc_sect_section (CORE_ADDR pc,
+						 asection * section);
 
-extern int
-in_plt_section PARAMS ((CORE_ADDR, char *));
+extern int in_plt_section (CORE_ADDR, char *);
 
-extern int
-is_in_import_list PARAMS ((char *, struct objfile *));
+extern int is_in_import_list (char *, struct objfile *);
+
+/* Keep a registry of per-objfile data-pointers required by other GDB
+   modules.  */
+
+extern const struct objfile_data *register_objfile_data (void);
+extern void set_objfile_data (struct objfile *objfile,
+			      const struct objfile_data *data, void *value);
+extern void *objfile_data (struct objfile *objfile,
+			   const struct objfile_data *data);
+
 
 /* Traverse all object files.  ALL_OBJFILES_SAFE works even if you delete
    the objfile during the traversal.  */
@@ -544,7 +606,7 @@ is_in_import_list PARAMS ((char *, struct objfile *));
 /* Traverse all minimal symbols in one objfile.  */
 
 #define	ALL_OBJFILE_MSYMBOLS(objfile, m) \
-    for ((m) = (objfile) -> msymbols; SYMBOL_NAME(m) != NULL; (m)++)
+    for ((m) = (objfile) -> msymbols; DEPRECATED_SYMBOL_NAME(m) != NULL; (m)++)
 
 /* Traverse all symtabs in all objfiles.  */
 
@@ -562,8 +624,7 @@ is_in_import_list PARAMS ((char *, struct objfile *));
 
 #define	ALL_MSYMBOLS(objfile, m) \
   ALL_OBJFILES (objfile)	 \
-    if ((objfile)->msymbols)	 \
-      ALL_OBJFILE_MSYMBOLS (objfile, m)
+    ALL_OBJFILE_MSYMBOLS (objfile, m)
 
 #define ALL_OBJFILE_OSECTIONS(objfile, osect)	\
   for (osect = objfile->sections; osect < objfile->sections_end; osect++)
@@ -571,5 +632,25 @@ is_in_import_list PARAMS ((char *, struct objfile *));
 #define ALL_OBJSECTIONS(objfile, osect)		\
   ALL_OBJFILES (objfile)			\
     ALL_OBJFILE_OSECTIONS (objfile, osect)
+
+#define SECT_OFF_DATA(objfile) \
+     ((objfile->sect_index_data == -1) \
+      ? (internal_error (__FILE__, __LINE__, "sect_index_data not initialized"), -1) \
+      : objfile->sect_index_data)
+
+#define SECT_OFF_RODATA(objfile) \
+     ((objfile->sect_index_rodata == -1) \
+      ? (internal_error (__FILE__, __LINE__, "sect_index_rodata not initialized"), -1) \
+      : objfile->sect_index_rodata)
+
+#define SECT_OFF_TEXT(objfile) \
+     ((objfile->sect_index_text == -1) \
+      ? (internal_error (__FILE__, __LINE__, "sect_index_text not initialized"), -1) \
+      : objfile->sect_index_text)
+
+/* Sometimes the .bss section is missing from the objfile, so we don't
+   want to die here. Let the users of SECT_OFF_BSS deal with an
+   uninitialized section index. */
+#define SECT_OFF_BSS(objfile) (objfile)->sect_index_bss
 
 #endif /* !defined (OBJFILES_H) */
