@@ -1,5 +1,5 @@
 /* Intel 387 floating point stuff.
-   Copyright (C) 1988, 1989, 1991, 1998, 1999 Free Software Foundation, Inc.
+   Copyright (C) 1988, 89, 91, 98, 99, 2000 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -166,8 +166,21 @@ static void
 print_i387_value (char *raw)
 {
   DOUBLEST value;
-  
-  floatformat_to_doublest (&floatformat_i387_ext, raw, &value);
+
+  /* Avoid call to floatformat_to_doublest if possible to preserve as
+     much information as possible.  */
+
+#ifdef HAVE_LONG_DOUBLE
+  if (sizeof (value) == sizeof (long double)
+      && HOST_LONG_DOUBLE_FORMAT == &floatformat_i387_ext)
+    {
+      /* Copy straight over, but take care of the padding.  */
+      memcpy (&value, raw, FPU_REG_RAW_SIZE);
+      memset (&value + FPU_REG_RAW_SIZE, 0, sizeof (value) - FPU_REG_RAW_SIZE);
+    }
+  else
+#endif
+    floatformat_to_doublest (&floatformat_i387_ext, raw, &value);
 
   /* We try to print 19 digits.  The last digit may or may not contain
      garbage, but we'd better print one too many.  We need enough room
@@ -387,51 +400,3 @@ i387_float_info (void)
   printf_filtered ("Opcode:              %s\n",
 		   local_hex_string_custom (fop ? (fop | 0xd800) : 0, "04"));
 }
-
-
-/* FIXME: The functions on this page are used to provide `long double'
-   support for Linux.  However, the approach does not seem to be the
-   right one, and we are planning to solve this in a way that should
-   work for all i386 targets.  These functions will disappear in the
-   near future, so please don't use them.  */
-#ifdef LD_I387
-int
-i387_extract_floating (PTR addr, int len, DOUBLEST *dretptr)
-{
-  if (len == TARGET_LONG_DOUBLE_BIT / 8)
-    {
-      if (HOST_LONG_DOUBLE_FORMAT == TARGET_LONG_DOUBLE_FORMAT)
-	{
-	  DOUBLEST retval;
-
-	  memcpy (dretptr, addr, sizeof (retval));
-	}
-      else
-	floatformat_to_doublest (TARGET_LONG_DOUBLE_FORMAT, addr, dretptr);
-
-      return 1;
-    }
-  else
-    return 0;
-}
-
-int
-i387_store_floating (PTR addr, int len, DOUBLEST val)
-{
-  if (len == TARGET_LONG_DOUBLE_BIT / 8)
-    {
-      /* This `if' may be totally stupid.  I just put it in here to be
-	 absolutely sure I'm preserving the semantics of the code I'm
-	 frobbing, while I try to maintain portability boundaries; I
-	 don't actually know exactly what it's doing.  -JimB, May 1999 */
-      if (HOST_LONG_DOUBLE_FORMAT == TARGET_LONG_DOUBLE_FORMAT)
-	memcpy (addr, &val, sizeof (val));
-      else
-	floatformat_from_doublest (TARGET_LONG_DOUBLE_FORMAT, &val, addr);
-
-      return 1;
-    }
-  else
-    return 0;
-}
-#endif /* LD_I387 */
