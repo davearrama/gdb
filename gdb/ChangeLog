@@ -1,9 +1,7 @@
-2004-02-29  Andrew Cagney  <cagney@redhat.com>
+2004-03-01  Andrew Cagney  <cagney@redhat.com>
 
-	* rs6000-tdep.c (rs6000_init_frame_pc_first): New function.
-	(rs6000_gdbarch_init): Set deprecated_init_frame_pc_first.
-	* config/rs6000/tm-rs6000.h (DEPRECATED_INIT_FRAME_PC_FIRST):
-	Delete macro.
+	GDB 6.1 branch created.
+	* version.in: Bump to version 6.0.90_0000-00-00-cvs.
 
 2004-02-29  Daniel Jacobowitz  <drow@mvista.com>
 
