@@ -1,8 +1,8 @@
-2002-03-04  Fred Fish  <fnf@redhat.com>
+2002-04-07  Andrew Cagney  <ac131313@redhat.com>
 
-	* gdbint.texinfo: Fix a bunch of typos (alsways, mirrorred,
-	expresson, suports, dependant, trhe, perhaphs, situtations,
-	explictily, taged, oportunity, unfortunatly).
+	* gdb.texinfo (Bug Reporting): Document that the web is the
+	prefered way of submitting bug reports.
+	(Bug Reporting): Delete the s-mail address as the last resort.
 
 2002-02-24  Andrew Cagney  <ac131313@redhat.com>
 
