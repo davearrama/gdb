@@ -1,5 +1,6 @@
 /* Print in infix form a struct expression.
-   Copyright (C) 1986, 1989, 1991, 2000 Free Software Foundation, Inc.
+   Copyright 1986, 1988, 1989, 1991, 1992, 1993, 1994, 1995, 1996, 1997,
+   1998, 1999, 2000 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -25,6 +26,7 @@
 #include "value.h"
 #include "language.h"
 #include "parser-defs.h"
+#include "frame.h"		/* For frame_map_regnum_to_name.  */
 
 #ifdef HAVE_CTYPE_H
 #include <ctype.h>
@@ -36,9 +38,7 @@ static void print_subexp (struct expression *, int *, struct ui_file *,
 			  enum precedence);
 
 void
-print_expression (exp, stream)
-     struct expression *exp;
-     struct ui_file *stream;
+print_expression (struct expression *exp, struct ui_file *stream)
 {
   int pc = 0;
   print_subexp (exp, &pc, stream, PREC_NULL);
@@ -50,11 +50,8 @@ print_expression (exp, stream)
    parentheses are needed here.  */
 
 static void
-print_subexp (exp, pos, stream, prec)
-     register struct expression *exp;
-     register int *pos;
-     struct ui_file *stream;
-     enum precedence prec;
+print_subexp (register struct expression *exp, register int *pos,
+	      struct ui_file *stream, enum precedence prec)
 {
   register unsigned tem;
   register const struct op_print *op_print_tab;
@@ -66,7 +63,7 @@ print_subexp (exp, pos, stream, prec)
   enum precedence myprec = PREC_NULL;
   /* Set to 1 for a right-associative operator.  */
   int assoc = 0;
-  value_ptr val;
+  struct value *val;
   char *tempstr = NULL;
 
   op_print_tab = exp->language_defn->la_op_print_tab;
@@ -123,10 +120,12 @@ print_subexp (exp, pos, stream, prec)
       return;
 
     case OP_REGISTER:
-      (*pos) += 2;
-      fprintf_filtered (stream, "$%s",
-	      REGISTER_NAME (longest_to_int (exp->elts[pc + 1].longconst)));
-      return;
+      {
+	int regnum = longest_to_int (exp->elts[pc + 1].longconst);
+	(*pos) += 2;
+	fprintf_filtered (stream, "$%s", frame_map_regnum_to_name (regnum));
+	return;
+      }
 
     case OP_BOOL:
       (*pos) += 2;
@@ -221,8 +220,9 @@ print_subexp (exp, pos, stream, prec)
 	}
       else
 	{
-	  int is_chill = exp->language_defn->la_language == language_chill;
-	  fputs_filtered (is_chill ? " [" : " {", stream);
+	  /* OBSOLETE int is_chill = exp->language_defn->la_language == language_chill; */
+	  /* OBSOLETE fputs_filtered (is_chill ? " [" : " {", stream); */
+	  fputs_filtered (" {", stream);
 	  for (tem = 0; tem < nargs; tem++)
 	    {
 	      if (tem != 0)
@@ -231,7 +231,8 @@ print_subexp (exp, pos, stream, prec)
 		}
 	      print_subexp (exp, pos, stream, PREC_ABOVE_COMMA);
 	    }
-	  fputs_filtered (is_chill ? "]" : "}", stream);
+	  /* OBSOLETE fputs_filtered (is_chill ? "]" : "}", stream); */
+	  fputs_filtered ("}", stream);
 	}
       return;
 
@@ -239,15 +240,17 @@ print_subexp (exp, pos, stream, prec)
       tem = longest_to_int (exp->elts[pc + 1].longconst);
       (*pos) += 3 + BYTES_TO_EXP_ELEM (tem + 1);
 
-      if (exp->language_defn->la_language == language_chill)
-	{
-	  fputs_filtered (".", stream);
-	  fputs_filtered (&exp->elts[pc + 2].string, stream);
-	  fputs_filtered (exp->elts[*pos].opcode == OP_LABELED ? ", "
-			  : ": ",
-			  stream);
-	}
-      else
+#if 0
+      if (0 /* OBSOLETE exp->language_defn->la_language == language_chill */)
+	{ /* OBSOLETE */
+	  fputs_filtered (".", stream); /* OBSOLETE */
+	  fputs_filtered (&exp->elts[pc + 2].string, stream); /* OBSOLETE */
+	  fputs_filtered (exp->elts[*pos].opcode == OP_LABELED ? ", " /* OBSOLETE */
+			  : ": ", /* OBSOLETE */
+			  stream); /* OBSOLETE */
+	} /* OBSOLETE */
+      else /* OBSOLETE */
+#endif
 	{
 	  /* Gcc support both these syntaxes.  Unsure which is preferred.  */
 #if 1
@@ -338,7 +341,7 @@ print_subexp (exp, pos, stream, prec)
       (*pos) += 2;
       if ((int) prec > (int) PREC_PREFIX)
 	fputs_filtered ("(", stream);
-      if (exp->elts[pc + 1].type->code == TYPE_CODE_FUNC &&
+      if (TYPE_CODE (exp->elts[pc + 1].type) == TYPE_CODE_FUNC &&
 	  exp->elts[pc + 3].opcode == OP_LONG)
 	{
 	  /* We have a minimal symbol fn, probably.  It's encoded
@@ -488,8 +491,7 @@ print_subexp (exp, pos, stream, prec)
    a string.   NULL indicates that the opcode was not found in the
    current language table.  */
 char *
-op_string (op)
-     enum exp_opcode op;
+op_string (enum exp_opcode op)
 {
   int tem;
   register const struct op_print *op_print_tab;
@@ -504,11 +506,10 @@ op_string (op)
 /* Support for dumping the raw data from expressions in a human readable
    form.  */
 
-static char *op_name PARAMS ((int opcode));
+static char *op_name (int opcode);
 
 static char *
-op_name (opcode)
-     int opcode;
+op_name (int opcode)
 {
   switch (opcode)
     {
@@ -693,10 +694,8 @@ op_name (opcode)
 }
 
 void
-dump_prefix_expression (exp, stream, note)
-     struct expression *exp;
-     struct ui_file *stream;
-     char *note;
+dump_prefix_expression (struct expression *exp, struct ui_file *stream,
+			char *note)
 {
   int elt;
   char *opcode_name;
@@ -710,9 +709,9 @@ dump_prefix_expression (exp, stream, note)
     print_expression (exp, stream);
   else
     fprintf_filtered (stream, "Type printing not yet supported....");
-  fprintf_filtered (stream, "'\n\tLanguage %s, %d elements, %d bytes each.\n",
+  fprintf_filtered (stream, "'\n\tLanguage %s, %d elements, %ld bytes each.\n",
 		    exp->language_defn->la_name, exp->nelts,
-		    sizeof (union exp_element));
+		    (long) sizeof (union exp_element));
   fprintf_filtered (stream, "\t%5s  %20s  %16s  %s\n", "Index", "Opcode",
 		    "Hex Value", "String Value");
   for (elt = 0; elt < exp->nelts; elt++)
@@ -736,13 +735,11 @@ dump_prefix_expression (exp, stream, note)
     }
 }
 
-static int dump_subexp PARAMS ((struct expression * exp, struct ui_file * stream, int elt));
+static int dump_subexp (struct expression *exp, struct ui_file *stream,
+			int elt);
 
 static int
-dump_subexp (exp, stream, elt)
-     struct expression *exp;
-     struct ui_file *stream;
-     int elt;
+dump_subexp (struct expression *exp, struct ui_file *stream, int elt)
 {
   static int indent = 0;
   int i;
@@ -972,10 +969,8 @@ dump_subexp (exp, stream, elt)
 }
 
 void
-dump_postfix_expression (exp, stream, note)
-     struct expression *exp;
-     struct ui_file *stream;
-     char *note;
+dump_postfix_expression (struct expression *exp, struct ui_file *stream,
+			 char *note)
 {
   int elt;
 
@@ -986,9 +981,9 @@ dump_postfix_expression (exp, stream, note)
     print_expression (exp, stream);
   else
     fputs_filtered ("Type printing not yet supported....", stream);
-  fprintf_filtered (stream, "'\n\tLanguage %s, %d elements, %d bytes each.\n",
+  fprintf_filtered (stream, "'\n\tLanguage %s, %d elements, %ld bytes each.\n",
 		    exp->language_defn->la_name, exp->nelts,
-		    sizeof (union exp_element));
+		    (long) sizeof (union exp_element));
   fputs_filtered ("\n", stream);
 
   for (elt = 0; elt < exp->nelts;)

@@ -211,7 +211,8 @@ trace_result (int has_result, unsigned32 result)
     int i;
     for (i = 0; i < trace_num_values; i++)
       {
-	sprintf (chp, "%*s0x%.8lx", SIZE_VALUES - 10, "", trace_values[i]);
+	sprintf (chp, "%*s0x%.8lx", SIZE_VALUES - 10, "",
+		 (long) trace_values[i]);
 	chp = strchr (chp, '\0');
       }
     while (i++ < 3)
@@ -1879,7 +1880,7 @@ OP_10007E0 ()
       ECR |= 0x40 + OP[0];
       /* Flag that we are now doing exception processing.  */
       PSW |= PSW_EP | PSW_ID;
-      PC = ((OP[0] < 0x10) ? 0x40 : 0x50) - 4;
+      PC = (OP[0] < 0x10) ? 0x40 : 0x50;
 
       return 0;
     }
@@ -2457,7 +2458,7 @@ OP_24007E0 (void)
 {
   trace_input ("mul", OP_IMM_REG_REG, 0);
 
-  Multiply64 (true, (OP[3] & 0x1f) | ((OP[3] >> 13) & 0x1e0));
+  Multiply64 (true, SEXT9 ((OP[3] & 0x1f) | ((OP[3] >> 13) & 0x1e0)));
 
   trace_output (OP_IMM_REG_REG);
 
