@@ -1,5 +1,5 @@
 /* Macro definitions for GDB for a Sun 4 running Solaris 2
-   Copyright 1989, 1992, 1993, 1994, 1995, 1997, 1998
+   Copyright 1989, 1992, 1993, 1994, 1995, 1996, 1998, 1999, 2000
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -20,7 +20,12 @@
    Boston, MA 02111-1307, USA.  */
 
 #include "sparc/tm-sparc.h"
-#include "tm-sysv4.h"
+#include "config/tm-sysv4.h"
+
+/* With Sol2 it is no longer necessary to enable software single-step,
+   since the /proc interface can take care of it for us in hardware.  */
+#undef SOFTWARE_SINGLE_STEP
+#undef SOFTWARE_SINGLE_STEP_P
 
 /* There are two different signal handler trampolines in Solaris2.  */
 #define IN_SIGTRAMP(pc, name) \
@@ -33,7 +38,7 @@
    ucbsigvechandler.  */
 #define SIGCONTEXT_PC_OFFSET 44
 
-#if 0				/* FIXME Setjmp/longjmp are not as well doc'd in SunOS 5.x yet */
+#if 0	/* FIXME Setjmp/longjmp are not as well doc'd in SunOS 5.x yet */
 
 /* Offsets into jmp_buf.  Not defined by Sun, but at least documented in a
    comment in <machine/setjmp.h>! */
@@ -56,8 +61,7 @@
    extract the pc (JB_PC) that we will land at.  The pc is copied into ADDR.
    This routine returns true on success */
 
-extern int
-get_longjmp_target PARAMS ((CORE_ADDR *));
+extern int get_longjmp_target (CORE_ADDR *);
 
 #define GET_LONGJMP_TARGET(ADDR) get_longjmp_target(ADDR)
 #endif /* 0 */
@@ -66,7 +70,7 @@ get_longjmp_target PARAMS ((CORE_ADDR *));
    and for SunPRO 3.0, N_FUN symbols too.  */
 #define SOFUN_ADDRESS_MAYBE_MISSING
 
-extern char *sunpro_static_transform_name PARAMS ((char *));
+extern char *sunpro_static_transform_name (char *);
 #define STATIC_TRANSFORM_NAME(x) sunpro_static_transform_name (x)
 #define IS_STATIC_TRANSFORM_NAME(name) ((name)[0] == '$')
 
@@ -74,8 +78,3 @@ extern char *sunpro_static_transform_name PARAMS ((char *));
 
 /* Enable handling of shared libraries for a.out executables.  */
 #define HANDLE_SVR4_EXEC_EMULATORS
-
-/* Macros to extract process id and thread id from a composite pid/tid */
-#define PIDGET(pid) ((pid) & 0xffff)
-#define TIDGET(pid) (((pid) >> 16) & 0xffff)
-#define MERGEPID(pid, tid) (((tid) << 16) | (pid))

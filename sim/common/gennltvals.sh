@@ -33,13 +33,17 @@ dir=newlib/libc/sys/d10v/sys target=d10v
 $shell ${srccom}/gentvals.sh $target sys ${srcroot}/$dir \
 	"syscall.h" 'SYS_[_A-Za-z0-9]*' "${cpp}"
 
-dir=libgloss target=d30v
-$shell ${srccom}/gentvals.sh $target sys ${srcroot}/$dir \
-	"syscall.h" 'SYS_[_A-Za-z0-9]*' "${cpp}"
+# OBSOLETE dir=libgloss target=d30v
+# OBSOLETE $shell ${srccom}/gentvals.sh $target sys ${srcroot}/$dir \
+# OBSOLETE 	"syscall.h" 'SYS_[_A-Za-z0-9]*' "${cpp}"
 
 dir=libgloss target=fr30
 $shell ${srccom}/gentvals.sh $target sys ${srcroot}/$dir \
 	"syscall.h" 'SYS_[_A-Za-z0-9]*' "${cpp}"
+
+dir=libgloss target=frv
+$shell ${srccom}/gentvals.sh $target sys ${srcroot}/$dir \
+        "syscall.h" 'SYS_[_A-Za-z0-9]*' "${cpp}"
 
 dir=libgloss/i960 target=i960
 $shell ${srccom}/gentvals.sh $target sys ${srcroot}/$dir \
@@ -64,3 +68,4 @@ $shell ${srccom}/gentvals.sh $target sys ${srcroot}/$dir \
 dir=libgloss/v850/sys target=v850
 $shell ${srccom}/gentvals.sh $target sys ${srcroot}/$dir \
 	"syscall.h" 'SYS_[_A-Za-z0-9]*' "${cpp}"
+
