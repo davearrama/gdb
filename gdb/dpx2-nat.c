@@ -1,5 +1,6 @@
 /* DPX2 host interface.
-   Copyright (C) 1988, 1989, 1991 Free Software Foundation, Inc.
+   Copyright 1988, 1989, 1991, 1993, 1995, 2000
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -31,7 +32,7 @@
 #include <sys/utsname.h>
 
 
-/* this table must line up with REGISTER_NAMES in tm-68k.h */
+/* This table must line up with REGISTER_NAME in "m68k-tdep.c".  */
 /* symbols like 'A0' come from <sys/reg.h> */
 static int regmap[] =
 {
@@ -47,9 +48,7 @@ static int regmap[] =
  */
 
 int
-dpx2_register_u_addr (blockend, regnum)
-     int blockend;
-     int regnum;
+dpx2_register_u_addr (int blockend, int regnum)
 {
   if (regnum < FP0_REGNUM)
     return (blockend + 4 * regmap[regnum]);
@@ -73,7 +72,7 @@ dpx2_register_u_addr (blockend, regnum)
 CORE_ADDR kernel_u_addr;
 
 void
-_initialize_dpx2_nat ()
+_initialize_dpx2_nat (void)
 {
   struct utsname uts;
 

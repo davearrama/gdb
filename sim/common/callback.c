@@ -46,7 +46,7 @@
 #include <time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include "callback.h"
+#include "gdb/callback.h"
 #include "targ-vals.h"
 
 #ifdef HAVE_UNISTD_H
@@ -306,7 +306,7 @@ os_write (p, fd, buf, len)
 
 static int 
 os_write_stdout (p, buf, len)
-     host_callback *p;
+     host_callback *p ATTRIBUTE_UNUSED;
      const char *buf;
      int len;
 {
@@ -315,14 +315,14 @@ os_write_stdout (p, buf, len)
 
 static void
 os_flush_stdout (p)
-     host_callback *p;
+     host_callback *p ATTRIBUTE_UNUSED;
 {
   fflush (stdout);
 }
 
 static int 
 os_write_stderr (p, buf, len)
-     host_callback *p;
+     host_callback *p ATTRIBUTE_UNUSED;
      const char *buf;
      int len;
 {
@@ -331,7 +331,7 @@ os_write_stderr (p, buf, len)
 
 static void
 os_flush_stderr (p)
-     host_callback *p;
+     host_callback *p ATTRIBUTE_UNUSED;
 {
   fflush (stderr);
 }
@@ -399,6 +399,30 @@ os_fstat (p, fd, buf)
   return wrap (p, fstat (fdmap (p, fd), buf));
 }
 
+static int 
+os_ftruncate (p, fd, len)
+     host_callback *p;
+     int fd;
+     long len;
+{
+  int result;
+
+  result = fdbad (p, fd);
+  if (result)
+    return result;
+  result = wrap (p, ftruncate (fdmap (p, fd), len));
+  return result;
+}
+
+static int
+os_truncate (p, file, len)
+     host_callback *p;
+     const char *file;
+     long len;
+{
+  return wrap (p, truncate (file, len));
+}
+
 static int
 os_shutdown (p)
      host_callback *p;
@@ -435,12 +459,12 @@ os_init (p)
   return 1;
 }
 
-/* DEPRECIATED */
+/* DEPRECATED */
 
 /* VARARGS */
 static void
 #ifdef ANSI_PROTOTYPES
-os_printf_filtered (host_callback *p, const char *format, ...)
+os_printf_filtered (host_callback *p ATTRIBUTE_UNUSED, const char *format, ...)
 #else
 os_printf_filtered (p, va_alist)
      host_callback *p;
@@ -464,7 +488,7 @@ os_printf_filtered (p, va_alist)
 /* VARARGS */
 static void
 #ifdef ANSI_PROTOTYPES
-os_vprintf_filtered (host_callback *p, const char *format, va_list args)
+os_vprintf_filtered (host_callback *p ATTRIBUTE_UNUSED, const char *format, va_list args)
 #else
 os_vprintf_filtered (p, format, args)
      host_callback *p;
@@ -478,7 +502,7 @@ os_vprintf_filtered (p, format, args)
 /* VARARGS */
 static void
 #ifdef ANSI_PROTOTYPES
-os_evprintf_filtered (host_callback *p, const char *format, va_list args)
+os_evprintf_filtered (host_callback *p ATTRIBUTE_UNUSED, const char *format, va_list args)
 #else
 os_evprintf_filtered (p, format, args)
      host_callback *p;
@@ -492,7 +516,7 @@ os_evprintf_filtered (p, format, args)
 /* VARARGS */
 static void
 #ifdef ANSI_PROTOTYPES
-os_error (host_callback *p, const char *format, ...)
+os_error (host_callback *p ATTRIBUTE_UNUSED, const char *format, ...)
 #else
 os_error (p, va_alist)
      host_callback *p;
@@ -537,6 +561,9 @@ host_callback default_callback =
 
   os_stat,
   os_fstat,
+
+  os_ftruncate,
+  os_truncate,
 
   os_poll_quit,
 
@@ -726,7 +753,7 @@ store (p, size, val, big_p)
    TS is ignored.
 
    The result is the size of the target's stat struct,
-   or zero if an error occured during the translation.  */
+   or zero if an error occurred during the translation.  */
 
 int
 cb_host_to_target_stat (cb, hs, ts)

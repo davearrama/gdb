@@ -20,13 +20,7 @@
    Boston, MA 02111-1307, USA.  */
 
 #include "sparc/tm-spc-em.h"
-#include "tm-vxworks.h"
-
-/* FIXME: These are almost certainly wrong. */
-
-/* Number of registers in a ptrace_getregs call. */
-
-#define VX_NUM_REGS (NUM_REGS)
+#include "config/tm-vxworks.h"
 
 /* Number of registers in a ptrace_getfpregs call. */
 
