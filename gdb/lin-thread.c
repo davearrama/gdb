@@ -102,16 +102,7 @@
 #include "inferior.h"
 #include "gdbcmd.h"
 
-#ifdef HAVE_WAIT_H
-#include <wait.h>
-#else
-#ifdef HAVE_SYS_WAIT_H
-#include <sys/wait.h>
-#endif
-#endif
-
-/* "wait.h" fills in the gaps left by <wait.h> */
-#include "wait.h"
+#include "gdb_wait.h"
 
 #include <time.h>
 
@@ -177,6 +168,16 @@ typedef struct ps_prochandle *gdb_ps_prochandle_t;
 typedef void *gdb_ps_read_buf_t;
 typedef const void *gdb_ps_write_buf_t;
 typedef size_t gdb_ps_size_t;
+#endif
+
+/* Unfortunately glibc 2.1.3 was released with a broken prfpregset_t
+   type.  We let configure check for this lossage, and make
+   appropriate typedefs here.  */
+
+#ifdef PRFPREGSET_T_BROKEN
+typedef elf_fpregset_t gdb_prfpregset_t;
+#else
+typedef prfpregset_t gdb_prfpregset_t;
 #endif
 
 /* 
@@ -401,7 +402,7 @@ ps_lsetregs (gdb_ps_prochandle_t ph,		/* Set LWP general regs */
 ps_err_e
 ps_lgetfpregs (gdb_ps_prochandle_t ph,		/* Get LWP float regs */
 	       lwpid_t       lwpid,
-	       prfpregset_t *fpregset)
+	       gdb_prfpregset_t *fpregset)
 {
   struct cleanup *old_chain = save_inferior_pid ();
 
@@ -415,7 +416,7 @@ ps_lgetfpregs (gdb_ps_prochandle_t ph,		/* Get LWP float regs */
 ps_err_e
 ps_lsetfpregs (gdb_ps_prochandle_t ph,		/* Set LWP float regs */
 	       lwpid_t             lwpid,
-	       const prfpregset_t *fpregset)
+	       const gdb_prfpregset_t *fpregset)
 {
   struct cleanup *old_chain = save_inferior_pid ();
 
@@ -517,10 +518,10 @@ static td_err_e (*p_td_thr_setgregs)      (const td_thrhandle_t *th_p,
 					   const prgregset_t regset);
 
 static td_err_e (*p_td_thr_getfpregs)     (const td_thrhandle_t *th_p,
-					   prfpregset_t *fpregset);
+					   gdb_prfpregset_t *fpregset);
 
 static td_err_e (*p_td_thr_setfpregs)     (const td_thrhandle_t *th_p,
-					   const prfpregset_t *fpregset);
+					   const gdb_prfpregset_t *fpregset);
 
 static td_err_e (*p_td_ta_map_id2thr)     (const td_thragent_t *ta_p,
 					   thread_t tid,
@@ -667,21 +668,19 @@ init_thread_db_library ()
 static struct cleanup *
 save_inferior_pid (void)
 {
-#if TARGET_PTR_BIT > TARGET_INT_BIT
-  return make_cleanup (restore_inferior_pid, (void *) ((long) inferior_pid));
-#else
-  return make_cleanup (restore_inferior_pid, (void *) inferior_pid);
-#endif
+  int *saved_pid_ptr;
+  
+  saved_pid_ptr = xmalloc (sizeof (int));
+  *saved_pid_ptr = inferior_pid;
+  return make_cleanup (restore_inferior_pid, saved_pid_ptr);
 }
 
 static void
-restore_inferior_pid (void *saved_pid)
+restore_inferior_pid (void *arg)
 {
-#if TARGET_PTR_BIT > TARGET_INT_BIT
-  inferior_pid = (int) ((long) saved_pid);
-#else
-  inferior_pid = (int) saved_pid;
-#endif
+  int *saved_pid_ptr = arg;
+  inferior_pid = *saved_pid_ptr;
+  free (arg);
 }
 
 /*
@@ -1281,7 +1280,7 @@ thread_db_fetch_registers (regno)
      int regno;
 {
   td_thrhandle_t thandle;
-  prfpregset_t fpregset;
+  gdb_prfpregset_t fpregset;
   prgregset_t gregset;
   thread_t thread;
   td_err_e ret;
@@ -1332,7 +1331,7 @@ thread_db_store_registers (regno)
      int regno;
 {
   td_thrhandle_t thandle;
-  prfpregset_t fpregset;
+  gdb_prfpregset_t fpregset;
   prgregset_t  gregset;
   thread_t thread;
   td_err_e ret;
