@@ -16,6 +16,8 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 
+SHELL = @SHELL@
+
 ## COMMON_PRE_CONFIG_FRAG
 
 SIM_OBJS = \
@@ -47,22 +49,6 @@ NL_TARGET = -DNL_TARGET_v850
 
 ## COMMON_POST_CONFIG_FRAG
 
-simops.h table.c: tmp-gencode
-tmp-gencode: gencode
-	./gencode >tmp-table.c
-	mv tmp-table.c table.c
-	./gencode -h >tmp-simops.h
-	mv tmp-simops.h simops.h
-	touch tmp-gencode
-gencode.o: gencode.c
-	$(CC_FOR_BUILD) $(BUILD_CFLAGS) -c $(srcdir)/gencode.c
-v850-opc.o: $(srcdir)/../../opcodes/v850-opc.c
-	$(CC_FOR_BUILD) $(BUILD_CFLAGS) -c $<
-gencode: gencode.o v850-opc.o
-	$(CC_FOR_BUILD) $(BUILD_CFLAGS) -o gencode gencode.o v850-opc.o
-
-
-
 BUILT_SRC_FROM_IGEN = \
 	icache.h \
 	icache.c \
@@ -79,7 +65,7 @@ BUILT_SRC_FROM_IGEN = \
 	engine.h \
 	engine.c \
 	irun.c
-$(BUILT_SRC_FROM_IGEN): tmp-igen simops.h
+$(BUILT_SRC_FROM_IGEN): tmp-igen
 #
 
 .PHONY: clean-igen
@@ -98,6 +84,7 @@ tmp-igen: $(IGEN_INSN) $(IGEN_DC) ../igen/igen
 	../igen/igen \
 		$(IGEN_TRACE) \
 		-G gen-direct-access \
+		-G gen-zero-r0 \
 		-i $(IGEN_INSN) \
 		-o $(IGEN_DC) \
 		-x \
@@ -116,27 +103,27 @@ tmp-igen: $(IGEN_INSN) $(IGEN_DC) ../igen/igen
 		-n engine.h    -he tmp-engine.h \
 		-n engine.c    -e  tmp-engine.c \
 		-n irun.c      -r  tmp-irun.c
-	$(srcdir)/../../move-if-change tmp-icache.h icache.h
-	$(srcdir)/../../move-if-change tmp-icache.c icache.c
-	$(srcdir)/../../move-if-change tmp-idecode.h idecode.h
-	$(srcdir)/../../move-if-change tmp-idecode.c idecode.c
-	$(srcdir)/../../move-if-change tmp-semantics.h semantics.h
-	$(srcdir)/../../move-if-change tmp-semantics.c semantics.c
-	$(srcdir)/../../move-if-change tmp-model.h model.h
-	$(srcdir)/../../move-if-change tmp-model.c model.c
-	$(srcdir)/../../move-if-change tmp-support.h support.h
-	$(srcdir)/../../move-if-change tmp-support.c support.c
-	$(srcdir)/../../move-if-change tmp-itable.h itable.h
-	$(srcdir)/../../move-if-change tmp-itable.c itable.c
-	$(srcdir)/../../move-if-change tmp-engine.h engine.h
-	$(srcdir)/../../move-if-change tmp-engine.c engine.c
-	$(srcdir)/../../move-if-change tmp-irun.c irun.c
+	$(SHELL) $(srcdir)/../../move-if-change tmp-icache.h icache.h
+	$(SHELL) $(srcdir)/../../move-if-change tmp-icache.c icache.c
+	$(SHELL) $(srcdir)/../../move-if-change tmp-idecode.h idecode.h
+	$(SHELL) $(srcdir)/../../move-if-change tmp-idecode.c idecode.c
+	$(SHELL) $(srcdir)/../../move-if-change tmp-semantics.h semantics.h
+	$(SHELL) $(srcdir)/../../move-if-change tmp-semantics.c semantics.c
+	$(SHELL) $(srcdir)/../../move-if-change tmp-model.h model.h
+	$(SHELL) $(srcdir)/../../move-if-change tmp-model.c model.c
+	$(SHELL) $(srcdir)/../../move-if-change tmp-support.h support.h
+	$(SHELL) $(srcdir)/../../move-if-change tmp-support.c support.c
+	$(SHELL) $(srcdir)/../../move-if-change tmp-itable.h itable.h
+	$(SHELL) $(srcdir)/../../move-if-change tmp-itable.c itable.c
+	$(SHELL) $(srcdir)/../../move-if-change tmp-engine.h engine.h
+	$(SHELL) $(srcdir)/../../move-if-change tmp-engine.c engine.c
+	$(SHELL) $(srcdir)/../../move-if-change tmp-irun.c irun.c
 	touch tmp-igen
 
 clean-extra: clean-igen
 	rm -f table.c simops.h gencode
 
 #interp.o: interp.c table.c $(INCLUDE)
-simops.o: simops.c $(INCLUDE) targ-vals.h
+simops.o: simops.c simops.h $(INCLUDE) targ-vals.h
 #table.o: table.c
 semantics.o: $(INCLUDE)

@@ -113,7 +113,7 @@ CONFIG_CFLAGS = $(BSWAP_CFLAGS) \
   $(TERMIO_CFLAGS) \
   $(DEVZERO_CFLAGS)
 
-STD_CFLAGS	= $(CFLAGS) $(INLINE_CFLAGS) $(CONFIG_CFLAGS) $(WARNING_CFLAGS) $(SIM_CFLAGS) $(HDEFINES) $(TDEFINES) $(INCLUDES)
+STD_CFLAGS	= $(CFLAGS) $(INLINE_CFLAGS) $(CONFIG_CFLAGS) $(WARNING_CFLAGS) $(SIM_CFLAGS) $(HDEFINES) $(TDEFINES) $(INCLUDES) $(INTL_CFLAGS)
 NOWARN_CFLAGS	= $(CFLAGS) $(INLINE_CFLAGS) $(CONFIG_CFLAGS) $(SIM_CFLAGS) $(HDEFINES) $(TDEFINES) $(INCLUDES)
 BUILD_CFLAGS	= -g -O $(INCLUDES) $(WARNING_CFLAGS)
 
@@ -154,6 +154,10 @@ BFD_LIB		= ../../bfd/libbfd.a
 
 INTLLIBS = @INTLLIBS@
 INTLDEPS = @INTLDEPS@
+INTL_DIR = ../../intl
+INTL_SRC = $(srcdir)/$(INTL_DIR)
+INTL_CFLAGS = -I$(INTL_DIR) -I$(INTL_SRC)
+
 
 TARGETLIB	= libsim.a
 
@@ -306,6 +310,7 @@ LIB_OBJ = \
 	semantics.o \
 	idecode.o \
 	support.o \
+	@sim_fpu@ \
 	psim.o \
 	$(PACKAGE_OBJ) \
 	$(HW_OBJ) \
@@ -313,6 +318,9 @@ LIB_OBJ = \
 
 
 GDB_OBJ = sim_calls.o @sim_callback@
+
+ICACHE_CFLAGS = @sim_fpu_cflags@
+SEMANTICS_CFLAGS = @sim_fpu_cflags@
 
 HW_SRC = @sim_hw_src@
 HW_OBJ = @sim_hw_obj@
@@ -386,10 +394,10 @@ device_table.o: device_table.c $(DEVICE_TABLE_H) events.h hw.c
 cap.o: cap.c cap.h $(BASICS_H)
 
 semantics.o: semantics.c semantics.h $(CPU_H) $(IDECODE_H)
-	$(CC) -c $(NOWARN_CFLAGS) $<
+	$(CC) -c $(SEMANTICS_CFLAGS) $(NOWARN_CFLAGS) $<
 
 icache.o: icache.c icache.h $(IDECODE_H) $(CPU_H)
-	$(CC) -c $(NOWARN_CFLAGS) $<
+	$(CC) -c $(ICACHE_CFLAGS) $(NOWARN_CFLAGS) $<
 
 support.o: support.c support.h $(IDECODE_H) $(CPU_H)
 
@@ -405,22 +413,29 @@ gentmap: ../common/gentmap.c Makefile targ-vals.def
 targ-vals.def: $(srcdir)/../common/nltvals.def
 	rm -f targ-vals.def tmp-def
 	cat $(srcdir)/../common/nltvals.def > tmp-vals.def
-	$(srcdir)/../../move-if-change tmp-vals.def targ-vals.def
+	$(SHELL) $(srcdir)/../../move-if-change tmp-vals.def targ-vals.def
 
 targ-vals.h: Makefile gentmap $(srcdir)/../../move-if-change
 	rm -f tmp-vals.h
 	./gentmap -h > tmp-vals.h
-	$(srcdir)/../../move-if-change tmp-vals.h targ-vals.h
+	$(SHELL) $(srcdir)/../../move-if-change tmp-vals.h targ-vals.h
 
 targ-map.c: Makefile gentmap $(srcdir)/../../move-if-change
 	rm -f tmp-map.c
 	./gentmap -c > tmp-map.c
-	$(srcdir)/../../move-if-change tmp-map.c targ-map.c
+	$(SHELL) $(srcdir)/../../move-if-change tmp-map.c targ-map.c
 
 callback.o: ../common/callback.c targ-vals.h config.h
 	$(CC) -c $(STD_CFLAGS) -DHAVE_CONFIG_H $<
 
 targ-map.o: targ-map.c targ-vals.h
+
+sim-fpu.o: $(srcdir)/../common/sim-fpu.c config.h tconfig.h
+	$(CC) -c $(STD_CFLAGS) -DHAVE_CONFIG_H $(srcdir)/../common/sim-fpu.c 
+
+tconfig.h:
+	rm -f tconfig.h
+	echo > tconfig.h
 
 # Rebuild options whenever something changes so the date/time is up to date.
 options.o: options.c $(BASICS_H) $(CPU_H) $(IDECODE_H) $(INLINE) $(LIB_SRC) $(BUILT_SRC) config.status Makefile defines.h
@@ -428,7 +443,7 @@ options.o: options.c $(BASICS_H) $(CPU_H) $(IDECODE_H) $(INLINE) $(LIB_SRC) $(BU
 
 tmp-defines: config.h Makefile
 	sed -n -e '/^#define HAVE_/s/ 1$$/",/' -e '/^#define HAVE_/s//"HAVE_/p' < config.h > tmp-defines.h
-	$(srcdir)/../../move-if-change tmp-defines.h defines.h
+	$(SHELL) $(srcdir)/../../move-if-change tmp-defines.h defines.h
 	touch tmp-defines
 
 #
@@ -444,8 +459,8 @@ tmp-dgen: dgen ppc-spr-table $(srcdir)/../../move-if-change
 		-r $(srcdir)/ppc-spr-table \
 		-n spreg.h -hp tmp-spreg.h \
 		-n spreg.c -p  tmp-spreg.c
-	$(srcdir)/../../move-if-change tmp-spreg.h spreg.h
-	$(srcdir)/../../move-if-change tmp-spreg.c spreg.c
+	$(SHELL) $(srcdir)/../../move-if-change tmp-spreg.h spreg.h
+	$(SHELL) $(srcdir)/../../move-if-change tmp-spreg.c spreg.c
 	touch tmp-dgen
 
 
@@ -453,7 +468,7 @@ tmp-igen: igen ppc-instructions $(IGEN_OPCODE_RULES) ppc-cache-rules $(srcdir)/.
 	./igen	$(IGEN_FLAGS) \
 		-o $(srcdir)/$(IGEN_OPCODE_RULES) \
 		-k $(srcdir)/ppc-cache-rules \
-		-i $(srcdir)/ppc-instructions \
+		-I $(srcdir) -i $(srcdir)/ppc-instructions \
 		-n icache.h    -hc tmp-icache.h \
 		-n icache.c    -c  tmp-icache.c \
 		-n semantics.h -hs tmp-semantics.h \
@@ -466,18 +481,18 @@ tmp-igen: igen ppc-instructions $(IGEN_OPCODE_RULES) ppc-cache-rules $(srcdir)/.
 		-n model.c     -m  tmp-model.c \
 		-n support.h   -hf tmp-support.h \
 		-n support.c   -f  tmp-support.c
-	$(srcdir)/../../move-if-change tmp-icache.h icache.h
-	$(srcdir)/../../move-if-change tmp-icache.c icache.c
-	$(srcdir)/../../move-if-change tmp-idecode.h idecode.h
-	$(srcdir)/../../move-if-change tmp-idecode.c idecode.c
-	$(srcdir)/../../move-if-change tmp-semantics.h semantics.h
-	$(srcdir)/../../move-if-change tmp-semantics.c semantics.c
-	$(srcdir)/../../move-if-change tmp-itable.h itable.h
-	$(srcdir)/../../move-if-change tmp-itable.c itable.c
-	$(srcdir)/../../move-if-change tmp-model.h model.h
-	$(srcdir)/../../move-if-change tmp-model.c model.c
-	$(srcdir)/../../move-if-change tmp-support.h support.h
-	$(srcdir)/../../move-if-change tmp-support.c support.c
+	$(SHELL) $(srcdir)/../../move-if-change tmp-icache.h icache.h
+	$(SHELL) $(srcdir)/../../move-if-change tmp-icache.c icache.c
+	$(SHELL) $(srcdir)/../../move-if-change tmp-idecode.h idecode.h
+	$(SHELL) $(srcdir)/../../move-if-change tmp-idecode.c idecode.c
+	$(SHELL) $(srcdir)/../../move-if-change tmp-semantics.h semantics.h
+	$(SHELL) $(srcdir)/../../move-if-change tmp-semantics.c semantics.c
+	$(SHELL) $(srcdir)/../../move-if-change tmp-itable.h itable.h
+	$(SHELL) $(srcdir)/../../move-if-change tmp-itable.c itable.c
+	$(SHELL) $(srcdir)/../../move-if-change tmp-model.h model.h
+	$(SHELL) $(srcdir)/../../move-if-change tmp-model.c model.c
+	$(SHELL) $(srcdir)/../../move-if-change tmp-support.h support.h
+	$(SHELL) $(srcdir)/../../move-if-change tmp-support.c support.c
 	touch tmp-igen
 
 # NOTE: Some versions of make don't handle files created as side-effects
@@ -581,11 +596,11 @@ tmp-hw: Makefile $(HW_SRC) $(srcdir)/../../move-if-change
 		-e 's/^/    /' \
 		-e 's/$$/_device_descriptor,/' \
 		> tmp-hw.c
-	$(srcdir)/../../move-if-change tmp-hw.h hw.h
-	$(srcdir)/../../move-if-change tmp-hw.c hw.c
+	$(SHELL) $(srcdir)/../../move-if-change tmp-hw.h hw.h
+	$(SHELL) $(srcdir)/../../move-if-change tmp-hw.c hw.c
 	touch tmp-hw
 
-hw_cpu.o: hw_cpu.c $(DEVICE_TABLE_H)
+hw_cpu.o: hw_cpu.c $(DEVICE_TABLE_H) $(CPU_H)
 hw_core.o: hw_core.c $(DEVICE_TABLE_H)
 hw_disk.o: hw_disk.c $(DEVICE_TABLE_H) pk.h
 hw_glue.o: hw_glue.c $(DEVICE_TABLE_H)
@@ -596,11 +611,11 @@ hw_iobus.o: hw_iobus.c $(DEVICE_TABLE_H)
 hw_memory.o: hw_memory.c $(DEVICE_TABLE_H)
 hw_nvram.o: hw_nvram.c $(DEVICE_TABLE_H)
 hw_opic.o: hw_opic.c $(DEVICE_TABLE_H)
-hw_pal.o: hw_pal.c $(DEVICE_TABLE_H)
+hw_pal.o: hw_pal.c $(DEVICE_TABLE_H) $(CPU_H)
 hw_phb.o: hw_phb.c $(DEVICE_TABLE_H) hw_phb.h
 hw_register.o: hw_register.c $(DEVICE_TABLE_H)
 hw_trace.o: hw_trace.c $(DEVICE_TABLE_H)
-hw_vm.o: hw_vm.c $(DEVICE_TABLE_H)
+hw_vm.o: hw_vm.c $(DEVICE_TABLE_H) $(CPU_H)
 # ignore this line, it stops make from getting confused
 
 
@@ -620,7 +635,7 @@ tmp-pk: Makefile $(PACKAGE_SRC) $(srcdir)/../../move-if-change
 		-e 's/^/extern package_create_instance_callback pk_/' \
 		-e 's/$$/_create_instance;/' \
 		> tmp-pk.h
-	$(srcdir)/../../move-if-change tmp-pk.h pk.h
+	$(SHELL) $(srcdir)/../../move-if-change tmp-pk.h pk.h
 	touch tmp-pk
 
 pk_disklabel.o: pk.h $(DEVICE_TABLE_H)
