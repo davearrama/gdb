@@ -1,5 +1,6 @@
 /* Support for printing Fortran values for GDB, the GNU debugger.
-   Copyright 1993-1995, 2000 Free Software Foundation, Inc.
+   Copyright 1993, 1994, 1995, 1996, 1998, 1999, 2000
+   Free Software Foundation, Inc.
    Contributed by Motorola.  Adapted from the C definitions by Farooq Butt
    (fmbutt@engage.sps.mot.com), additionally worked over by Stan Shebs.
 
@@ -26,7 +27,6 @@
 #include "gdbtypes.h"
 #include "expression.h"
 #include "value.h"
-#include "demangle.h"
 #include "valprint.h"
 #include "language.h"
 #include "f-lang.h"
@@ -35,12 +35,12 @@
 #include "command.h"
 
 #if 0
-static int there_is_a_visible_common_named PARAMS ((char *));
+static int there_is_a_visible_common_named (char *);
 #endif
 
-extern void _initialize_f_valprint PARAMS ((void));
-static void info_common_command PARAMS ((char *, int));
-static void list_all_visible_commons PARAMS ((char *));
+extern void _initialize_f_valprint (void);
+static void info_common_command (char *, int);
+static void list_all_visible_commons (char *);
 static void f77_print_array (struct type *, char *, CORE_ADDR,
 			     struct ui_file *, int, int, int,
 			     enum val_prettyprint);
@@ -49,7 +49,7 @@ static void f77_print_array_1 (int, int, struct type *, char *,
 			       enum val_prettyprint);
 static void f77_create_arrayprint_offset_tbl (struct type *,
 					      struct ui_file *);
-static void f77_get_dynamic_length_of_aggregate PARAMS ((struct type *));
+static void f77_get_dynamic_length_of_aggregate (struct type *);
 
 int f77_array_offset_tbl[MAX_FORTRAN_DIMS + 1][2];
 
@@ -66,9 +66,7 @@ int f77_array_offset_tbl[MAX_FORTRAN_DIMS + 1][2];
 #define F77_DIM_OFFSET(n) (f77_array_offset_tbl[n][0])
 
 int
-f77_get_dynamic_lowerbound (type, lower_bound)
-     struct type *type;
-     int *lower_bound;
+f77_get_dynamic_lowerbound (struct type *type, int *lower_bound)
 {
   CORE_ADDR current_frame_addr;
   CORE_ADDR ptr_to_lower_bound;
@@ -104,9 +102,9 @@ f77_get_dynamic_lowerbound (type, lower_bound)
       if (current_frame_addr > 0)
 	{
 	  ptr_to_lower_bound =
-	    read_memory_integer (current_frame_addr +
-				 TYPE_ARRAY_LOWER_BOUND_VALUE (type),
-				 4);
+	    read_memory_typed_address (current_frame_addr +
+				       TYPE_ARRAY_LOWER_BOUND_VALUE (type),
+				       builtin_type_void_data_ptr);
 	  *lower_bound = read_memory_integer (ptr_to_lower_bound, 4);
 	}
       else
@@ -126,9 +124,7 @@ f77_get_dynamic_lowerbound (type, lower_bound)
 }
 
 int
-f77_get_dynamic_upperbound (type, upper_bound)
-     struct type *type;
-     int *upper_bound;
+f77_get_dynamic_upperbound (struct type *type, int *upper_bound)
 {
   CORE_ADDR current_frame_addr = 0;
   CORE_ADDR ptr_to_upper_bound;
@@ -169,9 +165,9 @@ f77_get_dynamic_upperbound (type, upper_bound)
       if (current_frame_addr > 0)
 	{
 	  ptr_to_upper_bound =
-	    read_memory_integer (current_frame_addr +
-				 TYPE_ARRAY_UPPER_BOUND_VALUE (type),
-				 4);
+	    read_memory_typed_address (current_frame_addr +
+				       TYPE_ARRAY_UPPER_BOUND_VALUE (type),
+				       builtin_type_void_data_ptr);
 	  *upper_bound = read_memory_integer (ptr_to_upper_bound, 4);
 	}
       else
@@ -193,8 +189,7 @@ f77_get_dynamic_upperbound (type, upper_bound)
 /* Obtain F77 adjustable array dimensions */
 
 static void
-f77_get_dynamic_length_of_aggregate (type)
-     struct type *type;
+f77_get_dynamic_length_of_aggregate (struct type *type)
 {
   int upper_bound = -1;
   int lower_bound = 1;
@@ -232,9 +227,7 @@ f77_get_dynamic_length_of_aggregate (type)
    type "type".  */
 
 static void
-f77_create_arrayprint_offset_tbl (type, stream)
-     struct type *type;
-     struct ui_file *stream;
+f77_create_arrayprint_offset_tbl (struct type *type, struct ui_file *stream)
 {
   struct type *tmp_type;
   int eltlen;
@@ -281,18 +274,9 @@ f77_create_arrayprint_offset_tbl (type, stream)
    the superior.  Address == the address in the inferior.  */
 
 static void
-f77_print_array_1 (nss, ndimensions, type, valaddr, address,
-		   stream, format, deref_ref, recurse, pretty)
-     int nss;
-     int ndimensions;
-     struct type *type;
-     char *valaddr;
-     CORE_ADDR address;
-     struct ui_file *stream;
-     int format;
-     int deref_ref;
-     int recurse;
-     enum val_prettyprint pretty;
+f77_print_array_1 (int nss, int ndimensions, struct type *type, char *valaddr,
+		   CORE_ADDR address, struct ui_file *stream, int format,
+		   int deref_ref, int recurse, enum val_prettyprint pretty)
 {
   int i;
 
@@ -331,16 +315,9 @@ f77_print_array_1 (nss, ndimensions, type, valaddr, address,
    stuff and then immediately call f77_print_array_1() */
 
 static void
-f77_print_array (type, valaddr, address, stream, format, deref_ref, recurse,
-		 pretty)
-     struct type *type;
-     char *valaddr;
-     CORE_ADDR address;
-     struct ui_file *stream;
-     int format;
-     int deref_ref;
-     int recurse;
-     enum val_prettyprint pretty;
+f77_print_array (struct type *type, char *valaddr, CORE_ADDR address,
+		 struct ui_file *stream, int format, int deref_ref, int recurse,
+		 enum val_prettyprint pretty)
 {
   int ndimensions;
 
@@ -375,17 +352,9 @@ f77_print_array (type, valaddr, address, stream, format, deref_ref, recurse,
    The PRETTY parameter controls prettyprinting.  */
 
 int
-f_val_print (type, valaddr, embedded_offset, address, stream, format, deref_ref, recurse,
-	     pretty)
-     struct type *type;
-     char *valaddr;
-     int embedded_offset;
-     CORE_ADDR address;
-     struct ui_file *stream;
-     int format;
-     int deref_ref;
-     int recurse;
-     enum val_prettyprint pretty;
+f_val_print (struct type *type, char *valaddr, int embedded_offset,
+	     CORE_ADDR address, struct ui_file *stream, int format,
+	     int deref_ref, int recurse, enum val_prettyprint pretty)
 {
   register unsigned int i = 0;	/* Number of characters printed */
   struct type *elttype;
@@ -564,7 +533,7 @@ f_val_print (type, valaddr, embedded_offset, address, stream, format, deref_ref,
       fputs_filtered ("(", stream);
       print_floating (valaddr, type, stream);
       fputs_filtered (",", stream);
-      print_floating (valaddr, type, stream);
+      print_floating (valaddr + TYPE_LENGTH (type), type, stream);
       fputs_filtered (")", stream);
       break;
 
@@ -583,8 +552,7 @@ f_val_print (type, valaddr, embedded_offset, address, stream, format, deref_ref,
 }
 
 static void
-list_all_visible_commons (funname)
-     char *funname;
+list_all_visible_commons (char *funname)
 {
   SAVED_F77_COMMON_PTR tmp;
 
@@ -606,9 +574,7 @@ list_all_visible_commons (funname)
    given name */
 
 static void
-info_common_command (comname, from_tty)
-     char *comname;
-     int from_tty;
+info_common_command (char *comname, int from_tty)
 {
   SAVED_F77_COMMON_PTR the_common;
   COMMON_ENTRY_PTR entry;
@@ -703,8 +669,7 @@ info_common_command (comname, from_tty)
 
 #if 0
 static int
-there_is_a_visible_common_named (comname)
-     char *comname;
+there_is_a_visible_common_named (char *comname)
 {
   SAVED_F77_COMMON_PTR the_common;
   struct frame_info *fi;
@@ -764,7 +729,7 @@ there_is_a_visible_common_named (comname)
 #endif
 
 void
-_initialize_f_valprint ()
+_initialize_f_valprint (void)
 {
   add_info ("common", info_common_command,
 	    "Print out the values contained in a Fortran COMMON block.");

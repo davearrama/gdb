@@ -1,5 +1,7 @@
 /* Target-dependent code for the HP PA architecture, for GDB.
-   Copyright 1986, 1987, 1989-1996, 1999-2000 Free Software Foundation, Inc.
+
+   Copyright 1986, 1987, 1989, 1990, 1991, 1992, 1993, 1994, 1995,
+   1996, 1998, 1999, 2000, 2001, 2002 Free Software Foundation, Inc.
 
    Contributed by the Center for Software Science at the
    University of Utah (pa-gdb-bugs@cs.utah.edu).
@@ -26,6 +28,8 @@
 #include "bfd.h"
 #include "inferior.h"
 #include "value.h"
+#include "regcache.h"
+#include "completer.h"
 
 /* For argument passing to the inferior */
 #include "symtab.h"
@@ -49,7 +53,7 @@
 /*#include <sys/user.h>         After a.out.h  */
 #include <sys/file.h>
 #include "gdb_stat.h"
-#include "wait.h"
+#include "gdb_wait.h"
 
 #include "gdbcore.h"
 #include "gdbcmd.h"
@@ -62,70 +66,70 @@
 #define THREAD_INITIAL_FRAME_SYMBOL  "__pthread_exit"
 #define THREAD_INITIAL_FRAME_SYM_LEN  sizeof(THREAD_INITIAL_FRAME_SYMBOL)
 
-static int extract_5_load PARAMS ((unsigned int));
+static int extract_5_load (unsigned int);
 
-static unsigned extract_5R_store PARAMS ((unsigned int));
+static unsigned extract_5R_store (unsigned int);
 
-static unsigned extract_5r_store PARAMS ((unsigned int));
+static unsigned extract_5r_store (unsigned int);
 
-static void find_dummy_frame_regs PARAMS ((struct frame_info *,
-					   struct frame_saved_regs *));
+static void find_dummy_frame_regs (struct frame_info *,
+				   struct frame_saved_regs *);
 
-static int find_proc_framesize PARAMS ((CORE_ADDR));
+static int find_proc_framesize (CORE_ADDR);
 
-static int find_return_regnum PARAMS ((CORE_ADDR));
+static int find_return_regnum (CORE_ADDR);
 
-struct unwind_table_entry *find_unwind_entry PARAMS ((CORE_ADDR));
+struct unwind_table_entry *find_unwind_entry (CORE_ADDR);
 
-static int extract_17 PARAMS ((unsigned int));
+static int extract_17 (unsigned int);
 
-static unsigned deposit_21 PARAMS ((unsigned int, unsigned int));
+static unsigned deposit_21 (unsigned int, unsigned int);
 
-static int extract_21 PARAMS ((unsigned));
+static int extract_21 (unsigned);
 
-static unsigned deposit_14 PARAMS ((int, unsigned int));
+static unsigned deposit_14 (int, unsigned int);
 
-static int extract_14 PARAMS ((unsigned));
+static int extract_14 (unsigned);
 
-static void unwind_command PARAMS ((char *, int));
+static void unwind_command (char *, int);
 
-static int low_sign_extend PARAMS ((unsigned int, unsigned int));
+static int low_sign_extend (unsigned int, unsigned int);
 
-static int sign_extend PARAMS ((unsigned int, unsigned int));
+static int sign_extend (unsigned int, unsigned int);
 
-static int restore_pc_queue PARAMS ((struct frame_saved_regs *));
+static int restore_pc_queue (struct frame_saved_regs *);
 
-static int hppa_alignof PARAMS ((struct type *));
+static int hppa_alignof (struct type *);
 
 /* To support multi-threading and stepping. */
-int hppa_prepare_to_proceed PARAMS (());
+int hppa_prepare_to_proceed ();
 
-static int prologue_inst_adjust_sp PARAMS ((unsigned long));
+static int prologue_inst_adjust_sp (unsigned long);
 
-static int is_branch PARAMS ((unsigned long));
+static int is_branch (unsigned long);
 
-static int inst_saves_gr PARAMS ((unsigned long));
+static int inst_saves_gr (unsigned long);
 
-static int inst_saves_fr PARAMS ((unsigned long));
+static int inst_saves_fr (unsigned long);
 
-static int pc_in_interrupt_handler PARAMS ((CORE_ADDR));
+static int pc_in_interrupt_handler (CORE_ADDR);
 
-static int pc_in_linker_stub PARAMS ((CORE_ADDR));
+static int pc_in_linker_stub (CORE_ADDR);
 
-static int compare_unwind_entries PARAMS ((const void *, const void *));
+static int compare_unwind_entries (const void *, const void *);
 
-static void read_unwind_info PARAMS ((struct objfile *));
+static void read_unwind_info (struct objfile *);
 
-static void internalize_unwinds PARAMS ((struct objfile *,
-					 struct unwind_table_entry *,
-					 asection *, unsigned int,
-					 unsigned int, CORE_ADDR));
-static void pa_print_registers PARAMS ((char *, int, int));
+static void internalize_unwinds (struct objfile *,
+				 struct unwind_table_entry *,
+				 asection *, unsigned int,
+				 unsigned int, CORE_ADDR);
+static void pa_print_registers (char *, int, int);
 static void pa_strcat_registers (char *, int, int, struct ui_file *);
-static void pa_register_look_aside PARAMS ((char *, int, long *));
-static void pa_print_fp_reg PARAMS ((int));
+static void pa_register_look_aside (char *, int, long *);
+static void pa_print_fp_reg (int);
 static void pa_strcat_fp_reg (int, struct ui_file *, enum precision_type);
-static void record_text_segment_lowaddr PARAMS ((bfd *, asection *, void *));
+static void record_text_segment_lowaddr (bfd *, asection *, void *);
 
 typedef struct
   {
@@ -146,14 +150,11 @@ extern int hp_som_som_object_present;
 extern int exception_catchpoints_are_fragile;
 
 /* This is defined in valops.c. */
-extern value_ptr
-  find_function_in_inferior PARAMS ((char *));
+extern struct value *find_function_in_inferior (char *);
 
 /* Should call_function allocate stack space for a struct return?  */
 int
-hppa_use_struct_convention (gcc_p, type)
-     int gcc_p;
-     struct type *type;
+hppa_use_struct_convention (int gcc_p, struct type *type)
 {
   return (TYPE_LENGTH (type) > 2 * REGISTER_SIZE);
 }
@@ -166,8 +167,7 @@ hppa_use_struct_convention (gcc_p, type)
    value. */
 
 static int
-sign_extend (val, bits)
-     unsigned val, bits;
+sign_extend (unsigned val, unsigned bits)
 {
   return (int) (val >> (bits - 1) ? (-1 << bits) | val : val);
 }
@@ -175,8 +175,7 @@ sign_extend (val, bits)
 /* For many immediate values the sign bit is the low bit! */
 
 static int
-low_sign_extend (val, bits)
-     unsigned val, bits;
+low_sign_extend (unsigned val, unsigned bits)
 {
   return (int) ((val & 0x1 ? (-1 << (bits - 1)) : 0) | val >> 1);
 }
@@ -184,8 +183,7 @@ low_sign_extend (val, bits)
 /* extract the immediate field from a ld{bhw}s instruction */
 
 static int
-extract_5_load (word)
-     unsigned word;
+extract_5_load (unsigned word)
 {
   return low_sign_extend (word >> 16 & MASK_5, 5);
 }
@@ -193,8 +191,7 @@ extract_5_load (word)
 /* extract the immediate field from a break instruction */
 
 static unsigned
-extract_5r_store (word)
-     unsigned word;
+extract_5r_store (unsigned word)
 {
   return (word & MASK_5);
 }
@@ -202,8 +199,7 @@ extract_5r_store (word)
 /* extract the immediate field from a {sr}sm instruction */
 
 static unsigned
-extract_5R_store (word)
-     unsigned word;
+extract_5R_store (unsigned word)
 {
   return (word >> 16 & MASK_5);
 }
@@ -211,8 +207,7 @@ extract_5R_store (word)
 /* extract a 14 bit immediate field */
 
 static int
-extract_14 (word)
-     unsigned word;
+extract_14 (unsigned word)
 {
   return low_sign_extend (word & MASK_14, 14);
 }
@@ -220,9 +215,7 @@ extract_14 (word)
 /* deposit a 14 bit constant in a word */
 
 static unsigned
-deposit_14 (opnd, word)
-     int opnd;
-     unsigned word;
+deposit_14 (int opnd, unsigned word)
 {
   unsigned sign = (opnd < 0 ? 1 : 0);
 
@@ -232,8 +225,7 @@ deposit_14 (opnd, word)
 /* extract a 21 bit constant */
 
 static int
-extract_21 (word)
-     unsigned word;
+extract_21 (unsigned word)
 {
   int val;
 
@@ -256,8 +248,7 @@ extract_21 (word)
    the low 21 bits of opnd are relevant */
 
 static unsigned
-deposit_21 (opnd, word)
-     unsigned opnd, word;
+deposit_21 (unsigned opnd, unsigned word)
 {
   unsigned val = 0;
 
@@ -277,8 +268,7 @@ deposit_21 (opnd, word)
    19 bit signed value. */
 
 static int
-extract_17 (word)
-     unsigned word;
+extract_17 (unsigned word)
 {
   return sign_extend (GET_FIELD (word, 19, 28) |
 		      GET_FIELD (word, 29, 29) << 10 |
@@ -292,9 +282,7 @@ extract_17 (word)
    larger than the first, and zero if they are equal.  */
 
 static int
-compare_unwind_entries (arg1, arg2)
-     const void *arg1;
-     const void *arg2;
+compare_unwind_entries (const void *arg1, const void *arg2)
 {
   const struct unwind_table_entry *a = arg1;
   const struct unwind_table_entry *b = arg2;
@@ -310,10 +298,7 @@ compare_unwind_entries (arg1, arg2)
 static CORE_ADDR low_text_segment_address;
 
 static void
-record_text_segment_lowaddr (abfd, section, ignored)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     asection *section;
-     PTR ignored ATTRIBUTE_UNUSED;
+record_text_segment_lowaddr (bfd *abfd, asection *section, void *ignored)
 {
   if ((section->flags & (SEC_ALLOC | SEC_LOAD | SEC_READONLY)
        == (SEC_ALLOC | SEC_LOAD | SEC_READONLY))
@@ -322,12 +307,9 @@ record_text_segment_lowaddr (abfd, section, ignored)
 }
 
 static void
-internalize_unwinds (objfile, table, section, entries, size, text_offset)
-     struct objfile *objfile;
-     struct unwind_table_entry *table;
-     asection *section;
-     unsigned int entries, size;
-     CORE_ADDR text_offset;
+internalize_unwinds (struct objfile *objfile, struct unwind_table_entry *table,
+		     asection *section, unsigned int entries, unsigned int size,
+		     CORE_ADDR text_offset)
 {
   /* We will read the unwind entries into temporary memory, then
      fill in the actual unwind table.  */
@@ -419,8 +401,7 @@ internalize_unwinds (objfile, table, section, entries, size, text_offset)
    gets freed when the objfile is destroyed.  */
 
 static void
-read_unwind_info (objfile)
-     struct objfile *objfile;
+read_unwind_info (struct objfile *objfile)
 {
   asection *unwind_sec, *stub_unwind_sec;
   unsigned unwind_size, stub_unwind_size, total_size;
@@ -562,8 +543,7 @@ read_unwind_info (objfile)
    search of the unwind tables, we depend upon them to be sorted.  */
 
 struct unwind_table_entry *
-find_unwind_entry (pc)
-     CORE_ADDR pc;
+find_unwind_entry (CORE_ADDR pc)
 {
   int first, middle, last;
   struct objfile *objfile;
@@ -625,8 +605,7 @@ find_unwind_entry (pc)
    bizarre way in which someone (?) decided they wanted to handle
    frame pointerless code in GDB.  */
 int
-hpread_adjust_stack_address (func_addr)
-     CORE_ADDR func_addr;
+hpread_adjust_stack_address (CORE_ADDR func_addr)
 {
   struct unwind_table_entry *u;
 
@@ -641,8 +620,7 @@ hpread_adjust_stack_address (func_addr)
    kind.  */
 
 static int
-pc_in_interrupt_handler (pc)
-     CORE_ADDR pc;
+pc_in_interrupt_handler (CORE_ADDR pc)
 {
   struct unwind_table_entry *u;
   struct minimal_symbol *msym_us;
@@ -655,7 +633,8 @@ pc_in_interrupt_handler (pc)
      its frame isn't a pure interrupt frame.  Deal with this.  */
   msym_us = lookup_minimal_symbol_by_pc (pc);
 
-  return u->HP_UX_interrupt_marker && !IN_SIGTRAMP (pc, SYMBOL_NAME (msym_us));
+  return (u->HP_UX_interrupt_marker
+	  && !PC_IN_SIGTRAMP (pc, SYMBOL_NAME (msym_us)));
 }
 
 /* Called when no unwind descriptor was found for PC.  Returns 1 if it
@@ -664,8 +643,7 @@ pc_in_interrupt_handler (pc)
    ?!? Need to handle stubs which appear in PA64 code.  */
 
 static int
-pc_in_linker_stub (pc)
-     CORE_ADDR pc;
+pc_in_linker_stub (CORE_ADDR pc)
 {
   int found_magic_instruction = 0;
   int i;
@@ -730,8 +708,7 @@ pc_in_linker_stub (pc)
 }
 
 static int
-find_return_regnum (pc)
-     CORE_ADDR pc;
+find_return_regnum (CORE_ADDR pc)
 {
   struct unwind_table_entry *u;
 
@@ -748,8 +725,7 @@ find_return_regnum (pc)
 
 /* Return size of frame, or -1 if we should use a frame pointer.  */
 static int
-find_proc_framesize (pc)
-     CORE_ADDR pc;
+find_proc_framesize (CORE_ADDR pc)
 {
   struct unwind_table_entry *u;
   struct minimal_symbol *msym_us;
@@ -773,19 +749,20 @@ find_proc_framesize (pc)
 
   /* If Save_SP is set, and we're not in an interrupt or signal caller,
      then we have a frame pointer.  Use it.  */
-  if (u->Save_SP && !pc_in_interrupt_handler (pc)
-      && !IN_SIGTRAMP (pc, SYMBOL_NAME (msym_us)))
+  if (u->Save_SP
+      && !pc_in_interrupt_handler (pc)
+      && msym_us
+      && !PC_IN_SIGTRAMP (pc, SYMBOL_NAME (msym_us)))
     return -1;
 
   return u->Total_frame_size << 3;
 }
 
 /* Return offset from sp at which rp is saved, or 0 if not saved.  */
-static int rp_saved PARAMS ((CORE_ADDR));
+static int rp_saved (CORE_ADDR);
 
 static int
-rp_saved (pc)
-     CORE_ADDR pc;
+rp_saved (CORE_ADDR pc)
 {
   struct unwind_table_entry *u;
 
@@ -824,8 +801,7 @@ rp_saved (pc)
 }
 
 int
-frameless_function_invocation (frame)
-     struct frame_info *frame;
+frameless_function_invocation (struct frame_info *frame)
 {
   struct unwind_table_entry *u;
 
@@ -838,8 +814,7 @@ frameless_function_invocation (frame)
 }
 
 CORE_ADDR
-saved_pc_after_call (frame)
-     struct frame_info *frame;
+saved_pc_after_call (struct frame_info *frame)
 {
   int ret_regnum;
   CORE_ADDR pc;
@@ -858,8 +833,7 @@ saved_pc_after_call (frame)
 }
 
 CORE_ADDR
-hppa_frame_saved_pc (frame)
-     struct frame_info *frame;
+hppa_frame_saved_pc (struct frame_info *frame)
 {
   CORE_ADDR pc = get_frame_pc (frame);
   struct unwind_table_entry *u;
@@ -1038,9 +1012,7 @@ hppa_frame_saved_pc (frame)
    in a system call.  */
 
 void
-init_extra_frame_info (fromleaf, frame)
-     int fromleaf;
-     struct frame_info *frame;
+init_extra_frame_info (int fromleaf, struct frame_info *frame)
 {
   int flags;
   int framesize;
@@ -1097,8 +1069,7 @@ init_extra_frame_info (fromleaf, frame)
    a frame pointer calls code without a frame pointer.  */
 
 CORE_ADDR
-frame_chain (frame)
-     struct frame_info *frame;
+frame_chain (struct frame_info *frame)
 {
   int my_framesize, caller_framesize;
   struct unwind_table_entry *u;
@@ -1354,9 +1325,7 @@ frame_chain (frame)
    was compiled with gcc. */
 
 int
-hppa_frame_chain_valid (chain, thisframe)
-     CORE_ADDR chain;
-     struct frame_info *thisframe;
+hppa_frame_chain_valid (CORE_ADDR chain, struct frame_info *thisframe)
 {
   struct minimal_symbol *msym_us;
   struct minimal_symbol *msym_start;
@@ -1417,8 +1386,7 @@ hppa_frame_chain_valid (chain, thisframe)
    to be aligned to a 64-byte boundary. */
 
 void
-push_dummy_frame (inf_status)
-     struct inferior_status *inf_status;
+push_dummy_frame (struct inferior_status *inf_status)
 {
   CORE_ADDR sp, pc, pcspace;
   register int regnum;
@@ -1434,7 +1402,7 @@ push_dummy_frame (inf_status)
      We also need a number of horrid hacks to deal with lossage in the
      PC queue registers (apparently they're not valid when the in syscall
      bit is set).  */
-  pc = target_read_pc (inferior_pid);
+  pc = target_read_pc (inferior_ptid);
   int_buffer = read_register (FLAGS_REGNUM);
   if (int_buffer & 0x2)
     {
@@ -1495,9 +1463,8 @@ push_dummy_frame (inf_status)
 }
 
 static void
-find_dummy_frame_regs (frame, frame_saved_regs)
-     struct frame_info *frame;
-     struct frame_saved_regs *frame_saved_regs;
+find_dummy_frame_regs (struct frame_info *frame,
+		       struct frame_saved_regs *frame_saved_regs)
 {
   CORE_ADDR fp = frame->frame;
   int i;
@@ -1537,7 +1504,7 @@ find_dummy_frame_regs (frame, frame_saved_regs)
 }
 
 void
-hppa_pop_frame ()
+hppa_pop_frame (void)
 {
   register struct frame_info *frame = get_current_frame ();
   register CORE_ADDR fp, npc, target_pc;
@@ -1618,7 +1585,7 @@ hppa_pop_frame ()
       breakpoint->silent = 1;
 
       /* So we can clean things up.  */
-      old_chain = make_cleanup ((make_cleanup_func) delete_breakpoint, breakpoint);
+      old_chain = make_cleanup_delete_breakpoint (breakpoint);
 
       /* Start up the inferior.  */
       clear_proceed_status ();
@@ -1635,8 +1602,7 @@ hppa_pop_frame ()
    queue space registers. */
 
 static int
-restore_pc_queue (fsr)
-     struct frame_saved_regs *fsr;
+restore_pc_queue (struct frame_saved_regs *fsr)
 {
   CORE_ADDR pc = read_pc ();
   CORE_ADDR new_pc = read_memory_integer (fsr->regs[PCOQ_HEAD_REGNUM],
@@ -1670,7 +1636,7 @@ restore_pc_queue (fsr)
          any other choice?  Is there *any* way to do this stuff with
          ptrace() or some equivalent?).  */
       resume (1, 0);
-      target_wait (inferior_pid, &w);
+      target_wait (inferior_ptid, &w);
 
       if (w.kind == TARGET_WAITKIND_SIGNALLED)
 	{
@@ -1706,12 +1672,8 @@ restore_pc_queue (fsr)
    to the callee, so we do that too.  */
    
 CORE_ADDR
-hppa_push_arguments (nargs, args, sp, struct_return, struct_addr)
-     int nargs;
-     value_ptr *args;
-     CORE_ADDR sp;
-     int struct_return;
-     CORE_ADDR struct_addr;
+hppa_push_arguments (int nargs, struct value **args, CORE_ADDR sp,
+		     int struct_return, CORE_ADDR struct_addr)
 {
   /* array of arguments' offsets */
   int *offset = (int *) alloca (nargs * sizeof (int));
@@ -1829,12 +1791,8 @@ hppa_push_arguments (nargs, args, sp, struct_return, struct_addr)
    arguments into registers as needed by the ABI. */
    
 CORE_ADDR
-hppa_push_arguments (nargs, args, sp, struct_return, struct_addr)
-     int nargs;
-     value_ptr *args;
-     CORE_ADDR sp;
-     int struct_return;
-     CORE_ADDR struct_addr;
+hppa_push_arguments (int nargs, struct value **args, CORE_ADDR sp,
+		     int struct_return, CORE_ADDR struct_addr)
 {
   /* array of arguments' offsets */
   int *offset = (int *) alloca (nargs * sizeof (int));
@@ -1862,7 +1820,8 @@ hppa_push_arguments (nargs, args, sp, struct_return, struct_addr)
 	 target.  */
       bytes_reserved = (lengths[i] + REGISTER_SIZE - 1) & -REGISTER_SIZE;
 
-      offset[i] = cum_bytes_reserved + lengths[i];
+      offset[i] = (cum_bytes_reserved
+		   + (lengths[i] > 4 ? bytes_reserved : lengths[i]));
 
       /* If the argument is a double word argument, then it needs to be
 	 double word aligned.  */
@@ -1922,12 +1881,10 @@ hppa_push_arguments (nargs, args, sp, struct_return, struct_addr)
    This function does the same stuff as value_being_returned in values.c, but
    gets the value from the stack rather than from the buffer where all the
    registers were saved when the function called completed. */
-value_ptr
-hppa_value_returned_from_stack (valtype, addr)
-     register struct type *valtype;
-     CORE_ADDR addr;
+struct value *
+hppa_value_returned_from_stack (register struct type *valtype, CORE_ADDR addr)
 {
-  register value_ptr val;
+  register struct value *val;
 
   val = allocate_value (valtype);
   CHECK_TYPEDEF (valtype);
@@ -1958,22 +1915,21 @@ hppa_value_returned_from_stack (valtype, addr)
    man entry for shl_findsym */
 
 CORE_ADDR
-find_stub_with_shl_get (function, handle)
-     struct minimal_symbol *function;
-     CORE_ADDR handle;
+find_stub_with_shl_get (struct minimal_symbol *function, CORE_ADDR handle)
 {
   struct symbol *get_sym, *symbol2;
   struct minimal_symbol *buff_minsym, *msymbol;
   struct type *ftype;
-  value_ptr *args;
-  value_ptr funcval, val;
+  struct value **args;
+  struct value *funcval;
+  struct value *val;
 
   int x, namelen, err_value, tmp = -1;
   CORE_ADDR endo_buff_addr, value_return_addr, errno_return_addr;
   CORE_ADDR stub_addr;
 
 
-  args = (value_ptr *) alloca (sizeof (value_ptr) * 8);		/* 6 for the arguments and one null one??? */
+  args = alloca (sizeof (struct value *) * 8);		/* 6 for the arguments and one null one??? */
   funcval = find_function_in_inferior ("__d_shl_get");
   get_sym = lookup_symbol ("__d_shl_get", NULL, VAR_NAMESPACE, NULL, NULL);
   buff_minsym = lookup_minimal_symbol ("__buffer", NULL, NULL);
@@ -2005,11 +1961,11 @@ find_stub_with_shl_get (function, handle)
   /* now prepare the arguments for the call */
 
   args[0] = value_from_longest (TYPE_FIELD_TYPE (ftype, 0), 12);
-  args[1] = value_from_longest (TYPE_FIELD_TYPE (ftype, 1), SYMBOL_VALUE_ADDRESS (msymbol));
-  args[2] = value_from_longest (TYPE_FIELD_TYPE (ftype, 2), endo_buff_addr);
+  args[1] = value_from_pointer (TYPE_FIELD_TYPE (ftype, 1), SYMBOL_VALUE_ADDRESS (msymbol));
+  args[2] = value_from_pointer (TYPE_FIELD_TYPE (ftype, 2), endo_buff_addr);
   args[3] = value_from_longest (TYPE_FIELD_TYPE (ftype, 3), TYPE_PROCEDURE);
-  args[4] = value_from_longest (TYPE_FIELD_TYPE (ftype, 4), value_return_addr);
-  args[5] = value_from_longest (TYPE_FIELD_TYPE (ftype, 5), errno_return_addr);
+  args[4] = value_from_pointer (TYPE_FIELD_TYPE (ftype, 4), value_return_addr);
+  args[5] = value_from_pointer (TYPE_FIELD_TYPE (ftype, 5), errno_return_addr);
 
   /* now call the function */
 
@@ -2059,14 +2015,8 @@ cover_find_stub_with_shl_get (PTR args_untyped)
    Please contact Jeff Law (law@cygnus.com) before changing this code.  */
 
 CORE_ADDR
-hppa_fix_call_dummy (dummy, pc, fun, nargs, args, type, gcc_p)
-     char *dummy;
-     CORE_ADDR pc;
-     CORE_ADDR fun;
-     int nargs;
-     value_ptr *args;
-     struct type *type;
-     int gcc_p;
+hppa_fix_call_dummy (char *dummy, CORE_ADDR pc, CORE_ADDR fun, int nargs,
+		     struct value **args, struct type *type, int gcc_p)
 {
   CORE_ADDR dyncall_addr;
   struct minimal_symbol *msymbol;
@@ -2133,9 +2083,9 @@ hppa_fix_call_dummy (dummy, pc, fun, nargs, args, type, gcc_p)
 	   such that it points to the PC value written immediately above
 	   (ie the call dummy).  */
         resume (1, 0);
-        target_wait (inferior_pid, &w);
+        target_wait (inferior_ptid, &w);
         resume (1, 0);
-        target_wait (inferior_pid, &w);
+        target_wait (inferior_ptid, &w);
 
 	/* Restore the two instructions at the old PC locations.  */
         *((int *) buf) = inst1;
@@ -2219,7 +2169,7 @@ hppa_fix_call_dummy (dummy, pc, fun, nargs, args, type, gcc_p)
          stub rather than the export stub or real function for lazy binding
          to work correctly
 
-         /* If we are using the gcc PLT call routine, then we need to
+         If we are using the gcc PLT call routine, then we need to
          get the import stub for the target function.  */
       if (using_gcc_plt_call && som_solib_get_got_by_pc (fun))
 	{
@@ -2427,7 +2377,7 @@ hppa_fix_call_dummy (dummy, pc, fun, nargs, args, type, gcc_p)
   if (flags & 2)
     return pc;
 #ifndef GDB_TARGET_IS_PA_ELF
-  else if (som_solib_get_got_by_pc (target_read_pc (inferior_pid)))
+  else if (som_solib_get_got_by_pc (target_read_pc (inferior_ptid)))
     return pc;
 #endif
   else
@@ -2442,8 +2392,7 @@ hppa_fix_call_dummy (dummy, pc, fun, nargs, args, type, gcc_p)
    We'll return zero in that case, rather than attempting to read it
    and cause a warning. */
 CORE_ADDR
-target_read_fp (pid)
-     int pid;
+target_read_fp (int pid)
 {
   int flags = read_register (FLAGS_REGNUM);
 
@@ -2462,29 +2411,26 @@ target_read_fp (pid)
    bits.  */
 
 CORE_ADDR
-target_read_pc (pid)
-     int pid;
+target_read_pc (ptid_t ptid)
 {
-  int flags = read_register_pid (FLAGS_REGNUM, pid);
+  int flags = read_register_pid (FLAGS_REGNUM, ptid);
 
   /* The following test does not belong here.  It is OS-specific, and belongs
      in native code.  */
   /* Test SS_INSYSCALL */
   if (flags & 2)
-    return read_register_pid (31, pid) & ~0x3;
+    return read_register_pid (31, ptid) & ~0x3;
 
-  return read_register_pid (PC_REGNUM, pid) & ~0x3;
+  return read_register_pid (PC_REGNUM, ptid) & ~0x3;
 }
 
 /* Write out the PC.  If currently in a syscall, then also write the new
    PC value into %r31.  */
 
 void
-target_write_pc (v, pid)
-     CORE_ADDR v;
-     int pid;
+target_write_pc (CORE_ADDR v, ptid_t ptid)
 {
-  int flags = read_register_pid (FLAGS_REGNUM, pid);
+  int flags = read_register_pid (FLAGS_REGNUM, ptid);
 
   /* The following test does not belong here.  It is OS-specific, and belongs
      in native code.  */
@@ -2492,18 +2438,17 @@ target_write_pc (v, pid)
      privilege bits set correctly.  */
   /* Test SS_INSYSCALL */
   if (flags & 2)
-    write_register_pid (31, v | 0x3, pid);
+    write_register_pid (31, v | 0x3, ptid);
 
-  write_register_pid (PC_REGNUM, v, pid);
-  write_register_pid (NPC_REGNUM, v + 4, pid);
+  write_register_pid (PC_REGNUM, v, ptid);
+  write_register_pid (NPC_REGNUM, v + 4, ptid);
 }
 
 /* return the alignment of a type in bytes. Structures have the maximum
    alignment required by their fields. */
 
 static int
-hppa_alignof (type)
-     struct type *type;
+hppa_alignof (struct type *type)
 {
   int max_align, align, i;
   CHECK_TYPEDEF (type);
@@ -2537,9 +2482,7 @@ hppa_alignof (type)
 /* Print the register regnum, or all registers if regnum is -1 */
 
 void
-pa_do_registers_info (regnum, fpregs)
-     int regnum;
-     int fpregs;
+pa_do_registers_info (int regnum, int fpregs)
 {
   char raw_regs[REGISTER_BYTES];
   int i;
@@ -2547,7 +2490,7 @@ pa_do_registers_info (regnum, fpregs)
   /* Make a copy of gdb's save area (may cause actual
      reads from the target). */
   for (i = 0; i < NUM_REGS; i++)
-    read_relative_register_raw_bytes (i, raw_regs + REGISTER_BYTE (i));
+    frame_register_read (selected_frame, i, raw_regs + REGISTER_BYTE (i));
 
   if (regnum == -1)
     pa_print_registers (raw_regs, regnum, fpregs);
@@ -2561,15 +2504,15 @@ pa_do_registers_info (regnum, fpregs)
 
       if (!is_pa_2)
 	{
-	  printf_unfiltered ("%s %x\n", REGISTER_NAME (regnum), reg_val[1]);
+	  printf_unfiltered ("%s %lx\n", REGISTER_NAME (regnum), reg_val[1]);
 	}
       else
 	{
 	  /* Fancy % formats to prevent leading zeros. */
 	  if (reg_val[0] == 0)
-	    printf_unfiltered ("%s %x\n", REGISTER_NAME (regnum), reg_val[1]);
+	    printf_unfiltered ("%s %lx\n", REGISTER_NAME (regnum), reg_val[1]);
 	  else
-	    printf_unfiltered ("%s %x%8.8x\n", REGISTER_NAME (regnum),
+	    printf_unfiltered ("%s %lx%8.8lx\n", REGISTER_NAME (regnum),
 			       reg_val[0], reg_val[1]);
 	}
     }
@@ -2582,11 +2525,8 @@ pa_do_registers_info (regnum, fpregs)
 
 /********** new function ********************/
 void
-pa_do_strcat_registers_info (regnum, fpregs, stream, precision)
-     int regnum;
-     int fpregs;
-     struct ui_file *stream;
-     enum precision_type precision;
+pa_do_strcat_registers_info (int regnum, int fpregs, struct ui_file *stream,
+			     enum precision_type precision)
 {
   char raw_regs[REGISTER_BYTES];
   int i;
@@ -2594,7 +2534,7 @@ pa_do_strcat_registers_info (regnum, fpregs, stream, precision)
   /* Make a copy of gdb's save area (may cause actual
      reads from the target). */
   for (i = 0; i < NUM_REGS; i++)
-    read_relative_register_raw_bytes (i, raw_regs + REGISTER_BYTE (i));
+    frame_register_read (selected_frame, i, raw_regs + REGISTER_BYTE (i));
 
   if (regnum == -1)
     pa_strcat_registers (raw_regs, regnum, fpregs, stream);
@@ -2609,16 +2549,16 @@ pa_do_strcat_registers_info (regnum, fpregs, stream, precision)
 
       if (!is_pa_2)
 	{
-	  fprintf_unfiltered (stream, "%s %x", REGISTER_NAME (regnum), reg_val[1]);
+	  fprintf_unfiltered (stream, "%s %lx", REGISTER_NAME (regnum), reg_val[1]);
 	}
       else
 	{
 	  /* Fancy % formats to prevent leading zeros. */
 	  if (reg_val[0] == 0)
-	    fprintf_unfiltered (stream, "%s %x", REGISTER_NAME (regnum),
+	    fprintf_unfiltered (stream, "%s %lx", REGISTER_NAME (regnum),
 				reg_val[1]);
 	  else
-	    fprintf_unfiltered (stream, "%s %x%8.8x", REGISTER_NAME (regnum),
+	    fprintf_unfiltered (stream, "%s %lx%8.8lx", REGISTER_NAME (regnum),
 				reg_val[0], reg_val[1]);
 	}
     }
@@ -2635,10 +2575,7 @@ pa_do_strcat_registers_info (regnum, fpregs, stream, precision)
    Note that reg_val is really expected to be an array of longs,
    with two elements. */
 static void
-pa_register_look_aside (raw_regs, regnum, raw_val)
-     char *raw_regs;
-     int regnum;
-     long *raw_val;
+pa_register_look_aside (char *raw_regs, int regnum, long *raw_val)
 {
   static int know_which = 0;	/* False */
 
@@ -2715,7 +2652,7 @@ pa_register_look_aside (raw_regs, regnum, raw_val)
   for (i = start; i < 2; i++)
     {
       errno = 0;
-      raw_val[i] = call_ptrace (PT_RUREGS, inferior_pid,
+      raw_val[i] = call_ptrace (PT_RUREGS, PIDGET (inferior_ptid),
 				(PTRACE_ARG3_TYPE) regaddr, 0);
       if (errno != 0)
 	{
@@ -2741,10 +2678,7 @@ error_exit:
 /* "Info all-reg" command */
 
 static void
-pa_print_registers (raw_regs, regnum, fpregs)
-     char *raw_regs;
-     int regnum;
-     int fpregs;
+pa_print_registers (char *raw_regs, int regnum, int fpregs)
 {
   int i, j;
   /* Alas, we are compiled so that "long long" is 32 bits */
@@ -2771,17 +2705,17 @@ pa_print_registers (raw_regs, regnum, fpregs)
 	      /* Being big-endian, on this machine the low bits
 	         (the ones we want to look at) are in the second longword. */
 	      long_val = extract_signed_integer (&raw_val[1], 4);
-	      printf_filtered ("%10.10s: %8x   ",
+	      printf_filtered ("%10.10s: %8lx   ",
 			       REGISTER_NAME (regnum), long_val);
 	    }
 	  else
 	    {
 	      /* raw_val = extract_signed_integer(&raw_val, 8); */
 	      if (raw_val[0] == 0)
-		printf_filtered ("%10.10s:         %8x   ",
+		printf_filtered ("%10.10s:         %8lx   ",
 				 REGISTER_NAME (regnum), raw_val[1]);
 	      else
-		printf_filtered ("%10.10s: %8x%8.8x   ",
+		printf_filtered ("%10.10s: %8lx%8.8lx   ",
 				 REGISTER_NAME (regnum),
 				 raw_val[0], raw_val[1]);
 	    }
@@ -2796,11 +2730,8 @@ pa_print_registers (raw_regs, regnum, fpregs)
 
 /************* new function ******************/
 static void
-pa_strcat_registers (raw_regs, regnum, fpregs, stream)
-     char *raw_regs;
-     int regnum;
-     int fpregs;
-     struct ui_file *stream;
+pa_strcat_registers (char *raw_regs, int regnum, int fpregs,
+		     struct ui_file *stream)
 {
   int i, j;
   long raw_val[2];		/* Alas, we are compiled so that "long long" is 32 bits */
@@ -2825,17 +2756,19 @@ pa_strcat_registers (raw_regs, regnum, fpregs, stream)
 	      /* Being big-endian, on this machine the low bits
 	         (the ones we want to look at) are in the second longword. */
 	      long_val = extract_signed_integer (&raw_val[1], 4);
-	      fprintf_filtered (stream, "%8.8s: %8x  ", REGISTER_NAME (i + (j * 18)), long_val);
+	      fprintf_filtered (stream, "%8.8s: %8lx  ",
+				REGISTER_NAME (i + (j * 18)), long_val);
 	    }
 	  else
 	    {
 	      /* raw_val = extract_signed_integer(&raw_val, 8); */
 	      if (raw_val[0] == 0)
-		fprintf_filtered (stream, "%8.8s:         %8x  ", REGISTER_NAME (i + (j * 18)),
-				  raw_val[1]);
+		fprintf_filtered (stream, "%8.8s:         %8lx  ",
+				  REGISTER_NAME (i + (j * 18)), raw_val[1]);
 	      else
-		fprintf_filtered (stream, "%8.8s: %8x%8.8x  ", REGISTER_NAME (i + (j * 18)),
-				  raw_val[0], raw_val[1]);
+		fprintf_filtered (stream, "%8.8s: %8lx%8.8lx  ",
+				  REGISTER_NAME (i + (j * 18)), raw_val[0],
+				  raw_val[1]);
 	    }
 	}
       fprintf_unfiltered (stream, "\n");
@@ -2847,14 +2780,13 @@ pa_strcat_registers (raw_regs, regnum, fpregs, stream)
 }
 
 static void
-pa_print_fp_reg (i)
-     int i;
+pa_print_fp_reg (int i)
 {
   char raw_buffer[MAX_REGISTER_RAW_SIZE];
   char virtual_buffer[MAX_REGISTER_VIRTUAL_SIZE];
 
   /* Get 32bits of data.  */
-  read_relative_register_raw_bytes (i, raw_buffer);
+  frame_register_read (selected_frame, i, raw_buffer);
 
   /* Put it in the buffer.  No conversions are ever necessary.  */
   memcpy (virtual_buffer, raw_buffer, REGISTER_RAW_SIZE (i));
@@ -2872,7 +2804,7 @@ pa_print_fp_reg (i)
   if ((i % 2) == 0)
     {
       /* Get the data in raw format for the 2nd half.  */
-      read_relative_register_raw_bytes (i + 1, raw_buffer);
+      frame_register_read (selected_frame, i + 1, raw_buffer);
 
       /* Copy it into the appropriate part of the virtual buffer.  */
       memcpy (virtual_buffer + REGISTER_RAW_SIZE (i), raw_buffer,
@@ -2891,10 +2823,7 @@ pa_print_fp_reg (i)
 
 /*************** new function ***********************/
 static void
-pa_strcat_fp_reg (i, stream, precision)
-     int i;
-     struct ui_file *stream;
-     enum precision_type precision;
+pa_strcat_fp_reg (int i, struct ui_file *stream, enum precision_type precision)
 {
   char raw_buffer[MAX_REGISTER_RAW_SIZE];
   char virtual_buffer[MAX_REGISTER_VIRTUAL_SIZE];
@@ -2903,7 +2832,7 @@ pa_strcat_fp_reg (i, stream, precision)
   print_spaces_filtered (8 - strlen (REGISTER_NAME (i)), stream);
 
   /* Get 32bits of data.  */
-  read_relative_register_raw_bytes (i, raw_buffer);
+  frame_register_read (selected_frame, i, raw_buffer);
 
   /* Put it in the buffer.  No conversions are ever necessary.  */
   memcpy (virtual_buffer, raw_buffer, REGISTER_RAW_SIZE (i));
@@ -2914,7 +2843,7 @@ pa_strcat_fp_reg (i, stream, precision)
       char raw_buf[MAX_REGISTER_RAW_SIZE];
 
       /* Get the data in raw format for the 2nd half.  */
-      read_relative_register_raw_bytes (i + 1, raw_buf);
+      frame_register_read (selected_frame, i + 1, raw_buf);
 
       /* Copy it into the appropriate part of the virtual buffer.  */
       memcpy (virtual_buffer + REGISTER_RAW_SIZE (i), raw_buf, REGISTER_RAW_SIZE (i));
@@ -2937,9 +2866,7 @@ pa_strcat_fp_reg (i, stream, precision)
    just shared library trampolines (import, export).  */
 
 int
-in_solib_call_trampoline (pc, name)
-     CORE_ADDR pc;
-     char *name;
+in_solib_call_trampoline (CORE_ADDR pc, char *name)
 {
   struct minimal_symbol *minsym;
   struct unwind_table_entry *u;
@@ -2981,7 +2908,7 @@ in_solib_call_trampoline (pc, name)
        instructions long. */
     insn = read_memory_integer (pc, 4);
 
-    /* Find out where we we think we are within the stub.  */
+    /* Find out where we think we are within the stub.  */
     if ((insn & 0xffffc00e) == 0x53610000)
       addr = pc;
     else if ((insn & 0xffffffff) == 0xe820d000)
@@ -3099,9 +3026,7 @@ in_solib_call_trampoline (pc, name)
    just shared library trampolines (import, export).  */
 
 int
-in_solib_return_trampoline (pc, name)
-     CORE_ADDR pc;
-     char *name;
+in_solib_return_trampoline (CORE_ADDR pc, char *name)
 {
   struct unwind_table_entry *u;
 
@@ -3174,9 +3099,7 @@ in_solib_return_trampoline (pc, name)
    used in dynamic executables.  */
 
 CORE_ADDR
-skip_trampoline_code (pc, name)
-     CORE_ADDR pc;
-     char *name;
+skip_trampoline_code (CORE_ADDR pc, char *name)
 {
   long orig_pc = pc;
   long prev_inst, curr_inst, loc;
@@ -3375,7 +3298,7 @@ skip_trampoline_code (pc, name)
 	  stubsym = lookup_minimal_symbol_by_pc (loc);
 	  if (stubsym == NULL)
 	    {
-	      warning ("Unable to find symbol for 0x%x", loc);
+	      warning ("Unable to find symbol for 0x%lx", loc);
 	      return orig_pc == pc ? 0 : pc & ~0x3;
 	    }
 
@@ -3451,8 +3374,7 @@ skip_trampoline_code (pc, name)
    This only handles instructions commonly found in prologues.  */
 
 static int
-prologue_inst_adjust_sp (inst)
-     unsigned long inst;
+prologue_inst_adjust_sp (unsigned long inst)
 {
   /* This must persist across calls.  */
   static int save_high21;
@@ -3491,8 +3413,7 @@ prologue_inst_adjust_sp (inst)
 /* Return nonzero if INST is a branch of some kind, else return zero.  */
 
 static int
-is_branch (inst)
-     unsigned long inst;
+is_branch (unsigned long inst)
 {
   switch (inst >> 26)
     {
@@ -3525,8 +3446,7 @@ is_branch (inst)
    zero it INST does not save a GR.  */
 
 static int
-inst_saves_gr (inst)
-     unsigned long inst;
+inst_saves_gr (unsigned long inst)
 {
   /* Does it look like a stw?  */
   if ((inst >> 26) == 0x1a || (inst >> 26) == 0x1b
@@ -3565,8 +3485,7 @@ inst_saves_gr (inst)
    FIXME: What about argument stores with the HP compiler in ANSI mode? */
 
 static int
-inst_saves_fr (inst)
-     unsigned long inst;
+inst_saves_fr (unsigned long inst)
 {
   /* is this an FSTD ? */
   if ((inst & 0xfc00dfc0) == 0x2c001200)
@@ -3589,8 +3508,7 @@ inst_saves_fr (inst)
 
 
 CORE_ADDR
-skip_prologue_hard_way (pc)
-     CORE_ADDR pc;
+skip_prologue_hard_way (CORE_ADDR pc)
 {
   char buf[4];
   CORE_ADDR orig_pc = pc;
@@ -3822,8 +3740,7 @@ restart:
    we can determine it from the debug symbols.  Else return zero.  */
 
 static CORE_ADDR
-after_prologue (pc)
-     CORE_ADDR pc;
+after_prologue (CORE_ADDR pc)
 {
   struct symtab_and_line sal;
   CORE_ADDR func_addr, func_end;
@@ -3864,8 +3781,7 @@ after_prologue (pc)
    stuff some day.  */
 
 CORE_ADDR
-hppa_skip_prologue (pc)
-     CORE_ADDR pc;
+hppa_skip_prologue (CORE_ADDR pc)
 {
   unsigned long inst;
   int offset;
@@ -3897,9 +3813,8 @@ hppa_skip_prologue (pc)
    the address we return for it IS the sp for the next frame.  */
 
 void
-hppa_frame_find_saved_regs (frame_info, frame_saved_regs)
-     struct frame_info *frame_info;
-     struct frame_saved_regs *frame_saved_regs;
+hppa_frame_find_saved_regs (struct frame_info *frame_info,
+			    struct frame_saved_regs *frame_saved_regs)
 {
   CORE_ADDR pc;
   struct unwind_table_entry *u;
@@ -4120,7 +4035,7 @@ hppa_frame_find_saved_regs (frame_info, frame_saved_regs)
 	    }
 	}
 
-      /* Quit if we hit any kind of branch the previous iteration.
+      /* Quit if we hit any kind of branch the previous iteration. */
       if (final_iteration)
 	break;
 
@@ -4186,7 +4101,7 @@ static struct symtab_and_line *break_callback_sal = 0;
    0 => success
    1 => failure  */
 int
-setup_d_pid_in_inferior ()
+setup_d_pid_in_inferior (void)
 {
   CORE_ADDR anaddr;
   struct minimal_symbol *msymbol;
@@ -4202,7 +4117,7 @@ setup_d_pid_in_inferior ()
     }
 
   anaddr = SYMBOL_VALUE_ADDRESS (msymbol);
-  store_unsigned_integer (buf, 4, inferior_pid);	/* FIXME 32x64? */
+  store_unsigned_integer (buf, 4, PIDGET (inferior_ptid)); /* FIXME 32x64? */
   if (target_write_memory (anaddr, buf, 4))	/* FIXME 32x64? */
     {
       warning ("Unable to write __d_pid");
@@ -4220,7 +4135,7 @@ setup_d_pid_in_inferior ()
    1 => success          */
 
 static int
-initialize_hp_cxx_exception_support ()
+initialize_hp_cxx_exception_support (void)
 {
   struct symtabs_and_lines sals;
   struct cleanup *old_chain;
@@ -4344,7 +4259,7 @@ initialize_hp_cxx_exception_support ()
       if (!eh_notify_callback_addr)
 	{
 	  /* We can get here either if there is no plabel in the export list
-	     for the main image, or if something strange happened (??) */
+	     for the main image, or if something strange happened (?) */
 	  warning ("Couldn't find a plabel (indirect function label) for the exception callback.");
 	  warning ("GDB will not be able to intercept exception events.");
 	  return 0;
@@ -4441,9 +4356,7 @@ initialize_hp_cxx_exception_support ()
    address was found. */
 
 struct symtab_and_line *
-child_enable_exception_callback (kind, enable)
-     enum exception_event_kind kind;
-     int enable;
+child_enable_exception_callback (enum exception_event_kind kind, int enable)
 {
   char buf[4];
 
@@ -4474,7 +4387,7 @@ child_enable_exception_callback (kind, enable)
   if (enable)
     {
       /* Ensure that __d_pid is set up correctly -- end.c code checks this. :-( */
-      if (inferior_pid > 0)
+      if (PIDGET (inferior_ptid) > 0)
 	{
 	  if (setup_d_pid_in_inferior ())
 	    return (struct symtab_and_line *) -1;
@@ -4513,7 +4426,7 @@ child_enable_exception_callback (kind, enable)
     {
       break_callback_sal = (struct symtab_and_line *) xmalloc (sizeof (struct symtab_and_line));
     }
-  INIT_SAL (break_callback_sal);
+  init_sal (break_callback_sal);
   break_callback_sal->symtab = NULL;
   break_callback_sal->pc = eh_break_addr;
   break_callback_sal->line = 0;
@@ -4533,7 +4446,7 @@ static struct symtab_and_line null_symtab_and_line =
    and where it will be caught.  More information may be reported
    in the future */
 struct exception_event_record *
-child_get_current_exception_event ()
+child_get_current_exception_event (void)
 {
   CORE_ADDR event_kind;
   CORE_ADDR throw_addr;
@@ -4552,7 +4465,7 @@ child_get_current_exception_event ()
   if (level != 0)
     return (struct exception_event_record *) NULL;
 
-  select_frame (fi, -1);
+  select_frame (fi);
 
   /* Read in the arguments */
   /* __d_eh_notify_callback() is called with 3 arguments:
@@ -4578,11 +4491,11 @@ child_get_current_exception_event ()
   if (level != 0)
     return (struct exception_event_record *) NULL;
 
-  select_frame (fi, -1);
+  select_frame (fi);
   throw_addr = fi->pc;
 
   /* Go back to original (top) frame */
-  select_frame (curr_frame, -1);
+  select_frame (curr_frame);
 
   current_ex_event.kind = (enum exception_event_kind) event_kind;
   current_ex_event.throw_sal = find_pc_line (throw_addr, 1);
@@ -4592,9 +4505,7 @@ child_get_current_exception_event ()
 }
 
 static void
-unwind_command (exp, from_tty)
-     char *exp;
-     int from_tty;
+unwind_command (char *exp, int from_tty)
 {
   CORE_ADDR address;
   struct unwind_table_entry *u;
@@ -4614,7 +4525,8 @@ unwind_command (exp, from_tty)
       return;
     }
 
-  printf_unfiltered ("unwind_table_entry (0x%x):\n", u);
+  printf_unfiltered ("unwind_table_entry (0x%s):\n",
+		     paddr_nz (host_pointer_to_address (u)));
 
   printf_unfiltered ("\tregion_start = ");
   print_address (u->region_start, gdb_stdout);
@@ -4622,11 +4534,7 @@ unwind_command (exp, from_tty)
   printf_unfiltered ("\n\tregion_end = ");
   print_address (u->region_end, gdb_stdout);
 
-#ifdef __STDC__
 #define pif(FLD) if (u->FLD) printf_unfiltered (" "#FLD);
-#else
-#define pif(FLD) if (u->FLD) printf_unfiltered (" FLD");
-#endif
 
   printf_unfiltered ("\n\tflags =");
   pif (Cannot_unwind);
@@ -4651,11 +4559,7 @@ unwind_command (exp, from_tty)
 
   putchar_unfiltered ('\n');
 
-#ifdef __STDC__
 #define pin(FLD) printf_unfiltered ("\t"#FLD" = 0x%x\n", u->FLD);
-#else
-#define pin(FLD) printf_unfiltered ("\tFLD = 0x%x\n", u->FLD);
-#endif
 
   pin (Region_description);
   pin (Entry_FR);
@@ -4697,14 +4601,20 @@ unwind_command (exp, from_tty)
    For these reasons, we have to violate information hiding and
    call "breakpoint_here_p".  If core gdb thinks there is a bpt
    here, that's what counts, as core gdb is the one which is
-   putting the BPT instruction in and taking it out. */
+   putting the BPT instruction in and taking it out.
+
+   Note that this implementation is potentially redundant now that
+   default_prepare_to_proceed() has been added.
+
+   FIXME This may not support switching threads after Ctrl-C
+   correctly. The default implementation does support this. */
 int
-hppa_prepare_to_proceed ()
+hppa_prepare_to_proceed (void)
 {
   pid_t old_thread;
   pid_t current_thread;
 
-  old_thread = hppa_switched_threads (inferior_pid);
+  old_thread = hppa_switched_threads (PIDGET (inferior_ptid));
   if (old_thread != 0)
     {
       /* Switched over from "old_thread".  Try to do
@@ -4715,8 +4625,8 @@ hppa_prepare_to_proceed ()
 
       /* Yuk, shouldn't use global to specify current
          thread.  But that's how gdb does it. */
-      current_thread = inferior_pid;
-      inferior_pid = old_thread;
+      current_thread = PIDGET (inferior_ptid);
+      inferior_ptid = pid_to_ptid (old_thread);
 
       new_pc = read_pc ();
       if (new_pc != old_pc	/* If at same pc, no need */
@@ -4728,14 +4638,14 @@ hppa_prepare_to_proceed ()
 	  registers_changed ();
 #if 0
 	  printf ("---> PREPARE_TO_PROCEED (was %d, now %d)!\n",
-		  current_thread, inferior_pid);
+		  current_thread, PIDGET (inferior_ptid));
 #endif
 
 	  return 1;
 	}
 
       /* Otherwise switch back to the user-chosen thread. */
-      inferior_pid = current_thread;
+      inferior_ptid = pid_to_ptid (current_thread);
       new_pc = read_pc ();	/* Re-prime register cache */
     }
 
@@ -4744,7 +4654,7 @@ hppa_prepare_to_proceed ()
 #endif /* PREPARE_TO_PROCEED */
 
 void
-hppa_skip_permanent_breakpoint ()
+hppa_skip_permanent_breakpoint (void)
 {
   /* To step over a breakpoint instruction on the PA takes some
      fiddling with the instruction address queue.
@@ -4768,11 +4678,96 @@ hppa_skip_permanent_breakpoint ()
 }
 
 void
-_initialize_hppa_tdep ()
+_initialize_hppa_tdep (void)
 {
+  struct cmd_list_element *c;
+  void break_at_finish_command (char *arg, int from_tty);
+  void tbreak_at_finish_command (char *arg, int from_tty);
+  void break_at_finish_at_depth_command (char *arg, int from_tty);
+
   tm_print_insn = print_insn_hppa;
 
   add_cmd ("unwind", class_maintenance, unwind_command,
 	   "Print unwind table entry at given address.",
 	   &maintenanceprintlist);
+
+  deprecate_cmd (add_com ("xbreak", class_breakpoint, 
+			  break_at_finish_command,
+			  concat ("Set breakpoint at procedure exit. \n\
+Argument may be function name, or \"*\" and an address.\n\
+If function is specified, break at end of code for that function.\n\
+If an address is specified, break at the end of the function that contains \n\
+that exact address.\n",
+		   "With no arg, uses current execution address of selected stack frame.\n\
+This is useful for breaking on return to a stack frame.\n\
+\n\
+Multiple breakpoints at one place are permitted, and useful if conditional.\n\
+\n\
+Do \"help breakpoints\" for info on other commands dealing with breakpoints.", NULL)), NULL);
+  deprecate_cmd (add_com_alias ("xb", "xbreak", class_breakpoint, 1), NULL);
+  deprecate_cmd (add_com_alias ("xbr", "xbreak", class_breakpoint, 1), NULL);
+  deprecate_cmd (add_com_alias ("xbre", "xbreak", class_breakpoint, 1), NULL);
+  deprecate_cmd (add_com_alias ("xbrea", "xbreak", class_breakpoint, 1), NULL);
+
+  deprecate_cmd (c = add_com ("txbreak", class_breakpoint, 
+			      tbreak_at_finish_command,
+"Set temporary breakpoint at procedure exit.  Either there should\n\
+be no argument or the argument must be a depth.\n"), NULL);
+  set_cmd_completer (c, location_completer);
+  
+  if (xdb_commands)
+    deprecate_cmd (add_com ("bx", class_breakpoint, 
+			    break_at_finish_at_depth_command,
+"Set breakpoint at procedure exit.  Either there should\n\
+be no argument or the argument must be a depth.\n"), NULL);
+}
+
+/* Copy the function value from VALBUF into the proper location
+   for a function return.
+
+   Called only in the context of the "return" command.  */
+
+void
+hppa_store_return_value (struct type *type, char *valbuf)
+{
+  /* For software floating point, the return value goes into the
+     integer registers.  But we do not have any flag to key this on,
+     so we always store the value into the integer registers.
+
+     If its a float value, then we also store it into the floating
+     point registers.  */
+  write_register_bytes (REGISTER_BYTE (28)
+		        + (TYPE_LENGTH (type) > 4
+			   ? (8 - TYPE_LENGTH (type))
+			   : (4 - TYPE_LENGTH (type))),
+			valbuf,
+			TYPE_LENGTH (type));
+  if (! SOFT_FLOAT && TYPE_CODE (type) == TYPE_CODE_FLT)
+    write_register_bytes (REGISTER_BYTE (FP4_REGNUM),
+			  valbuf,
+			  TYPE_LENGTH (type));
+}
+
+/* Copy the function's return value into VALBUF.
+
+   This function is called only in the context of "target function calls",
+   ie. when the debugger forces a function to be called in the child, and
+   when the debugger forces a fucntion to return prematurely via the
+   "return" command.  */
+
+void
+hppa_extract_return_value (struct type *type, char *regbuf, char *valbuf)
+{
+  if (! SOFT_FLOAT && TYPE_CODE (type) == TYPE_CODE_FLT)
+    memcpy (valbuf,
+	    (char *)regbuf + REGISTER_BYTE (FP4_REGNUM),
+	    TYPE_LENGTH (type));
+  else
+    memcpy (valbuf,
+	    ((char *)regbuf
+	     + REGISTER_BYTE (28)
+	     + (TYPE_LENGTH (type) > 4
+		? (8 - TYPE_LENGTH (type))
+		: (4 - TYPE_LENGTH (type)))),
+	    TYPE_LENGTH (type));
 }
