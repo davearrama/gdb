@@ -30,6 +30,10 @@
 #include "device.h" /* FIXME: psim should provide the interface */
 #include "events.h" /* FIXME: psim should provide the interface */
 
+#include "bfd.h"
+#include "gdb/callback.h"
+#include "gdb/remote-sim.h"
+
 #ifdef HAVE_STDLIB_H
 #include <stdlib.h>
 #endif
@@ -222,13 +226,29 @@ sim_io_flush_stdoutput(void)
   }
 }
 
+void
+sim_io_error (SIM_DESC sd, const char *msg, ...)
+{
+  va_list ap;
+  va_start(ap, msg);
+  vprintf(msg, ap);
+  printf("\n");
+  va_end(ap);
+
+  /* any final clean up */
+  if (ppc_trace[trace_print_info] && simulation != NULL)
+    psim_print_info (simulation, ppc_trace[trace_print_info]);
+
+  exit (1);
+}
+
 
 void *
 zalloc(long size)
 {
   void *memory = malloc(size);
   if (memory == NULL)
-    error("zmalloc failed\n");
+    error("zalloc failed\n");
   memset(memory, 0, size);
   return memory;
 }

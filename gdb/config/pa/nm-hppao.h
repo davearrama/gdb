@@ -1,5 +1,5 @@
 /* HPPA PA-RISC machine native support for Lites, for GDB.
-   Copyright 1995 Free Software Foundation, Inc. 
+   Copyright 1995 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,7 +18,7 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-#include "nm-m3.h"
+#include "config/nm-m3.h"
 #define U_REGS_OFFSET 0
 
 #define KERNEL_U_ADDR 0

@@ -1,6 +1,7 @@
 /* Target machine definitions for GDB on a Sequent Symmetry under ptx
    with Weitek 1167 and i387 support.
-   Copyright 1986, 1987, 1989, 1991, 1992, 1993 Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1989, 1991, 1992, 1993, 1994, 1995, 2000
+   Free Software Foundation, Inc.
    Symmetry version by Jay Vosburgh (fubar@sequent.com).
 
    This file is part of GDB.
@@ -68,7 +69,7 @@ since it uses host specific ptrace calls.
    scheme (which is the same as the 386 scheme) and also regmap in the various
    *-nat.c files. */
 
-#undef  REGISTER_NAMES
+#undef REGISTER_NAME
 #define REGISTER_NAMES { "eax",  "ecx",    "edx",  "ebx",  \
 			 "esp",  "ebp",    "esi",  "edi",  \
 			 "eip",  "eflags", "st0",  "st1",  \
@@ -139,8 +140,7 @@ since it uses host specific ptrace calls.
 #define REGISTER_U_ADDR(addr, blockend, regno) \
 { (addr) = ptx_register_u_addr((blockend), (regno)); }
 
-extern int
-ptx_register_u_addr PARAMS ((int, int));
+extern int ptx_register_u_addr (int, int);
 
 /* Total amount of space needed to store our copies of the machine's
    register state, the array `registers'.  10 i*86 registers, 8 i387
@@ -220,8 +220,8 @@ extern const struct floatformat floatformat_i387_ext;	/* from floatformat.h */
    a function return value of type TYPE, and copy that, in virtual format,
    into VALBUF.  */
 
-#undef  EXTRACT_RETURN_VALUE
-#define EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
+#undef  DEPRECATED_EXTRACT_RETURN_VALUE
+#define DEPRECATED_EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
   symmetry_extract_return_value(TYPE, REGBUF, VALBUF)
 
 /*

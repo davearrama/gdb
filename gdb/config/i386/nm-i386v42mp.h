@@ -1,5 +1,6 @@
 /* Native support for i386 running SVR4.
-   Copyright 1986, 1987, 1989, 1992, 1996 Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1989, 1992, 1996, 1997, 1998
+   Free Software Foundation, Inc.
    Changes for 80386 by Pace Willisson (pace@prep.ai.mit.edu), July 1988.
 
    This file is part of GDB.
@@ -19,4 +20,4 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-#include "nm-sysv4.h"
+#include "config/nm-sysv4.h"

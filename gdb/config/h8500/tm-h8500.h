@@ -1,5 +1,6 @@
 /* Parameters for execution on a H8/500 series machine.
-   Copyright (C) 1993, 1995 Free Software Foundation, Inc.
+   Copyright 1993, 1994, 1995, 1998, 1999, 2000, 2001
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,15 +19,11 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
+#include "regcache.h"
+
 /* Contributed by Steve Chamberlain sac@cygnus.com */
 
 #define GDB_TARGET_IS_H8500
-
-#define IEEE_FLOAT 1
-
-/* Define the bit, byte, and word ordering of the machine.  */
-
-#define TARGET_BYTE_ORDER BIG_ENDIAN
 
 /* Define the sizes of integers and pointers.  */
 
@@ -45,7 +42,7 @@
    to reach some "real" code.  */
 
 #define SKIP_PROLOGUE(ip)   (h8500_skip_prologue (ip))
-extern CORE_ADDR h8500_skip_prologue PARAMS ((CORE_ADDR));
+extern CORE_ADDR h8500_skip_prologue (CORE_ADDR);
 
 /* Immediately after a function call, return the saved pc.
    Can't always go through the frames for this because on some machines
@@ -53,7 +50,7 @@ extern CORE_ADDR h8500_skip_prologue PARAMS ((CORE_ADDR));
    some instructions.  */
 
 #define SAVED_PC_AFTER_CALL(frame) saved_pc_after_call()
-extern CORE_ADDR saved_pc_after_call PARAMS ((void));
+extern CORE_ADDR saved_pc_after_call (void);
 
 /* Stack grows downward.  */
 
@@ -86,7 +83,7 @@ extern CORE_ADDR saved_pc_after_call PARAMS ((void));
    for register N.  */
 
 #define REGISTER_RAW_SIZE(N) h8500_register_size(N)
-extern int h8500_register_size PARAMS ((int regno));
+extern int h8500_register_size (int regno);
 
 #define REGISTER_SIZE 4
 
@@ -104,7 +101,7 @@ extern int h8500_register_size PARAMS ((int regno));
    of data in register N.  */
 
 #define REGISTER_VIRTUAL_TYPE(N) h8500_register_virtual_type(N)
-extern struct type *h8500_register_virtual_type PARAMS ((int regno));
+extern struct type *h8500_register_virtual_type (int regno);
 
 /* Initializer for an array of names of registers.
    Entries beyond the first NUM_REGS are ignored.  */
@@ -159,13 +156,13 @@ extern struct type *h8500_register_virtual_type PARAMS ((int regno));
    subroutine will return.  This is called from call_function. */
 
 /*#define STORE_STRUCT_RETURN(ADDR, SP) \
-   { write_register (0, (ADDR)); abort(); } */
+   { write_register (0, (ADDR)); internal_error (__FILE__, __LINE__, "failed internal consistency check"); } */
 
 /* Extract from an array REGBUF containing the (raw) register state
    a function return value of type TYPE, and copy that, in virtual format,
    into VALBUF.  */
 
-#define EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
+#define DEPRECATED_EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
   memcpy (VALBUF, (char *)(REGBUF), TYPE_LENGTH(TYPE))
 
 /* Write into appropriate registers a function return value
@@ -178,7 +175,7 @@ extern struct type *h8500_register_virtual_type PARAMS ((int regno));
    the address in which a function should return its structure value,
    as a CORE_ADDR (or an expression that can be used as one).  */
 
-#define EXTRACT_STRUCT_VALUE_ADDRESS(REGBUF) (*(CORE_ADDR *)(REGBUF))
+#define DEPRECATED_EXTRACT_STRUCT_VALUE_ADDRESS(REGBUF) (*(CORE_ADDR *)(REGBUF))
 
 
 /* Define other aspects of the stack frame.  */
@@ -207,10 +204,10 @@ extern struct type *h8500_register_virtual_type PARAMS ((int regno));
 
 #define FRAME_CHAIN(FRAME) h8500_frame_chain(FRAME)
 struct frame_info;
-extern CORE_ADDR h8500_frame_chain PARAMS ((struct frame_info *));
+extern CORE_ADDR h8500_frame_chain (struct frame_info *);
 
 #define FRAME_SAVED_PC(FRAME) frame_saved_pc(FRAME)
-extern CORE_ADDR frame_saved_pc PARAMS ((struct frame_info * frame));
+extern CORE_ADDR frame_saved_pc (struct frame_info *frame);
 
 #define FRAME_ARGS_ADDRESS(fi) ((fi)->frame)
 
@@ -237,26 +234,27 @@ extern CORE_ADDR frame_saved_pc PARAMS ((struct frame_info * frame));
 #define FRAME_FIND_SAVED_REGS(frame_info, frame_saved_regs)	    \
    frame_find_saved_regs(frame_info, &(frame_saved_regs))
 struct frame_saved_regs;
-extern void frame_find_saved_regs PARAMS ((struct frame_info * frame_info, struct frame_saved_regs * frame_saved_regs));
+extern void frame_find_saved_regs (struct frame_info *frame_info,
+				   struct frame_saved_regs *frame_saved_regs);
 
 
 /* Discard from the stack the innermost frame, restoring all registers.  */
 
 #define POP_FRAME { h8500_pop_frame (); }
-extern void h8500_pop_frame PARAMS ((void));
+extern void h8500_pop_frame (void);
 
 #define SHORT_INT_MAX 32767
 #define SHORT_INT_MIN -32768
 
 typedef unsigned short INSN_WORD;
 
-extern CORE_ADDR h8500_addr_bits_remove PARAMS ((CORE_ADDR));
+extern CORE_ADDR h8500_addr_bits_remove (CORE_ADDR);
 #define ADDR_BITS_REMOVE(addr) h8500_addr_bits_remove (addr)
 
 #define read_memory_short(x)  (read_memory_integer(x,2) & 0xffff)
 
 #define	PRINT_REGISTER_HOOK(regno) print_register_hook(regno)
-extern void print_register_hook PARAMS ((int));
+extern void print_register_hook (int);
 
 extern int minimum_mode;
 
@@ -265,7 +263,7 @@ extern int minimum_mode;
 /* Fake variables to make it easy to use 24 bit register pointers */
 
 #define IS_TRAPPED_INTERNALVAR h8500_is_trapped_internalvar
-extern int h8500_is_trapped_internalvar PARAMS ((char *name));
+extern int h8500_is_trapped_internalvar (char *name);
 
 #define VALUE_OF_TRAPPED_INTERNALVAR h8500_value_of_trapped_internalvar
 extern struct value *h8500_value_of_trapped_internalvar ( /* struct internalvar *var */ );
@@ -273,14 +271,13 @@ extern struct value *h8500_value_of_trapped_internalvar ( /* struct internalvar 
 #define SET_TRAPPED_INTERNALVAR h8500_set_trapped_internalvar
 extern void h8500_set_trapped_internalvar ( /* struct internalvar *var, value newval, int bitpos, int bitsize, int offset */ );
 
-extern CORE_ADDR h8500_read_sp PARAMS ((void));
-extern void h8500_write_sp PARAMS ((CORE_ADDR));
+extern CORE_ADDR h8500_read_sp (void);
+extern void h8500_write_sp (CORE_ADDR);
 
-extern CORE_ADDR h8500_read_fp PARAMS ((void));
-extern void h8500_write_fp PARAMS ((CORE_ADDR));
+extern CORE_ADDR h8500_read_fp (void);
 
-extern CORE_ADDR h8500_read_pc PARAMS ((int));
-extern void h8500_write_pc PARAMS ((CORE_ADDR, int));
+extern CORE_ADDR h8500_read_pc (ptid_t);
+extern void h8500_write_pc (CORE_ADDR, ptid_t);
 
 #define TARGET_READ_SP() h8500_read_sp()
 #define TARGET_WRITE_SP(x) h8500_write_sp(x)
@@ -289,4 +286,3 @@ extern void h8500_write_pc PARAMS ((CORE_ADDR, int));
 #define TARGET_WRITE_PC(x,pid) h8500_write_pc(x,pid)
 
 #define TARGET_READ_FP() h8500_read_fp()
-#define TARGET_WRITE_FP(x) h8500_write_fp(x)

@@ -1,5 +1,6 @@
 /* Parameters for hosting on an RS6000, for GDB, the GNU debugger.
-   Copyright 1986, 1987, 1989, 1991, 1992, 1993 Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1989, 1991, 1992, 1993, 1996
+   Free Software Foundation, Inc.
    Contributed by IBM Corporation.
 
    This file is part of GDB.
@@ -19,7 +20,7 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-#include "xm-aix4.h"
+#include "config/xm-aix4.h"
 
 /* AIX 4.x uses nonstandard "int *" as type of third argument to ptrace() */
 

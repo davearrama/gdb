@@ -37,7 +37,7 @@
 #include <stdlib.h>
 #endif
 
-#include <signal.h> /* For SIGPROCMASK et.al. */
+#include <signal.h> /* For SIGPROCMASK et al. */
 
 typedef enum {
   watch_invalid,
@@ -112,7 +112,7 @@ struct _sim_event {
    variables.
    
    TIME_OF_EVENT: this holds the time at which the next event is ment
-   to occure.  If no next event it will hold the time of the last
+   to occur.  If no next event it will hold the time of the last
    event.
 
    TIME_FROM_EVENT: The current distance from TIME_OF_EVENT.  A value
@@ -379,6 +379,19 @@ sim_events_elapsed_time (SIM_DESC sd)
 }
 
 
+/* Returns the time that remains before the event is raised. */
+INLINE_SIM_EVENTS\
+(signed64)
+sim_events_remain_time (SIM_DESC sd, sim_event *event)
+{
+  if (event == 0)
+    return 0;
+  
+  return (event->time_of_event - sim_events_time (sd));
+}
+
+
+
 STATIC_INLINE_SIM_EVENTS\
 (void)
 update_time_from_event (SIM_DESC sd)
@@ -394,6 +407,27 @@ update_time_from_event (SIM_DESC sd)
     {
       events->time_of_event = current_time - 1;
       events->time_from_event = -1;
+    }
+  if (ETRACE_P)
+    {
+      sim_event *event;
+      int i;
+      for (event = events->queue, i = 0;
+	   event != NULL;
+	   event = event->next, i++)
+	{
+	  ETRACE ((_ETRACE,
+		   "event time-from-event - time %ld, delta %ld - event %d, tag 0x%lx, time %ld, handler 0x%lx, data 0x%lx%s%s\n",
+		   (long)current_time,
+		   (long)events->time_from_event,
+		   i,
+		   (long)event,
+		   (long)event->time_of_event,
+		   (long)event->handler,
+		   (long)event->data,
+		   (event->trace != NULL) ? ", " : "",
+		   (event->trace != NULL) ? event->trace : ""));
+	}
     }
   SIM_ASSERT (current_time == sim_events_time (sd));
 }
@@ -413,7 +447,7 @@ insert_sim_event (SIM_DESC sd,
   if (delta < 0)
     sim_io_error (sd, "what is past is past!\n");
   
-  /* compute when the event should occure */
+  /* compute when the event should occur */
   time_of_event = sim_events_time (sd) + delta;
   
   /* find the queue insertion point - things are time ordered */
@@ -447,6 +481,7 @@ sim_events_schedule (SIM_DESC sd,
 		     void *data)
 {
   va_list dummy;
+  memset (&dummy, 0, sizeof dummy);
   return sim_events_schedule_vtracef (sd, delta_time, handler, data,
 				      NULL, dummy);
 }

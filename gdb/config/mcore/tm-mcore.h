@@ -1,5 +1,6 @@
 /* Parameters for execution on a Motorola MCore.
-   Copyright (C) 1995 Free Software Foundation, Inc.
+
+   Copyright 1995, 1999, 2000, 2002 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,8 +19,9 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA. */
 
-/* The mcore is little endian (by default) */
-#define TARGET_BYTE_ORDER_DEFAULT LITTLE_ENDIAN
+#include "regcache.h"
+#include "symtab.h"		/* For namespace_enum.  */
+#include "symfile.h"		/* For entry_point_address().  */
 
 /* All registers are 32 bits */
 #define REGISTER_SIZE 4
@@ -63,7 +65,8 @@ extern char *mcore_register_names[];
 
 /* BREAKPOINT_FROM_PC uses the program counter value to determine
    the breakpoint that should be used. */
-extern breakpoint_from_pc_fn mcore_breakpoint_from_pc;
+extern const unsigned char *mcore_breakpoint_from_pc (CORE_ADDR *pcptr,
+						      int *lenptr);
 #define BREAKPOINT_FROM_PC(PCPTR, LENPTR) mcore_breakpoint_from_pc (PCPTR, LENPTR)
 
 #define INNER_THAN(LHS,RHS) ((LHS) < (RHS))
@@ -91,17 +94,17 @@ extern void mcore_store_return_value (struct type *type, char *valbuf);
 #define STORE_RETURN_VALUE(TYPE, VALBUF) mcore_store_return_value ((TYPE), (VALBUF))
 
 extern void mcore_extract_return_value (struct type *type, char *regbut, char *valbuf);
-#define EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
+#define DEPRECATED_EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
     mcore_extract_return_value ((TYPE), (REGBUF), (VALBUF));
 
 #define STORE_STRUCT_RETURN(ADDR, SP)	/* handled by mcore_push_arguments */
 
 extern CORE_ADDR mcore_extract_struct_value_address (char *regbuf);
-#define EXTRACT_STRUCT_VALUE_ADDRESS(REGBUF) \
+#define DEPRECATED_EXTRACT_STRUCT_VALUE_ADDRESS(REGBUF) \
     mcore_extract_struct_value_address (REGBUF)
 
 extern CORE_ADDR mcore_skip_prologue (CORE_ADDR pc);
-#define SKIP_PROLOGUE(PC) (PC) = mcore_skip_prologue ((PC))
+#define SKIP_PROLOGUE(PC) mcore_skip_prologue (PC)
 
 #define FRAME_ARGS_SKIP 0
 extern CORE_ADDR mcore_frame_args_address (struct frame_info *fi);
@@ -124,13 +127,13 @@ extern void mcore_pop_frame (struct frame_info *fi);
 #define SIZEOF_CALL_DUMMY_WORDS      0
 #define SAVE_DUMMY_FRAME_TOS(SP)     generic_save_dummy_frame_tos (SP)
 
-extern CORE_ADDR mcore_push_return_address PARAMS ((CORE_ADDR, CORE_ADDR));
+extern CORE_ADDR mcore_push_return_address (CORE_ADDR, CORE_ADDR);
 #define PUSH_RETURN_ADDRESS(PC, SP)  mcore_push_return_address (PC, SP)
 
 #define PUSH_DUMMY_FRAME	generic_push_dummy_frame ()
 
-extern CORE_ADDR mcore_push_arguments PARAMS ((int, struct value **, CORE_ADDR,
-					       unsigned char, CORE_ADDR));
+extern CORE_ADDR mcore_push_arguments (int, struct value **, CORE_ADDR,
+				       unsigned char, CORE_ADDR);
 #define PUSH_ARGUMENTS(NARGS, ARGS, SP, STRUCT_RETURN, STRUCT_ADDR) \
   (SP) = mcore_push_arguments (NARGS, ARGS, SP, STRUCT_RETURN, STRUCT_ADDR)
 
@@ -149,12 +152,9 @@ extern use_struct_convention_fn mcore_use_struct_convention;
     generic_get_saved_register (raw_buffer, optimized, addrp, frame, regnum, lval)
 
 /* Cons up virtual frame pointer for trace */
-extern void mcore_virtual_frame_pointer PARAMS ((CORE_ADDR, long *, long *));
+extern void mcore_virtual_frame_pointer (CORE_ADDR, int *, LONGEST *);
 #define TARGET_VIRTUAL_FRAME_POINTER(PC, REGP, OFFP) \
 	mcore_virtual_frame_pointer ((PC), (REGP), (OFFP))
-
-/* MCore can be bi-endian. */
-#define TARGET_BYTE_ORDER_SELECTABLE_P 1
 
 /* For PE, gcc will tell us what th real type of
    arguments are when it promotes arguments. */

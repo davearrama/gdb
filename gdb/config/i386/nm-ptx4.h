@@ -1,6 +1,7 @@
 /* Definitions to make GDB run on a Sequent Symmetry under ptx
    with Weitek 1167 and i387 support.
-   Copyright 1986, 1987, 1989, 1992  Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1989, 1992, 1994, 1996, 2000
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,11 +20,13 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-#include "nm-sysv4.h"
+#include "regcache.h"
+
+#include "config/nm-sysv4.h"
 
 #undef USE_PROC_FS
 
-#include "nm-symmetry.h"
+#include "i386/nm-symmetry.h"
 
 #define PTRACE_READ_REGS(pid,regaddr) mptrace (XPT_RREGS, (pid), (regaddr), 0)
 #define PTRACE_WRITE_REGS(pid,regaddr) \
@@ -39,7 +42,7 @@
 
 #define CHILD_WAIT
 struct target_waitstatus;
-extern int child_wait PARAMS ((int, struct target_waitstatus *));
+extern ptid_t child_wait (ptid_t, struct target_waitstatus *);
 
 /*
  * ptx does attach as of ptx version 2.1.  Prior to that, the interface

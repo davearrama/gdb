@@ -1,5 +1,5 @@
-/* Target macro definitions for i386 running FreeBSD
-   Copyright (C) 1997 Free Software Foundation, Inc.
+/* Target-dependent definitions for FreeBSD/i386.
+   Copyright 1997, 1999, 2000, 2001 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,16 +18,32 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-#include "i386/tm-i386bsd.h"
+#ifndef TM_FBSD_H
+#define TM_FBSD_H
 
+#include "i386/tm-i386.h"
 
-#undef NUM_REGS
-#define NUM_REGS 14
+/* These defines allow the recognition of sigtramps as a function name
+   <sigtramp>.
 
+   FIXME: kettenis/2002-05-12: Of course these defines will have to go
+   if we go truly "multi-arch", but I don't know yet how to get rid of
+   them.  */
 
-#undef IN_SOLIB_CALL_TRAMPOLINE
-#define IN_SOLIB_CALL_TRAMPOLINE(pc, name) STREQ (name, "_DYNAMIC")
+#define SIGTRAMP_START(pc) i386bsd_sigtramp_start (pc)
+#define SIGTRAMP_END(pc) i386bsd_sigtramp_end (pc)
+extern CORE_ADDR i386bsd_sigtramp_start (CORE_ADDR pc);
+extern CORE_ADDR i386bsd_sigtramp_end (CORE_ADDR pc);
 
+/* Shared library support.  */
 
-extern i386_float_info ();
-#define FLOAT_INFO  i386_float_info ()
+#ifndef SVR4_SHARED_LIBS
+
+/* Return non-zero if we are in a shared library trampoline code stub.  */
+
+#define IN_SOLIB_CALL_TRAMPOLINE(pc, name) \
+  (name && !strcmp(name, "_DYNAMIC"))
+
+#endif /* !SVR4_SHARED_LIBS */
+
+#endif /* TM_FBSD_H */

@@ -1,3 +1,40 @@
+2002-06-16  Andrew Cagney  <ac131313@redhat.com>
+
+	* configure: Regenerated to track ../common/aclocal.m4 changes.
+
+2001-07-05  Ben Elliston  <bje@redhat.com>
+
+	* Makefile.in (stamp-arch): Use $(CGEN_CPU_DIR).
+	(stamp-cpu): Likewise.
+	(stamp-desc): Likewise.
+
+2001-02-06  DJ Delorie  <dj@redhat.com>
+
+	* i960-desc.c: Update all the A macro definitions to the new
+	stdc-sensitive versions that cgen would have used.
+
+2001-01-12  Frank Ch. Eigler  <fche@redhat.com>
+
+	* configure: Regenerated with sim_scache fix.
+
+2000-11-18  Greg McGary  <greg@mcgary.org>
+
+	* Makefile.in: remove `@true' commands for rules that have
+	$(CGEN_MAINT) as a prerequisite.
+
+2000-08-21  Frank Ch. Eigler  <fche@redhat.com>
+
+	* Makefile.in (i960-clean): Add stamp-arch, stamp-cpu.
+	(stamp-arch, stamp-cpu): New targets.
+
+Tue May 23 21:39:23 2000  Andrew Cagney  <cagney@b1.cygnus.com>
+
+	* configure: Regenerated to track ../common/aclocal.m4 changes.
+
+2000-03-30  Dave Brolley  <brolley@redhat.com>
+
+	* configure: Regenerated.
+
 1999-10-04  Doug Evans  <devans@casey.cygnus.com>
 
 	* sem.c,sem-switch.c: Rebuild.

@@ -1,5 +1,5 @@
 /* Macro definitions for Sparc running under LynxOS.
-   Copyright 1993 Free Software Foundation, Inc.
+   Copyright 1993, 1994 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,7 +21,7 @@
 #ifndef TM_SPARCLYNX_H
 #define TM_SPARCLYNX_H
 
-#include "tm-lynx.h"
+#include "config/tm-lynx.h"
 
 /* Use generic Sparc definitions. */
 #include "sparc/tm-sparc.h"

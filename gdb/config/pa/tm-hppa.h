@@ -1,5 +1,6 @@
 /* Parameters for execution on any Hewlett-Packard PA-RISC machine.
-   Copyright 1986, 1987, 1989-1993, 1995, 1999, 2000 Free Software Foundation, Inc. 
+   Copyright 1986, 1987, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
+   1998, 1999, 2000 Free Software Foundation, Inc.
 
    Contributed by the Center for Software Science at the
    University of Utah (pa-gdb-bugs@cs.utah.edu).
@@ -21,6 +22,8 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
+#include "regcache.h"
+
 /* Forward declarations of some types we use in prototypes */
 
 struct frame_info;
@@ -28,10 +31,6 @@ struct frame_saved_regs;
 struct value;
 struct type;
 struct inferior_status;
-
-/* Target system byte order. */
-
-#define	TARGET_BYTE_ORDER	BIG_ENDIAN
 
 /* By default assume we don't have to worry about software floating point.  */
 #ifndef SOFT_FLOAT
@@ -51,10 +50,6 @@ struct inferior_status;
   ((X) >> (31 - (TO)) & ((1 << ((TO) - (FROM) + 1)) - 1))
 #endif
 
-/* Watch out for NaNs */
-
-#define IEEE_FLOAT
-
 /* On the PA, any pass-by-value structure > 8 bytes is actually
    passed via a pointer regardless of its type or the compiler
    used.  */
@@ -70,24 +65,24 @@ struct inferior_status;
 /* Advance PC across any function entry prologue instructions
    to reach some "real" code.  */
 
-extern CORE_ADDR hppa_skip_prologue PARAMS ((CORE_ADDR));
+extern CORE_ADDR hppa_skip_prologue (CORE_ADDR);
 #define SKIP_PROLOGUE(pc) (hppa_skip_prologue (pc))
 
 /* If PC is in some function-call trampoline code, return the PC
    where the function itself actually starts.  If not, return NULL.  */
 
 #define	SKIP_TRAMPOLINE_CODE(pc) skip_trampoline_code (pc, NULL)
-extern CORE_ADDR skip_trampoline_code PARAMS ((CORE_ADDR, char *));
+extern CORE_ADDR skip_trampoline_code (CORE_ADDR, char *);
 
 /* Return non-zero if we are in an appropriate trampoline. */
 
 #define IN_SOLIB_CALL_TRAMPOLINE(pc, name) \
    in_solib_call_trampoline (pc, name)
-extern int in_solib_call_trampoline PARAMS ((CORE_ADDR, char *));
+extern int in_solib_call_trampoline (CORE_ADDR, char *);
 
 #define IN_SOLIB_RETURN_TRAMPOLINE(pc, name) \
   in_solib_return_trampoline (pc, name)
-extern int in_solib_return_trampoline PARAMS ((CORE_ADDR, char *));
+extern int in_solib_return_trampoline (CORE_ADDR, char *);
 
 /* Immediately after a function call, return the saved pc.
    Can't go through the frames for this because on some machines
@@ -96,7 +91,7 @@ extern int in_solib_return_trampoline PARAMS ((CORE_ADDR, char *));
 
 #undef	SAVED_PC_AFTER_CALL
 #define SAVED_PC_AFTER_CALL(frame) saved_pc_after_call (frame)
-extern CORE_ADDR saved_pc_after_call PARAMS ((struct frame_info *));
+extern CORE_ADDR saved_pc_after_call (struct frame_info *);
 
 /* Stack grows upward */
 #define INNER_THAN(lhs,rhs) ((lhs) > (rhs))
@@ -106,7 +101,7 @@ extern CORE_ADDR saved_pc_after_call PARAMS ((struct frame_info *));
    On hppa the sp must always be kept 64-bit aligned */
 
 #define STACK_ALIGN(arg) ( ((arg)%8) ? (((arg)+7)&-8) : (arg))
-#define NO_EXTRA_ALIGNMENT_NEEDED 1
+#define EXTRA_STACK_ALIGNMENT_NEEDED 0
 
 /* Sequence of bytes for breakpoint instruction.  */
 
@@ -248,7 +243,7 @@ extern CORE_ADDR saved_pc_after_call PARAMS ((struct frame_info *));
    clean them up using this macro.  BUF is a char pointer to
    the raw value of the register in the registers[] array.  */
 
-#define	CLEAN_UP_REGISTER_VALUE(regno, buf) \
+#define	DEPRECATED_CLEAN_UP_REGISTER_VALUE(regno, buf) \
   do {	\
     if ((regno) == PCOQ_HEAD_REGNUM || (regno) == PCOQ_TAIL_REGNUM) \
       (buf)[sizeof(CORE_ADDR) -1] &= ~0x3; \
@@ -258,7 +253,7 @@ extern CORE_ADDR saved_pc_after_call PARAMS ((struct frame_info *));
    of register dumps. */
 
 #define DO_REGISTERS_INFO(_regnum, fp) pa_do_registers_info (_regnum, fp)
-extern void pa_do_registers_info PARAMS ((int, int));
+extern void pa_do_registers_info (int, int);
 
 #if 0
 #define STRCAT_REGISTER(regnum, fpregs, stream, precision) pa_do_strcat_registers_info (regnum, fpregs, stream, precision)
@@ -313,27 +308,10 @@ extern void pa_do_strcat_registers_info (int, int, struct ui_file *, enum precis
 
 /* Extract from an array REGBUF containing the (raw) register state
    a function return value of type TYPE, and copy that, in virtual format,
-   into VALBUF. 
+   into VALBUF.  */
 
-   elz: changed what to return when length is > 4: the stored result is 
-   in register 28 and in register 29, with the lower order word being in reg 29, 
-   so we must start reading it from somehere in the middle of reg28
-
-   FIXME: Not sure what to do for soft float here.  */
-
-#define EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
-  { \
-    if (TYPE_CODE (TYPE) == TYPE_CODE_FLT && !SOFT_FLOAT) \
-      memcpy ((VALBUF), \
-	      ((char *)(REGBUF)) + REGISTER_BYTE (FP4_REGNUM), \
-	      TYPE_LENGTH (TYPE)); \
-    else \
-      memcpy ((VALBUF), \
-	      (char *)(REGBUF) + REGISTER_BYTE (28) + \
-	      (TYPE_LENGTH (TYPE) > 4 ? (8 - TYPE_LENGTH (TYPE)) : (4 - TYPE_LENGTH (TYPE))), \
-	      TYPE_LENGTH (TYPE)); \
-  }
-
+#define DEPRECATED_EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
+  hppa_extract_return_value (TYPE, REGBUF, VALBUF);
 
  /* elz: decide whether the function returning a value of type type
     will put it on the stack or in the registers.
@@ -350,39 +328,28 @@ extern use_struct_convention_fn hppa_use_struct_convention;
 #define USE_STRUCT_CONVENTION(gcc_p,type) hppa_use_struct_convention (gcc_p,type)
 
 /* Write into appropriate registers a function return value
-   of type TYPE, given in virtual format.
-
-   For software floating point the return value goes into the integer
-   registers.  But we don't have any flag to key this on, so we always
-   store the value into the integer registers, and if it's a float value,
-   then we put it in the float registers too.  */
+   of type TYPE, given in virtual format.  */
 
 #define STORE_RETURN_VALUE(TYPE,VALBUF) \
-  write_register_bytes (REGISTER_BYTE (28),(VALBUF), TYPE_LENGTH (TYPE)) ; \
-  if (!SOFT_FLOAT) \
-    write_register_bytes ((TYPE_CODE(TYPE) == TYPE_CODE_FLT \
-			   ? REGISTER_BYTE (FP4_REGNUM) \
-			   : REGISTER_BYTE (28)),		\
-			  (VALBUF), TYPE_LENGTH (TYPE))
+  hppa_store_return_value (TYPE, VALBUF);
 
 /* Extract from an array REGBUF containing the (raw) register state
    the address in which a function should return its structure value,
    as a CORE_ADDR (or an expression that can be used as one).  */
 
-#define EXTRACT_STRUCT_VALUE_ADDRESS(REGBUF) \
+#define DEPRECATED_EXTRACT_STRUCT_VALUE_ADDRESS(REGBUF) \
   (*(int *)((REGBUF) + REGISTER_BYTE (28)))
 
 /* elz: Return a large value, which is stored on the stack at addr.
-   This is defined only for the hppa, at this moment. 
-   The above macro EXTRACT_STRUCT_VALUE_ADDRESS is not called anymore,
-   because it assumes that on exit from a called function which returns
-   a large structure on the stack, the address of the ret structure is 
-   still in register 28. Unfortunately this register is usually overwritten
-   by the called function itself, on hppa. This is specified in the calling
-   convention doc. As far as I know, the only way to get the return value
-   is to have the caller tell us where it told the callee to put it, rather
-   than have the callee tell us.
- */
+   This is defined only for the hppa, at this moment.  The above macro
+   DEPRECATED_EXTRACT_STRUCT_VALUE_ADDRESS is not called anymore,
+   because it assumes that on exit from a called function which
+   returns a large structure on the stack, the address of the ret
+   structure is still in register 28. Unfortunately this register is
+   usually overwritten by the called function itself, on hppa. This is
+   specified in the calling convention doc. As far as I know, the only
+   way to get the return value is to have the caller tell us where it
+   told the callee to put it, rather than have the callee tell us.  */
 #define VALUE_RETURNED_FROM_STACK(valtype,addr) \
   hppa_value_returned_from_stack (valtype, addr)
 
@@ -403,32 +370,23 @@ extern use_struct_convention_fn hppa_use_struct_convention;
                    ((regno) > IPSW_REGNUM && (regno) < FP4_REGNUM)
 
 #define INIT_EXTRA_FRAME_INFO(fromleaf, frame) init_extra_frame_info (fromleaf, frame)
-extern void init_extra_frame_info PARAMS ((int, struct frame_info *));
+extern void init_extra_frame_info (int, struct frame_info *);
 
 /* Describe the pointer in each stack frame to the previous stack frame
    (its caller).  */
 
-/* FRAME_CHAIN takes a frame's nominal address
-   and produces the frame's chain-pointer.
-
-   FRAME_CHAIN_COMBINE takes the chain pointer and the frame's nominal address
-   and produces the nominal address of the caller frame.
-
-   However, if FRAME_CHAIN_VALID returns zero,
-   it means the given frame is the outermost one and has no caller.
-   In that case, FRAME_CHAIN_COMBINE is not used.  */
+/* FRAME_CHAIN takes a frame's nominal address and produces the
+   frame's chain-pointer.  */
 
 /* In the case of the PA-RISC, the frame's nominal address
    is the address of a 4-byte word containing the calling frame's
    address (previous FP).  */
 
 #define FRAME_CHAIN(thisframe) frame_chain (thisframe)
-extern CORE_ADDR frame_chain PARAMS ((struct frame_info *));
+extern CORE_ADDR frame_chain (struct frame_info *);
 
-extern int hppa_frame_chain_valid PARAMS ((CORE_ADDR, struct frame_info *));
+extern int hppa_frame_chain_valid (CORE_ADDR, struct frame_info *);
 #define FRAME_CHAIN_VALID(chain, thisframe) hppa_frame_chain_valid (chain, thisframe)
-
-#define FRAME_CHAIN_COMBINE(chain, thisframe) (chain)
 
 /* Define other aspects of the stack frame.  */
 
@@ -437,9 +395,9 @@ extern int hppa_frame_chain_valid PARAMS ((CORE_ADDR, struct frame_info *));
    does not, FRAMELESS is set to 1, else 0.  */
 #define FRAMELESS_FUNCTION_INVOCATION(FI) \
   (frameless_function_invocation (FI))
-extern int frameless_function_invocation PARAMS ((struct frame_info *));
+extern int frameless_function_invocation (struct frame_info *);
 
-extern CORE_ADDR hppa_frame_saved_pc PARAMS ((struct frame_info * frame));
+extern CORE_ADDR hppa_frame_saved_pc (struct frame_info *frame);
 #define FRAME_SAVED_PC(FRAME) hppa_frame_saved_pc (FRAME)
 
 #define FRAME_ARGS_ADDRESS(fi) ((fi)->frame)
@@ -459,8 +417,7 @@ extern CORE_ADDR hppa_frame_saved_pc PARAMS ((struct frame_info * frame));
 #define FRAME_FIND_SAVED_REGS(frame_info, frame_saved_regs) \
   hppa_frame_find_saved_regs (frame_info, &frame_saved_regs)
 extern void
-hppa_frame_find_saved_regs PARAMS ((struct frame_info *,
-				    struct frame_saved_regs *));
+hppa_frame_find_saved_regs (struct frame_info *, struct frame_saved_regs *);
 
 
 /* Things needed for making the inferior call functions.  */
@@ -468,12 +425,12 @@ hppa_frame_find_saved_regs PARAMS ((struct frame_info *,
 /* Push an empty stack frame, to record the current PC, etc. */
 
 #define PUSH_DUMMY_FRAME push_dummy_frame (inf_status)
-extern void push_dummy_frame PARAMS ((struct inferior_status *));
+extern void push_dummy_frame (struct inferior_status *);
 
 /* Discard from the stack the innermost frame, 
    restoring all saved registers.  */
 #define POP_FRAME  hppa_pop_frame ()
-extern void hppa_pop_frame PARAMS ((void));
+extern void hppa_pop_frame (void);
 
 #define INSTRUCTION_SIZE 4
 
@@ -566,7 +523,7 @@ extern void hppa_pop_frame PARAMS ((void));
 #else /* defined PA_LEVEL_0 */
 
 /* This is the call dummy for a level 0 PA.  Level 0's don't have space
-   registers (or floating point??), so we skip all that inter-space call stuff,
+   registers (or floating point?), so we skip all that inter-space call stuff,
    and avoid touching the fp regs.
 
    call_dummy
@@ -619,14 +576,13 @@ extern void hppa_pop_frame PARAMS ((void));
 #define FIX_CALL_DUMMY hppa_fix_call_dummy
 
 extern CORE_ADDR
-  hppa_fix_call_dummy PARAMS ((char *, CORE_ADDR, CORE_ADDR, int,
-			       struct value **, struct type *, int));
+hppa_fix_call_dummy (char *, CORE_ADDR, CORE_ADDR, int,
+		     struct value **, struct type *, int);
 
 #define PUSH_ARGUMENTS(nargs, args, sp, struct_return, struct_addr) \
   (hppa_push_arguments((nargs), (args), (sp), (struct_return), (struct_addr)))
 extern CORE_ADDR
-  hppa_push_arguments PARAMS ((int, struct value **, CORE_ADDR, int,
-			       CORE_ADDR));
+hppa_push_arguments (int, struct value **, CORE_ADDR, int, CORE_ADDR);
 
 /* The low two bits of the PC on the PA contain the privilege level.  Some
    genius implementing a (non-GCC) compiler apparently decided this means
@@ -760,26 +716,25 @@ typedef struct obj_private_struct
 obj_private_data_t;
 
 #if 0
-extern void target_write_pc
-PARAMS ((CORE_ADDR, int))
-     extern CORE_ADDR target_read_pc PARAMS ((int));
-     extern CORE_ADDR skip_trampoline_code PARAMS ((CORE_ADDR, char *));
+extern void target_write_pc (CORE_ADDR, int);
+extern CORE_ADDR target_read_pc (int);
+extern CORE_ADDR skip_trampoline_code (CORE_ADDR, char *);
 #endif
 
 #define TARGET_READ_PC(pid) target_read_pc (pid)
-     extern CORE_ADDR target_read_pc PARAMS ((int));
+extern CORE_ADDR target_read_pc (ptid_t);
 
 #define TARGET_WRITE_PC(v,pid) target_write_pc (v,pid)
-     extern void target_write_pc PARAMS ((CORE_ADDR, int));
+extern void target_write_pc (CORE_ADDR, ptid_t);
 
-#define TARGET_READ_FP() target_read_fp (inferior_pid)
-     extern CORE_ADDR target_read_fp PARAMS ((int));
+#define TARGET_READ_FP() target_read_fp (PIDGET (inferior_ptid))
+extern CORE_ADDR target_read_fp (int);
 
 /* For a number of horrible reasons we may have to adjust the location
    of variables on the stack.  Ugh.  */
 #define HPREAD_ADJUST_STACK_ADDRESS(ADDR) hpread_adjust_stack_address(ADDR)
 
-     extern int hpread_adjust_stack_address PARAMS ((CORE_ADDR));
+extern int hpread_adjust_stack_address (CORE_ADDR);
 
 /* If the current gcc for for this target does not produce correct debugging
    information for float parameters, both prototyped and unprototyped, then
@@ -793,7 +748,7 @@ PARAMS ((CORE_ADDR, int))
    for C and break the prototyped case, since the non-prototyped case is
    probably much more common.  (FIXME). */
 
-#define COERCE_FLOAT_TO_DOUBLE (current_language -> la_language == language_c)
+#define COERCE_FLOAT_TO_DOUBLE(formal, actual) (current_language -> la_language == language_c)
 
 /* Here's how to step off a permanent breakpoint.  */
 #define SKIP_PERMANENT_BREAKPOINT (hppa_skip_permanent_breakpoint)

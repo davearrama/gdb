@@ -1,5 +1,6 @@
 /* Target machine description for SGI Iris under Irix 5, for GDB.
-   Copyright 1990, 1991, 1992, 1993, 1995 Free Software Foundation, Inc.
+   Copyright 1990, 1991, 1992, 1993, 1994, 1995, 1998, 2000
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -20,6 +21,10 @@
 
 #include "mips/tm-irix3.h"
 
+/* FIXME: cagney/2000-04-04: Testing the _MIPS_SIM_NABI32 and
+   _MIPS_SIM in a tm-*.h file is simply wrong!  Those are
+   host-dependant macros (provided by /usr/include) and stop any
+   chance of the target being cross compiled */
 #if defined (_MIPS_SIM_NABI32) && _MIPS_SIM == _MIPS_SIM_NABI32
 /*
  * Irix 6 (n32 ABI) has 32-bit GP regs and 64-bit FP regs
@@ -43,19 +48,11 @@
 	 : ((N) >= 70 && (N) <= 89) ? builtin_type_uint32 \
 	 : builtin_type_int)
 
-#undef  MIPS_LAST_ARG_REGNUM
-#define MIPS_LAST_ARG_REGNUM 11	/* N32 uses R4 through R11 for args */
-
-#undef  MIPS_NUM_ARG_REGS
-#define MIPS_NUM_ARG_REGS 8
+/* Force N32 ABI as the default. */
+#define MIPS_DEFAULT_ABI MIPS_ABI_N32
 
 #endif /* N32 */
 
-/* When calling functions on Irix 5 (or any MIPS SVR4 ABI compliant
-   platform) $25 must hold the function address.  Dest_Reg is a macro
-   used in CALL_DUMMY in tm-mips.h.  */
-#undef Dest_Reg
-#define Dest_Reg 25
 
 /* The signal handler trampoline is called _sigtramp.  */
 #undef IN_SIGTRAMP

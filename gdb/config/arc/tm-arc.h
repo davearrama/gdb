@@ -1,5 +1,5 @@
 /* Parameters for target machine ARC, for GDB, the GNU debugger.
-   Copyright (C) 1995 Free Software Foundation, Inc.
+   Copyright 1995, 1996, 1998, 1999, 2000 Free Software Foundation, Inc.
    Contributed by Cygnus Support.
 
    This file is part of GDB.
@@ -19,28 +19,23 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
+#include "regcache.h"
+
 /* Used by arc-tdep.c to set the default cpu type.  */
 #define DEFAULT_ARC_CPU_TYPE "base"
-
-/* Byte order is selectable.  */
-#define	TARGET_BYTE_ORDER_SELECTABLE
-
-/* We have IEEE floating point, if we have any float at all.  */
-#define IEEE_FLOAT
 
 /* Offset from address of function to start of its code.
    Zero on most machines.  */
 #define FUNCTION_START_OFFSET 0
 
 /* Advance PC across any function entry prologue instructions
-   to reach some "real" code.  SKIP_PROLOGUE_FRAMELESS_P advances
-   the PC past some of the prologue, but stops as soon as it
-   knows that the function has a frame.  Its result is equal
-   to its input PC if the function is frameless, unequal otherwise.  */
+   to reach some "real" code.  */
 
 #define SKIP_PROLOGUE(pc) (arc_skip_prologue (pc, 0))
-#define SKIP_PROLOGUE_FRAMELESS_P(pc) (arc_skip_prologue (pc, 1))
-extern CORE_ADDR arc_skip_prologue PARAMS ((CORE_ADDR, int));
+extern CORE_ADDR arc_skip_prologue (CORE_ADDR, int);
+
+#define PROLOGUE_FRAMELESS_P(pc) arc_prologue_frameless_p(pc)
+extern int arc_prologue_frameless_p (CORE_ADDR);
 
 /* Sequence of bytes for breakpoint instruction.
    ??? The current value is "sr -1,[-1]" and is for the simulator only.
@@ -61,8 +56,8 @@ extern CORE_ADDR arc_skip_prologue PARAMS ((CORE_ADDR, int));
 
 /* We don't have a reliable single step facility.
    ??? We do have a cycle single step facility, but that won't work.  */
-#define SOFTWARE_SINGLE_STEP_P 1
-extern void arc_software_single_step PARAMS ((unsigned int, int));
+#define SOFTWARE_SINGLE_STEP_P() 1
+extern void arc_software_single_step (enum target_signal, int);
 #define SOFTWARE_SINGLE_STEP(sig,bp_p) arc_software_single_step (sig, bp_p)
 
 /* FIXME: Need to set STEP_SKIPS_DELAY.  */
@@ -209,14 +204,14 @@ extern void arc_software_single_step PARAMS ((unsigned int, int));
    into VALBUF.  This is only called if USE_STRUCT_CONVENTION for this
    type is 0.
  */
-#define EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
+#define DEPRECATED_EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
 	memcpy(VALBUF, REGBUF+REGISTER_BYTE(R0_REGNUM), TYPE_LENGTH (TYPE))
 
 /* If USE_STRUCT_CONVENTION produces a 1, 
    extract from an array REGBUF containing the (raw) register state
    the address in which a function should return its structure value,
    as a CORE_ADDR (or an expression that can be used as one). */
-#define EXTRACT_STRUCT_VALUE_ADDRESS(REGBUF) \
+#define DEPRECATED_EXTRACT_STRUCT_VALUE_ADDRESS(REGBUF) \
    (error("Don't know where large structure is returned on arc"), 0)
 
 /* Write into appropriate registers a function return value
@@ -277,7 +272,7 @@ extern void arc_software_single_step PARAMS ((unsigned int, int));
 
 #define FRAME_SAVED_PC(frame) (arc_frame_saved_pc (frame))
 struct frame_info;		/* in case frame.h not included yet */
-CORE_ADDR arc_frame_saved_pc PARAMS ((struct frame_info *));
+CORE_ADDR arc_frame_saved_pc (struct frame_info *);
 
 /* If the argument is on the stack, it will be here.
    We cache this value in the frame info if we've already looked it up.  */

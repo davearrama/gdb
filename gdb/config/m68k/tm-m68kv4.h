@@ -1,6 +1,7 @@
 /* Target definitions for GDB on a Motorola 680x0 running SVR4.
    (Commodore Amiga with amix or Atari TT with ASV)
-   Copyright (C) 1991, 1995 Free Software Foundation, Inc.
+   Copyright 1991, 1994, 1995, 1996, 1998, 1999, 2000
+   Free Software Foundation, Inc.
    Written by Fred Fish at Cygnus Support (fnf@cygint)
 
    This file is part of GDB.
@@ -33,7 +34,7 @@
 
 #define FRAME_CHAIN_VALID(fp,fi) func_frame_chain_valid (fp, fi)
 
-#include "tm-sysv4.h"
+#include "config/tm-sysv4.h"
 #include "m68k/tm-m68k.h"
 
 /* Offsets (in target ints) into jmp_buf.  Not defined in any system header
@@ -64,8 +65,7 @@
    we extract the pc (JB_PC) that we will land at.  The pc is copied into ADDR.
    This routine returns true on success */
 
-#define GET_LONGJMP_TARGET(ADDR) get_longjmp_target(ADDR)
-extern int get_longjmp_target PARAMS ((CORE_ADDR *));
+#define GET_LONGJMP_TARGET(ADDR) m68k_get_longjmp_target(ADDR)
 
 /* Convert a DWARF register number to a gdb REGNUM.  */
 #define DWARF_REG_TO_REGNUM(num) ((num) < 16 ? (num) : (num)+FP0_REGNUM-16)

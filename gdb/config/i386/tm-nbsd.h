@@ -1,5 +1,5 @@
 /* Macro definitions for i386 running under NetBSD.
-   Copyright 1994 Free Software Foundation, Inc.
+   Copyright 1994, 1996, 2000, 2002 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,23 +21,20 @@
 #ifndef TM_NBSD_H
 #define TM_NBSD_H
 
-#include "i386/tm-i386bsd.h"
-#include "tm-nbsd.h"
+#define HAVE_SSE_REGS
 
-#undef NUM_REGS
-#define NUM_REGS 16
+#include "i386/tm-i386.h"
 
-#define JB_ELEMENT_SIZE sizeof(int)	/* jmp_buf[_JBLEN] is array of ints */
-#define JB_PC	0		/* Setjmp()'s return PC saved here */
+/* These defines allow the recognition of sigtramps as a function name
+   <sigtramp>.
 
-/* Figure out where the longjmp will land.  Slurp the args out of the stack.
-   We expect the first arg to be a pointer to the jmp_buf structure from which
-   we extract the pc (JB_PC) that we will land at.  The pc is copied into ADDR.
-   This routine returns true on success */
+   FIXME: kettenis/2002-05-12: Of course these defines will have to go
+   if we go truly "multi-arch", but I don't know yet how to get rid of
+   them.  */
 
-extern int
-get_longjmp_target PARAMS ((CORE_ADDR *));
-
-#define GET_LONGJMP_TARGET(ADDR) get_longjmp_target(ADDR)
+#define SIGTRAMP_START(pc) i386bsd_sigtramp_start (pc)
+#define SIGTRAMP_END(pc) i386bsd_sigtramp_end (pc)
+extern CORE_ADDR i386bsd_sigtramp_start (CORE_ADDR pc);
+extern CORE_ADDR i386bsd_sigtramp_end (CORE_ADDR pc);
 
 #endif /* TM_NBSD_H */

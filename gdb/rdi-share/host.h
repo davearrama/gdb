@@ -29,21 +29,14 @@
 #  define offsetof(T, member)  ((char *)&(((T *)0)->member) - (char *)0)
 #endif
 
-/* If under Cygwin, provide backwards compatibility with older
-   Cygwin compilers that don't define the current cpp define. */
-#ifdef __CYGWIN32__
-#ifndef __CYGWIN__
-#define __CYGWIN__
-#endif
-#endif
-
-#ifdef unix                   /* A temporary sop to older compilers */
+/* A temporary sop to older compilers */
+#if defined (__NetBSD__) || defined (unix)
 #  ifndef __unix              /* (good for long-term portability?)  */
 #    define __unix    1
 #  endif
 #endif
 
-#ifdef __unix
+#if defined(__unix)
 /* Generic unix -- hopefully a split into other variants will not be    */
 /* needed.  However, beware the 'bsd' test above and safe_toupper etc.  */
 /* which cope with backwards (pre-posix/X/open) unix compatility.       */
@@ -51,20 +44,13 @@
 #endif
 #if defined(_WIN32)
 #  define COMPILING_ON_WIN32    1
-#  if !defined(__CYGWIN32__)
+#  if !defined(__CYGWIN__)
 #    define COMPILING_ON_WINDOWS  1
 #  endif
 #endif
 #if defined(_CONSOLE)
 #  define COMPILING_ON_WINDOWS_CONSOLE 1
 #  define COMPILING_ON_WINDOWS 1
-#endif
-#ifdef _MSC_VER
-#  define COMPILING_ON_MSDOS    1
-#  define COMPILING_ON_WINDOWS  1
-#  if defined(__cplusplus)
-#    define IMPLEMENT_BOOL_AS_INT 1 /* VC++ doesn't have 'bool' (yet) */
-#  endif
 #endif
 /* The '(defined(__sparc) && defined(P_tmpdir)                     */
 /* && !defined(__svr4__))' is to detect gcc on SunOS.              */
@@ -126,7 +112,9 @@ typedef unsigned       char  unsigned8;
 #  if defined(_MFC_VER) || defined(__CC_NORCROFT) /* When using MS Visual C/C++ v4.2 */
 #    define bool _bool /* avoids "'bool' is reserved word" warning      */
 #  else
-     typedef _bool bool;
+#    ifndef bool
+       typedef _bool bool;
+#    endif
 #  endif
 #  define true _true
 #  define false _false
@@ -187,8 +175,7 @@ typedef char *ArgvType;
 #  define FILENAME_MAX 256
 #endif
 
-#if (!defined(__STDC__) && !defined(__cplusplus) && !defined(_MSC_VER)) || \
-    defined(COMPILING_ON_SUNOS)
+#if (!defined(__STDC__) && !defined(__cplusplus)) || defined(COMPILING_ON_SUNOS)
 /* Use bcopy rather than memmove, as memmove is not available.     */
 /* There does not seem to be a header for bcopy.                   */
 void bcopy(const char *src, char *dst, int length);
