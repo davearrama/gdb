@@ -1,5 +1,5 @@
 /* Modula 2 language support definitions for GDB, the GNU debugger.
-   Copyright 1992, 2000 Free Software Foundation, Inc.
+   Copyright 1992, 1998, 2000 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,14 +18,12 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-extern int
-m2_parse PARAMS ((void));	/* Defined in m2-exp.y */
+extern int m2_parse (void);	/* Defined in m2-exp.y */
 
-extern void
-m2_error PARAMS ((char *));	/* Defined in m2-exp.y */
+extern void m2_error (char *);	/* Defined in m2-exp.y */
 
 /* Defined in m2-typeprint.c */
-extern void m2_print_type (struct type *, char *, struct ui_file *, int,
+extern void m2_print_type (struct type *, const char *, struct ui_file *, int,
 			   int);
 
 extern int m2_val_print (struct type *, char *, int, CORE_ADDR,

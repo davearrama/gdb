@@ -1,5 +1,6 @@
 /* Support for printing Modula 2 types for GDB, the GNU debugger.
-   Copyright 1986, 1988, 1989, 1991, 2000 Free Software Foundation, Inc.
+   Copyright 1986, 1988, 1989, 1991, 1992, 1995, 2000
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,7 +20,6 @@
    Boston, MA 02111-1307, USA.  */
 
 #include "defs.h"
-#include "obstack.h"
 #include "bfd.h"		/* Binary File Description */
 #include "symtab.h"
 #include "gdbtypes.h"
@@ -27,24 +27,15 @@
 #include "value.h"
 #include "gdbcore.h"
 #include "target.h"
-#include "command.h"
-#include "gdbcmd.h"
-#include "language.h"
-#include "demangle.h"
 #include "m2-lang.h"
-
-#include "gdb_string.h"
 #include <errno.h>
 
 void
-m2_print_type (type, varstring, stream, show, level)
-     struct type *type;
-     char *varstring;
-     struct ui_file *stream;
-     int show;
-     int level;
+m2_print_type (struct type *type, const char *varstring,
+	       struct ui_file *stream,
+	       int show, int level)
 {
-  extern void c_print_type (struct type *, char *, struct ui_file *, int,
+  extern void c_print_type (struct type *, const char *, struct ui_file *, int,
 			    int);
 
   c_print_type (type, varstring, stream, show, level);	/* FIXME */

@@ -1,5 +1,5 @@
 /* Support for printing Java types for GDB, the GNU debugger.
-   Copyright 1997-2000 Free Software Foundation, Inc.
+   Copyright 1997, 1998, 1999, 2000 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -28,6 +28,7 @@
 #include "gdb_string.h"
 #include "typeprint.h"
 #include "c-lang.h"
+#include "cp-abi.h"
 
 /* Local functions */
 
@@ -36,11 +37,9 @@ static void java_type_print_base (struct type * type,
 				  int level);
 
 static void
-java_type_print_derivation_info (stream, type)
-     struct ui_file *stream;
-     struct type *type;
+java_type_print_derivation_info (struct ui_file *stream, struct type *type)
 {
-  char *name;
+  const char *name;
   int i;
   int n_bases;
   int prev;
@@ -84,11 +83,8 @@ java_type_print_derivation_info (stream, type)
    We increase it for some recursive calls.  */
 
 static void
-java_type_print_base (type, stream, show, level)
-     struct type *type;
-     struct ui_file *stream;
-     int show;
-     int level;
+java_type_print_base (struct type *type, struct ui_file *stream, int show,
+		      int level)
 {
   register int i;
   register int len;
@@ -127,7 +123,7 @@ java_type_print_base (type, stream, show, level)
 	{			/* array type */
 	  char *name = java_demangle_type_signature (TYPE_TAG_NAME (type));
 	  fputs_filtered (name, stream);
-	  free (name);
+	  xfree (name);
 	  break;
 	}
 
@@ -156,7 +152,7 @@ java_type_print_base (type, stream, show, level)
 	  fprintf_filtered (stream, "{\n");
 	  if ((TYPE_NFIELDS (type) == 0) && (TYPE_NFN_FIELDS (type) == 0))
 	    {
-	      if (TYPE_FLAGS (type) & TYPE_FLAG_STUB)
+	      if (TYPE_STUB (type))
 		fprintfi_filtered (level + 4, stream, "<incomplete type>\n");
 	      else
 		fprintfi_filtered (level + 4, stream, "<no data fields>\n");
@@ -212,7 +208,7 @@ java_type_print_base (type, stream, show, level)
 	      struct fn_field *f;
 	      int j;
 	      char *method_name;
-	      char *name;
+	      const char *name;
 	      int is_constructor;
 	      int n_overloads;
 
@@ -229,12 +225,9 @@ java_type_print_base (type, stream, show, level)
 
 		  physname = TYPE_FN_FIELD_PHYSNAME (f, j);
 
-		  is_full_physname_constructor =
-		    ((physname[0] == '_' && physname[1] == '_'
-		      && strchr ("0123456789Qt", physname[2]))
-		     || STREQN (physname, "__ct__", 6)
-		     || DESTRUCTOR_PREFIX_P (physname)
-		     || STREQN (physname, "__dt__", 6));
+		  is_full_physname_constructor
+                    = (is_constructor_name (physname)
+                       || is_destructor_name (physname));
 
 		  QUIT;
 
@@ -304,11 +297,11 @@ java_type_print_base (type, stream, show, level)
 		      }
 
 		    fputs_filtered (demangled_no_class, stream);
-		    free (demangled_name);
+		    xfree (demangled_name);
 		  }
 
 		  if (TYPE_FN_FIELD_STUB (f, j))
-		    free (mangled_name);
+		    xfree (mangled_name);
 
 		  fprintf_filtered (stream, ";\n");
 		}
@@ -329,12 +322,9 @@ extern void c_type_print_varspec_suffix (struct type *, struct ui_file *,
 					 int, int, int);
 
 void
-java_print_type (type, varstring, stream, show, level)
-     struct type *type;
-     char *varstring;
-     struct ui_file *stream;
-     int show;
-     int level;
+java_print_type (struct type *type, const char *varstring,
+		 struct ui_file *stream,
+		 int show, int level)
 {
   int demangled_args;
 
