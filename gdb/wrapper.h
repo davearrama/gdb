@@ -1,5 +1,5 @@
 /* Longjump free calls to gdb internal routines.
-   Copyright 1999 Free Software Foundation, Inc.
+   Copyright 1999, 2000 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,20 +18,38 @@
 
 #ifndef WRAPPER_H
 #define WRAPPER_H 1
+#include "gdb.h"
 
-/* Use this struct used to pass arguments to wrapper routines. */
+struct value;
+struct block;
+struct expression;
+struct ui_out;
+struct type;
+
+/* Use this struct to pass arguments to wrapper routines. */
 struct gdb_wrapper_arguments;
 
-extern int gdb_evaluate_expression PARAMS ((struct expression *, value_ptr *));
-extern int wrap_evaluate_expression PARAMS ((char *));
+extern int gdb_parse_exp_1 (char **, struct block *,
+			    int, struct expression **);
 
-extern int gdb_value_fetch_lazy PARAMS ((value_ptr));
-extern int wrap_value_fetch_lazy PARAMS ((char *));
+extern int gdb_evaluate_expression (struct expression *, struct value **);
 
-extern int gdb_value_equal PARAMS ((value_ptr, value_ptr, int *));
-extern int wrap_value_equal PARAMS ((char *));
+extern int gdb_value_fetch_lazy (struct value *);
 
-extern int gdb_value_ind PARAMS ((value_ptr val, value_ptr * rval));
-extern int wrap_value_ind PARAMS ((char *opaque_arg));
+extern int gdb_value_equal (struct value *, struct value *, int *);
 
+extern int gdb_value_assign (struct value *, struct value *, struct value **);
+
+extern int gdb_value_subscript (struct value *, struct value *, struct value **);
+
+extern enum gdb_rc gdb_value_struct_elt (struct ui_out *uiout, struct value **result_ptr,
+					 struct value **argp, struct value **args,
+					 char *name, int *static_memfuncp, char *err);
+
+extern int gdb_value_ind (struct value *val, struct value ** rval);
+
+extern int gdb_parse_and_eval_type (char *, int, struct type **);
+
+extern enum gdb_rc gdb_execute_command (struct ui_out *uiout, char *command,
+					int from_tty);
 #endif /* WRAPPER_H */

@@ -1,5 +1,5 @@
 /* Longjump free calls to gdb internal routines.
-   Copyright 1999 Free Software Foundation, Inc.
+   Copyright 1999, 2000 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,40 +18,101 @@
 
 #include "defs.h"
 #include "value.h"
-#include "frame.h"
 #include "wrapper.h"
+#include "top.h"		/* for execute_command */
 
-/* Use this struct used to pass arguments to wrapper routines. We assume
+/* use this struct to pass arguments to wrapper routines. We assume
    (arbitrarily) that no gdb function takes more than ten arguments. */
 struct gdb_wrapper_arguments
   {
 
     /* Pointer to some result from the gdb function call, if any */
-    char *result;
+    union wrapper_results 
+      {
+	int   integer;
+	void *pointer;
+      } result;
+	
 
     /* The list of arguments. */
-    char *args[10];
+    union wrapper_args 
+      {
+	int   integer;
+	void *pointer;
+      } args[10];
   };
 
-int gdb_evaluate_expression PARAMS ((struct expression *, value_ptr *));
-int wrap_evaluate_expression PARAMS ((char *));
+struct captured_value_struct_elt_args
+{
+  struct value **argp;
+  struct value **args;
+  char *name;
+  int *static_memfuncp;
+  char *err;
+  struct value **result_ptr;
+};
 
-int gdb_value_fetch_lazy PARAMS ((value_ptr));
-int wrap_value_fetch_lazy PARAMS ((char *));
+struct captured_execute_command_args
+{
+  char *command;
+  int from_tty;
+};
 
-int gdb_value_equal PARAMS ((value_ptr, value_ptr, int *));
-int wrap_value_equal PARAMS ((char *));
+static int wrap_parse_exp_1 (char *);
 
-int gdb_value_ind PARAMS ((value_ptr val, value_ptr * rval));
-int wrap_value_ind PARAMS ((char *opaque_arg));
+static int wrap_evaluate_expression (char *);
+
+static int wrap_value_fetch_lazy (char *);
+
+static int wrap_value_equal (char *);
+
+static int wrap_value_assign (char *);
+
+static int wrap_value_subscript (char *);
+
+static int wrap_value_ind (char *opaque_arg);
+
+static int do_captured_value_struct_elt (struct ui_out *uiout, void *data);
+
+static int wrap_parse_and_eval_type (char *);
 
 int
-gdb_evaluate_expression (exp, value)
-     struct expression *exp;
-     value_ptr *value;
+gdb_parse_exp_1 (char **stringptr, struct block *block, int comma,
+		 struct expression **expression)
 {
   struct gdb_wrapper_arguments args;
-  args.args[0] = (char *) exp;
+  args.args[0].pointer = stringptr;
+  args.args[1].pointer = block;
+  args.args[2].integer = comma;
+
+  if (!catch_errors ((catch_errors_ftype *) wrap_parse_exp_1, &args,
+		     "", RETURN_MASK_ERROR))
+    {
+      /* An error occurred */
+      return 0;
+    }
+
+  *expression = (struct expression *) args.result.pointer;
+  return 1;
+  
+}
+
+static int
+wrap_parse_exp_1 (char *argptr)
+{
+  struct gdb_wrapper_arguments *args 
+    = (struct gdb_wrapper_arguments *) argptr;
+  args->result.pointer = parse_exp_1((char **) args->args[0].pointer,
+				     (struct block *) args->args[1].pointer,
+				     args->args[2].integer);
+  return 1;
+}
+
+int
+gdb_evaluate_expression (struct expression *exp, struct value **value)
+{
+  struct gdb_wrapper_arguments args;
+  args.args[0].pointer = exp;
 
   if (!catch_errors ((catch_errors_ftype *) wrap_evaluate_expression, &args,
 		     "", RETURN_MASK_ERROR))
@@ -60,52 +121,46 @@ gdb_evaluate_expression (exp, value)
       return 0;
     }
 
-  *value = (value_ptr) args.result;
+  *value = (struct value *) args.result.pointer;
   return 1;
 }
 
-int
-wrap_evaluate_expression (a)
-     char *a;
+static int
+wrap_evaluate_expression (char *a)
 {
   struct gdb_wrapper_arguments *args = (struct gdb_wrapper_arguments *) a;
 
-  (args)->result =
-    (char *) evaluate_expression ((struct expression *) (args)->args[0]);
+  (args)->result.pointer =
+    (char *) evaluate_expression ((struct expression *) args->args[0].pointer);
   return 1;
 }
 
 int
-gdb_value_fetch_lazy (value)
-     value_ptr value;
+gdb_value_fetch_lazy (struct value *value)
 {
   struct gdb_wrapper_arguments args;
 
-  args.args[0] = (char *) value;
+  args.args[0].pointer = value;
   return catch_errors ((catch_errors_ftype *) wrap_value_fetch_lazy, &args,
 		       "", RETURN_MASK_ERROR);
 }
 
-int
-wrap_value_fetch_lazy (a)
-     char *a;
+static int
+wrap_value_fetch_lazy (char *a)
 {
   struct gdb_wrapper_arguments *args = (struct gdb_wrapper_arguments *) a;
 
-  value_fetch_lazy ((value_ptr) (args)->args[0]);
+  value_fetch_lazy ((struct value *) (args)->args[0].pointer);
   return 1;
 }
 
 int
-gdb_value_equal (val1, val2, result)
-     value_ptr val1;
-     value_ptr val2;
-     int *result;
+gdb_value_equal (struct value *val1, struct value *val2, int *result)
 {
   struct gdb_wrapper_arguments args;
 
-  args.args[0] = (char *) val1;
-  args.args[1] = (char *) val2;
+  args.args[0].pointer = val1;
+  args.args[1].pointer = val2;
 
   if (!catch_errors ((catch_errors_ftype *) wrap_value_equal, &args,
 		     "", RETURN_MASK_ERROR))
@@ -114,32 +169,96 @@ gdb_value_equal (val1, val2, result)
       return 0;
     }
 
-  *result = (int) args.result;
+  *result = args.result.integer;
   return 1;
 }
 
-int
-wrap_value_equal (a)
-     char *a;
+static int
+wrap_value_equal (char *a)
 {
   struct gdb_wrapper_arguments *args = (struct gdb_wrapper_arguments *) a;
-  value_ptr val1, val2;
+  struct value *val1;
+  struct value *val2;
 
-  val1 = (value_ptr) (args)->args[0];
-  val2 = (value_ptr) (args)->args[1];
+  val1 = (struct value *) (args)->args[0].pointer;
+  val2 = (struct value *) (args)->args[1].pointer;
 
-  (args)->result = (char *) value_equal (val1, val2);
+  (args)->result.integer = value_equal (val1, val2);
   return 1;
 }
 
 int
-gdb_value_ind (val, rval)
-     value_ptr val;
-     value_ptr *rval;
+gdb_value_assign (struct value *val1, struct value *val2, struct value **result)
 {
   struct gdb_wrapper_arguments args;
 
-  args.args[0] = (char *) val;
+  args.args[0].pointer = val1;
+  args.args[1].pointer = val2;
+
+  if (!catch_errors ((catch_errors_ftype *) wrap_value_assign, &args,
+		     "", RETURN_MASK_ERROR))
+    {
+      /* An error occurred */
+      return 0;
+    }
+
+  *result = (struct value *) args.result.pointer;
+  return 1;
+}
+
+static int
+wrap_value_assign (char *a)
+{
+  struct gdb_wrapper_arguments *args = (struct gdb_wrapper_arguments *) a;
+  struct value *val1;
+  struct value *val2;
+
+  val1 = (struct value *) (args)->args[0].pointer;
+  val2 = (struct value *) (args)->args[1].pointer;
+
+  (args)->result.pointer = value_assign (val1, val2);
+  return 1;
+}
+
+int
+gdb_value_subscript (struct value *val1, struct value *val2, struct value **rval)
+{
+  struct gdb_wrapper_arguments args;
+
+  args.args[0].pointer = val1;
+  args.args[1].pointer = val2;
+
+  if (!catch_errors ((catch_errors_ftype *) wrap_value_subscript, &args,
+		     "", RETURN_MASK_ERROR))
+    {
+      /* An error occurred */
+      return 0;
+    }
+
+  *rval = (struct value *) args.result.pointer;
+  return 1;
+}
+
+static int
+wrap_value_subscript (char *a)
+{
+  struct gdb_wrapper_arguments *args = (struct gdb_wrapper_arguments *) a;
+  struct value *val1;
+  struct value *val2;
+
+  val1 = (struct value *) (args)->args[0].pointer;
+  val2 = (struct value *) (args)->args[1].pointer;
+
+  (args)->result.pointer = value_subscript (val1, val2);
+  return 1;
+}
+
+int
+gdb_value_ind (struct value *val, struct value **rval)
+{
+  struct gdb_wrapper_arguments args;
+
+  args.args[0].pointer = val;
 
   if (!catch_errors ((catch_errors_ftype *) wrap_value_ind, &args,
 		     "", RETURN_MASK_ERROR))
@@ -148,18 +267,91 @@ gdb_value_ind (val, rval)
       return 0;
     }
 
-  *rval = (value_ptr) args.result;
+  *rval = (struct value *) args.result.pointer;
+  return 1;
+}
+
+static int
+wrap_value_ind (char *opaque_arg)
+{
+  struct gdb_wrapper_arguments *args = (struct gdb_wrapper_arguments *) opaque_arg;
+  struct value *val;
+
+  val = (struct value *) (args)->args[0].pointer;
+  (args)->result.pointer = value_ind (val);
   return 1;
 }
 
 int
-wrap_value_ind (opaque_arg)
-     char *opaque_arg;
+gdb_parse_and_eval_type (char *p, int length, struct type **type)
 {
-  struct gdb_wrapper_arguments *args = (struct gdb_wrapper_arguments *) opaque_arg;
-  value_ptr val;
+  struct gdb_wrapper_arguments args;
+  args.args[0].pointer = p;
+  args.args[1].integer = length;
 
-  val = (value_ptr) (args)->args[0];
-  (args)->result = (char *) value_ind (val);
+  if (!catch_errors ((catch_errors_ftype *) wrap_parse_and_eval_type, &args,
+		     "", RETURN_MASK_ALL))
+    {
+      /* An error occurred */
+      return 0;
+    }
+
+  *type = (struct type *) args.result.pointer;
   return 1;
+}
+
+static int
+wrap_parse_and_eval_type (char *a)
+{
+  struct gdb_wrapper_arguments *args = (struct gdb_wrapper_arguments *) a;
+
+  char *p = (char *) args->args[0].pointer;
+  int length = args->args[1].integer;
+
+  args->result.pointer = (char *) parse_and_eval_type (p, length);
+
+  return 1;
+}
+
+enum gdb_rc
+gdb_value_struct_elt (struct ui_out *uiout, struct value **result, struct value **argp,
+		      struct value **args, char *name, int *static_memfuncp,
+		      char *err)
+{
+  struct captured_value_struct_elt_args cargs;
+  cargs.argp = argp;
+  cargs.args = args;
+  cargs.name = name;
+  cargs.static_memfuncp = static_memfuncp;
+  cargs.err = err;
+  cargs.result_ptr = result;
+  return catch_exceptions (uiout, do_captured_value_struct_elt, &cargs,
+			   NULL, RETURN_MASK_ALL);
+}
+
+static int
+do_captured_value_struct_elt (struct ui_out *uiout, void *data)
+{
+  struct captured_value_struct_elt_args *cargs = data;
+  *cargs->result_ptr = value_struct_elt (cargs->argp, cargs->args, cargs->name,
+			     cargs->static_memfuncp, cargs->err);
+  return GDB_RC_OK;
+}
+
+static int
+do_captured_execute_command (struct ui_out *uiout, void *data)
+{
+  struct captured_execute_command_args *args = data;
+  execute_command (args->command, args->from_tty);
+  return GDB_RC_OK;
+}
+
+enum gdb_rc
+gdb_execute_command (struct ui_out *uiout, char *command, int from_tty)
+{
+  struct captured_execute_command_args args;
+  args.command = command;
+  args.from_tty = from_tty;
+  return catch_exceptions (uiout, do_captured_execute_command, &args,
+			   NULL, RETURN_MASK_ALL);
 }
