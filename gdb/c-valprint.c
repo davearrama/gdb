@@ -1,5 +1,6 @@
 /* Support for printing C values for GDB, the GNU debugger.
-   Copyright 1986, 1988, 1989, 1991-1997, 2000
+   Copyright 1986, 1988, 1989, 1991, 1992, 1993, 1994, 1995, 1996, 1997,
+   1998, 1999, 2000, 2001
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -20,15 +21,36 @@
    Boston, MA 02111-1307, USA.  */
 
 #include "defs.h"
+#include "gdb_string.h"
 #include "symtab.h"
 #include "gdbtypes.h"
 #include "expression.h"
 #include "value.h"
-#include "demangle.h"
 #include "valprint.h"
 #include "language.h"
 #include "c-lang.h"
+#include "cp-abi.h"
 
+
+/* Print function pointer with inferior address ADDRESS onto stdio
+   stream STREAM.  */
+
+static void
+print_function_pointer_address (CORE_ADDR address, struct ui_file *stream)
+{
+  CORE_ADDR func_addr = CONVERT_FROM_FUNC_PTR_ADDR (address);
+
+  /* If the function pointer is represented by a description, print the
+     address of the description.  */
+  if (addressprint && func_addr != address)
+    {
+      fputs_filtered ("@", stream);
+      print_address_numeric (address, 1, stream);
+      fputs_filtered (": ", stream);
+    }
+  print_address_demangle (func_addr, stream, demangle);
+}
+
 
 /* Print data of type TYPE located at VALADDR (within GDB), which came from
    the inferior at address ADDRESS, onto stdio stream STREAM according to
@@ -44,17 +66,9 @@
    The PRETTY parameter controls prettyprinting.  */
 
 int
-c_val_print (type, valaddr, embedded_offset, address, stream, format, deref_ref, recurse,
-	     pretty)
-     struct type *type;
-     char *valaddr;
-     int embedded_offset;
-     CORE_ADDR address;
-     struct ui_file *stream;
-     int format;
-     int deref_ref;
-     int recurse;
-     enum val_prettyprint pretty;
+c_val_print (struct type *type, char *valaddr, int embedded_offset,
+	     CORE_ADDR address, struct ui_file *stream, int format,
+	     int deref_ref, int recurse, enum val_prettyprint pretty)
 {
   register unsigned int i = 0;	/* Number of characters printed */
   unsigned len;
@@ -87,7 +101,7 @@ c_val_print (type, valaddr, embedded_offset, address, stream, format, deref_ref,
 	         elements up to it.  */
 	      if (stop_print_at_null)
 		{
-		  int temp_len;
+		  unsigned int temp_len;
 
 		  /* Look for a NULL char. */
 		  for (temp_len = 0;
@@ -135,8 +149,9 @@ c_val_print (type, valaddr, embedded_offset, address, stream, format, deref_ref,
 	  /* Print the unmangled name if desired.  */
 	  /* Print vtable entry - we only get here if we ARE using
 	     -fvtable_thunks.  (Otherwise, look under TYPE_CODE_STRUCT.) */
-	  print_address_demangle (extract_address (valaddr + embedded_offset, TYPE_LENGTH (type)),
-				  stream, demangle);
+	  CORE_ADDR addr
+	    = extract_typed_address (valaddr + embedded_offset, type);
+	  print_function_pointer_address (addr, stream);
 	  break;
 	}
       elttype = check_typedef (TYPE_TARGET_TYPE (type));
@@ -154,12 +169,11 @@ c_val_print (type, valaddr, embedded_offset, address, stream, format, deref_ref,
 	{
 	  addr = unpack_pointer (type, valaddr + embedded_offset);
 	print_unpacked_pointer:
-	  elttype = check_typedef (TYPE_TARGET_TYPE (type));
 
 	  if (TYPE_CODE (elttype) == TYPE_CODE_FUNC)
 	    {
 	      /* Try to print what function it points to.  */
-	      print_address_demangle (addr, stream, demangle);
+	      print_function_pointer_address (addr, stream);
 	      /* Return value is irrelevant except for string pointers.  */
 	      return (0);
 	    }
@@ -196,16 +210,15 @@ c_val_print (type, valaddr, embedded_offset, address, stream, format, deref_ref,
 		}
 	      if (vt_address && vtblprint)
 		{
-		  value_ptr vt_val;
+		  struct value *vt_val;
 		  struct symbol *wsym = (struct symbol *) NULL;
 		  struct type *wtype;
-		  struct symtab *s;
 		  struct block *block = (struct block *) NULL;
 		  int is_this_fld;
 
 		  if (msymbol != NULL)
 		    wsym = lookup_symbol (SYMBOL_NAME (msymbol), block,
-					  VAR_NAMESPACE, &is_this_fld, &s);
+					  VAR_NAMESPACE, &is_this_fld, NULL);
 
 		  if (wsym)
 		    {
@@ -249,10 +262,10 @@ c_val_print (type, valaddr, embedded_offset, address, stream, format, deref_ref,
 	}
       if (addressprint)
 	{
+	  CORE_ADDR addr
+	    = extract_typed_address (valaddr + embedded_offset, type);
 	  fprintf_filtered (stream, "@");
-	  print_address_numeric
-	    (extract_address (valaddr + embedded_offset,
-			      TARGET_PTR_BIT / HOST_CHAR_BIT), 1, stream);
+	  print_address_numeric (addr, 1, stream);
 	  if (deref_ref)
 	    fputs_filtered (": ", stream);
 	}
@@ -261,7 +274,7 @@ c_val_print (type, valaddr, embedded_offset, address, stream, format, deref_ref,
 	{
 	  if (TYPE_CODE (elttype) != TYPE_CODE_UNDEF)
 	    {
-	      value_ptr deref_val =
+	      struct value *deref_val =
 	      value_at
 	      (TYPE_TARGET_TYPE (type),
 	       unpack_pointer (lookup_pointer_type (builtin_type_void),
@@ -290,16 +303,19 @@ c_val_print (type, valaddr, embedded_offset, address, stream, format, deref_ref,
 	}
       /* Fall through.  */
     case TYPE_CODE_STRUCT:
+      /*FIXME: Abstract this away */
       if (vtblprint && cp_is_vtbl_ptr_type (type))
 	{
 	  /* Print the unmangled name if desired.  */
 	  /* Print vtable entry - we only get here if NOT using
 	     -fvtable_thunks.  (Otherwise, look under TYPE_CODE_PTR.) */
-	  print_address_demangle (extract_address (
-						 valaddr + embedded_offset +
-			   TYPE_FIELD_BITPOS (type, VTBL_FNADDR_OFFSET) / 8,
-		  TYPE_LENGTH (TYPE_FIELD_TYPE (type, VTBL_FNADDR_OFFSET))),
-				  stream, demangle);
+	  int offset = (embedded_offset +
+			TYPE_FIELD_BITPOS (type, VTBL_FNADDR_OFFSET) / 8);
+	  struct type *field_type = TYPE_FIELD_TYPE (type, VTBL_FNADDR_OFFSET);
+	  CORE_ADDR addr
+	    = extract_typed_address (valaddr + offset, field_type);
+
+	  print_function_pointer_address (addr, stream);
 	}
       else
 	cp_print_value_fields (type, type, valaddr, embedded_offset, address, stream, format,
@@ -425,8 +441,12 @@ c_val_print (type, valaddr, embedded_offset, address, stream, format, deref_ref,
       break;
 
     case TYPE_CODE_METHOD:
-      cp_print_class_method (valaddr + embedded_offset, lookup_pointer_type (type), stream);
-      break;
+      {
+	struct value *v = value_at (type, address, NULL);
+	cp_print_class_method (VALUE_CONTENTS (value_addr (v)),
+			       lookup_pointer_type (type), stream);
+	break;
+      }
 
     case TYPE_CODE_VOID:
       fprintf_filtered (stream, "void");
@@ -443,6 +463,28 @@ c_val_print (type, valaddr, embedded_offset, address, stream, format, deref_ref,
       fprintf_filtered (stream, "<incomplete type>");
       break;
 
+    case TYPE_CODE_COMPLEX:
+      if (format)
+	print_scalar_formatted (valaddr + embedded_offset,
+				TYPE_TARGET_TYPE (type),
+				format, 0, stream);
+      else
+	print_floating (valaddr + embedded_offset, TYPE_TARGET_TYPE (type),
+			stream);
+      fprintf_filtered (stream, " + ");
+      if (format)
+	print_scalar_formatted (valaddr + embedded_offset
+				+ TYPE_LENGTH (TYPE_TARGET_TYPE (type)),
+				TYPE_TARGET_TYPE (type),
+				format, 0, stream);
+      else
+	print_floating (valaddr + embedded_offset
+			+ TYPE_LENGTH (TYPE_TARGET_TYPE (type)),
+			TYPE_TARGET_TYPE (type),
+			stream);
+      fprintf_filtered (stream, " * I");
+      break;
+
     default:
       error ("Invalid C/C++ type code %d in symbol table.", TYPE_CODE (type));
     }
@@ -451,11 +493,8 @@ c_val_print (type, valaddr, embedded_offset, address, stream, format, deref_ref,
 }
 
 int
-c_value_print (val, stream, format, pretty)
-     value_ptr val;
-     struct ui_file *stream;
-     int format;
-     enum val_prettyprint pretty;
+c_value_print (struct value *val, struct ui_file *stream, int format,
+	       enum val_prettyprint pretty)
 {
   struct type *type = VALUE_TYPE (val);
   struct type *real_type;
@@ -481,6 +520,17 @@ c_value_print (val, stream, format, pretty)
 	}
       else if (objectprint && (TYPE_CODE (TYPE_TARGET_TYPE (type)) == TYPE_CODE_CLASS))
 	{
+
+	  if (TYPE_CODE(type) == TYPE_CODE_REF)
+	    {
+	      /* Copy value, change to pointer, so we don't get an
+	       * error about a non-pointer type in value_rtti_target_type
+	       */
+	      struct value *temparg;
+	      temparg=value_copy(val);
+	      VALUE_TYPE (temparg) = lookup_pointer_type(TYPE_TARGET_TYPE(type));
+	      val=temparg;
+	    }
 	  /* Pointer to class, check real type of object */
 	  fprintf_filtered (stream, "(");
           real_type = value_rtti_target_type (val, &full, &top, &using_enc);
@@ -497,6 +547,9 @@ c_value_print (val, stream, format, pretty)
                   /* create a reference type referencing the real type */
                   type = lookup_reference_type (real_type);
                 }
+	      /* JYG: Need to adjust pointer value. */
+              val->aligner.contents[0] -= top;
+
               /* Note: When we look up RTTI entries, we don't get any 
                  information on const or volatile attributes */
             }
