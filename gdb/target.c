@@ -30,7 +30,7 @@
 #include "bfd.h"
 #include "symfile.h"
 #include "objfiles.h"
-#include "wait.h"
+#include "gdb_wait.h"
 #include <signal.h>
 
 extern int errno;
@@ -1325,6 +1325,39 @@ target_resize_to_sections (struct target_ops *target, int num_added)
 
 }
 
+/* Remove all target sections taken from ABFD.
+
+   Scan the current target stack for targets whose section tables
+   refer to sections from BFD, and remove those sections.  We use this
+   when we notice that the inferior has unloaded a shared object, for
+   example.  */
+void
+remove_target_sections (bfd *abfd)
+{
+  struct target_ops **t;
+
+  for (t = target_structs; t < target_structs + target_struct_size; t++)
+    {
+      struct section_table *src, *dest;
+
+      dest = (*t)->to_sections;
+      for (src = (*t)->to_sections; src < (*t)->to_sections_end; src++)
+	if (src->bfd != abfd)
+	  {
+	    /* Keep this section.  */
+	    if (dest < src) *dest = *src;
+	    dest++;
+	  }
+
+      /* If we've dropped any sections, resize the section table.  */
+      if (dest < src)
+	target_resize_to_sections (*t, dest - src);
+    }
+}
+
+
+
+
 /* Find a single runnable target in the stack and return it.  If for
    some reason there is more than one, return NULL.  */
 
@@ -2022,8 +2055,6 @@ do_target_signal_to_host (enum target_signal oursig,
       return SIGPRIO;
 #endif
 
-    case TARGET_SIGNAL_REALTIME_32: return 32; /* by definition */ 
-
       /* Mach exceptions.  Assumes that the values for EXC_ are positive! */
 #if defined (EXC_BAD_ACCESS) && defined (_NSIG)
     case TARGET_EXC_BAD_ACCESS:
@@ -2060,11 +2091,21 @@ do_target_signal_to_host (enum target_signal oursig,
       if (oursig >= TARGET_SIGNAL_REALTIME_33
 	  && oursig <= TARGET_SIGNAL_REALTIME_63)
 	{
+	  /* This block of signals is continuous, and
+             TARGET_SIGNAL_REALTIME_33 is 33 by definition.  */
 	  int retsig =
-	  (int) oursig - (int) TARGET_SIGNAL_REALTIME_33 + REALTIME_LO;
-	  if (retsig < REALTIME_HI)
+	    (int) oursig - (int) TARGET_SIGNAL_REALTIME_33 + 33;
+	  if (retsig >= REALTIME_LO && retsig < REALTIME_HI)
 	    return retsig;
 	}
+#if (REALTIME_LO < 33)
+      else if (oursig == TARGET_SIGNAL_REALTIME_32)
+	{
+	  /* TARGET_SIGNAL_REALTIME_32 isn't contiguous with
+             TARGET_SIGNAL_REALTIME_33.  It is 32 by definition.  */
+	  return 32;
+	}
+#endif
 #endif
       *oursig_ok = 0;
       return 0;
@@ -3022,9 +3063,11 @@ static void
 do_monitor_command (char *cmd,
 		 int from_tty)
 {
-  if ((current_target.to_rcmd == (void*) tcomplain)
+  if ((current_target.to_rcmd
+       == (void (*) (char *, struct ui_file *)) tcomplain)
       || (current_target.to_rcmd == debug_to_rcmd
-	  && (debug_target.to_rcmd == (void*) tcomplain)))
+	  && (debug_target.to_rcmd
+	      == (void (*) (char *, struct ui_file *)) tcomplain)))
     {
       error ("\"monitor\" command not supported by this target.\n");
     }
@@ -3041,11 +3084,11 @@ initialize_targets ()
   add_info ("files", target_info, targ_desc);
 
   add_show_from_set (
-		add_set_cmd ("targetdebug", class_maintenance, var_zinteger,
+		add_set_cmd ("target", class_maintenance, var_zinteger,
 			     (char *) &targetdebug,
 			     "Set target debugging.\n\
-When non-zero, target debugging is enabled.", &setlist),
-		      &showlist);
+When non-zero, target debugging is enabled.", &setdebuglist),
+		      &showdebuglist);
 
 
   add_com ("monitor", class_obscure, do_monitor_command,
