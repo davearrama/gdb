@@ -26,16 +26,15 @@
 #include "vx-share/regPacket.h"
 #include "frame.h"
 #include "inferior.h"
-#include "wait.h"
 #include "target.h"
 #include "gdbcore.h"
 #include "command.h"
 #include "symtab.h"
-#include "symfile.h"		/* for struct complaint */
+#include "symfile.h"
+#include "regcache.h"
 
 #include "gdb_string.h"
 #include <errno.h>
-#include <signal.h>
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/time.h>
@@ -67,8 +66,7 @@ extern void net_write_registers ();
    it is ignored.  FIXME look at regno to improve efficiency.  */
 
 void
-vx_read_register (regno)
-     int regno;
+vx_read_register (int regno)
 {
   char mips_greg_packet[MIPS_GREG_PLEN];
   char mips_fpreg_packet[MIPS_FPREG_PLEN];
@@ -157,8 +155,7 @@ vx_read_register (regno)
    REGNO is the register to store, or -1 for all; currently,
    it is ignored.  FIXME look at regno to improve efficiency.  */
 
-vx_write_register (regno)
-     int regno;
+vx_write_register (int regno)
 {
   char mips_greg_packet[MIPS_GREG_PLEN];
   char mips_fpreg_packet[MIPS_FPREG_PLEN];

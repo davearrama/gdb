@@ -26,16 +26,15 @@
 #include "vx-share/regPacket.h"
 #include "frame.h"
 #include "inferior.h"
-#include "wait.h"
 #include "target.h"
 #include "gdbcore.h"
 #include "command.h"
 #include "symtab.h"
-#include "symfile.h"		/* for struct complaint */
+#include "symfile.h"
+#include "regcache.h"
 
 #include "gdb_string.h"
 #include <errno.h>
-#include <signal.h>
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/time.h>
@@ -76,8 +75,7 @@ extern void net_write_registers ();
    it is ignored.  FIXME look at regno to improve efficiency.  */
 
 void
-vx_read_register (regno)
-     int regno;
+vx_read_register (int regno)
 {
   char sparc_greg_packet[SPARC_GREG_PLEN];
   char sparc_fpreg_packet[SPARC_FPREG_PLEN];
@@ -104,7 +102,7 @@ vx_read_register (regno)
      (FRAME_FIND_SAVED_REGS, in particular, depends on this).  */
 
   sp = extract_address (&registers[REGISTER_BYTE (SP_REGNUM)],
-			REGISTER_RAW_SIZE (CORE_ADDR));
+			REGISTER_RAW_SIZE (SP_REGNUM));
   write_memory (sp, &registers[REGISTER_BYTE (L0_REGNUM)],
 		16 * REGISTER_RAW_SIZE (L0_REGNUM));
 
@@ -138,8 +136,7 @@ vx_read_register (regno)
    it is ignored.  FIXME look at regno to improve efficiency.  */
 
 void
-vx_write_register (regno)
-     int regno;
+vx_write_register (int regno)
 {
   char sparc_greg_packet[SPARC_GREG_PLEN];
   char sparc_fpreg_packet[SPARC_FPREG_PLEN];
@@ -176,7 +173,7 @@ vx_write_register (regno)
       if (regno < 0 || (L0_REGNUM <= regno && regno <= I7_REGNUM))
 	{
 	  sp = extract_address (&registers[REGISTER_BYTE (SP_REGNUM)],
-				REGISTER_RAW_SIZE (CORE_ADDR));
+				REGISTER_RAW_SIZE (SP_REGNUM));
 	  write_memory (sp, &registers[REGISTER_BYTE (L0_REGNUM)],
 			16 * REGISTER_RAW_SIZE (L0_REGNUM));
 	}
