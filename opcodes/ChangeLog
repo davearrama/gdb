@@ -1,66 +1,9 @@
-2003-03-03  Andrew Stubbs  <andrew.stubbs@superh.com>
+2004-03-12  Michal Ludvig  <mludvig@suse.cz>
 
-	* sh-dis.c (print_insn_sh): Don't disassemble fp instructions in
-	nofpu mode.  Add BFD type bfd_mach_sh4_nommu_nofpu.
-	* sh-opc.h: Add sh4_nommu_nofpu architecture and adjust instructions
-	accordingly.
-
-2004-03-01  Richard Sandiford  <rsandifo@redhat.com>
-
-	* frv-asm.c: Regenerate.
-	* frv-desc.c: Regenerate.
-	* frv-desc.h: Regenerate.
-	* frv-dis.c: Regenerate.
-	* frv-ibld.c: Regenerate.
-	* frv-opc.c: Regenerate.
-	* frv-opc.h: Regenerate.
-
-2004-03-01  Richard Sandiford  <rsandifo@redhat.com>
-
-	* frv-desc.c, frv-opc.c: Regenerate.
-
-2004-03-01  Richard Sandiford  <rsandifo@redhat.com>
-
-	* frv-desc.c, frv-opc.c, frv-opc.h: Regenerate.
-
-2004-02-26  Andrew Stubbs  <andrew.stubbs@superh.com>
-
-	* sh-opc.h: Move fsca and fsrra instructions from sh4a to sh4.
-	Also correct mistake in the comment.
-
-2004-02-26  Andrew Stubbs <andrew.stubbs@superh.com>
-
-	* sh-dis.c (print_insn_sh): Add REG_N_D nibble type to
-	ensure that double registers have even numbers.
-	Add REG_N_B01 for nn01 (binary 01) nibble to ensure
-	that reserved instruction 0xfffd does not decode the same
-	as 0xfdfd (ftrv).
-	* sh-opc.h: Add REG_N_D nibble type and use it whereever
-	REG_N refers to a double register.
-	Add REG_N_B01 nibble type and use it instead of REG_NM
-	in ftrv.
-	Adjust the bit patterns in a few comments.
-
-2004-02-25  Aldy Hernandez  <aldyh@redhat.com>
-                                                                                
-        * ppc-opc.c (powerpc_opcodes): Change mask for dcbt and dcbtst.
-
-2004-02-20  Aldy Hernandez  <aldyh@redhat.com>
-
-	* ppc-opc.c (powerpc_opcodes): Move mfmcsrr0 before mfdc_dat.
-
-2004-02-20  Aldy Hernandez  <aldyh@redhat.com>
-
-	* ppc-opc.c (powerpc_opcodes): Add m*ivor35.
-
-2004-02-20  Aldy Hernandez  <aldyh@redhat.com>
- 
-        * ppc-opc.c (powerpc_opcodes): Add mfivor32, mfivor33, mfivor34,
-        mtivor32, mtivor33, mtivor34.
-
-2004-02-19  Aldy Hernandez  <aldyh@redhat.com>
- 
-        * ppc-opc.c (powerpc_opcodes): Add mfmcar.
+	* i386-dis.c (PADLOCK_SPECIAL, PADLOCK_0): New defines.
+	(dis386_twobyte): Opcode 0xa7 is PADLOCK_0.
+	(padlock_table): New struct with PadLock instructions.
+	(print_insn): Handle PADLOCK_SPECIAL.
 
 2004-02-10  Petko Manolov  <petkan@nucleusys.com>
 
