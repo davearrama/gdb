@@ -1,5 +1,5 @@
 /* Output generating routines for GDB CLI.
-   Copyright 1999-2000 Free Software Foundation, Inc.
+   Copyright 1999, 2000 Free Software Foundation, Inc.
    Contributed by Cygnus Solutions.
 
    This file is part of GDB.
@@ -23,5 +23,6 @@
 #define CLI_OUT_H
 
 extern struct ui_out *cli_out_new (struct ui_file *stream);
-
+extern struct ui_file *cli_out_set_stream (struct ui_out *uiout,
+					   struct ui_file *stream);
 #endif
