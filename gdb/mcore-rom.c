@@ -1,6 +1,6 @@
 /* Remote debugging interface to Motorola picobug monitor for gdb,
    the GNU debugger.
-   Copyright 1999 Free Software Foundation, Inc.
+   Copyright 1999, 2000, 2001 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -24,6 +24,8 @@
 #include "target.h"
 #include "monitor.h"
 #include "gdb_string.h"
+#include "regcache.h"
+#include "serial.h"
 
 /* Functions used only in this file. */
 
@@ -83,7 +85,7 @@ ss0-ss4 bad0beef 00000000 00000000 00000000 00000000      vbr 30005c00
 
 
 int
-picobug_dumpregs ()
+picobug_dumpregs (void)
 {
   char buf[1024];
   int resp_len;
@@ -100,7 +102,7 @@ picobug_dumpregs ()
       if (strchr (p, '-'))
 	{
 	  /* got a range. either r0-r7, r8-r15 or ss0-ss4 */
-	  if (STREQN (p, "r0", 2) || STREQN (p, "r8", 2))
+	  if (DEPRECATED_STREQN (p, "r0", 2) || DEPRECATED_STREQN (p, "r8", 2))
 	    {
 	      int rn = (p[1] == '0' ? 0 : 8);
 	      int i = 0;
@@ -114,7 +116,7 @@ picobug_dumpregs ()
 		  i++;
 		}
 	    }
-	  else if (STREQN (p, "ss", 2))
+	  else if (DEPRECATED_STREQN (p, "ss", 2))
 	    {
 	      /* get the next five values, ignoring the first */
 	      int rn;
@@ -143,7 +145,7 @@ picobug_dumpregs ()
 	    {
 	      for (i = 0; i < NUM_REGS; i++)
 		{
-		  if (picobug_regnames[i] && STREQ (picobug_regnames[i], name))
+		  if (picobug_regnames[i] && DEPRECATED_STREQ (picobug_regnames[i], name))
 		    break;
 		}
 
@@ -189,7 +191,7 @@ init_picobug_cmds (void)
 }
 
 void
-_initialize_picobug_rom ()
+_initialize_picobug_rom (void)
 {
   int i;
 
