@@ -1,5 +1,5 @@
 /* Functions for manipulating expressions designed to be executed on the agent
-   Copyright 1998, 2000 Free Software Foundation, Inc.
+   Copyright 1998, 1999, 2000 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -27,21 +27,21 @@
 #include "ax.h"
 
 #include "value.h"
+#include "gdb_string.h"
 
-static void grow_expr PARAMS ((struct agent_expr * x, int n));
+static void grow_expr (struct agent_expr *x, int n);
 
-static void append_const PARAMS ((struct agent_expr * x, LONGEST val, int n));
+static void append_const (struct agent_expr *x, LONGEST val, int n);
 
-static LONGEST read_const PARAMS ((struct agent_expr * x, int o, int n));
+static LONGEST read_const (struct agent_expr *x, int o, int n);
 
-static void generic_ext PARAMS ((struct agent_expr * x, enum agent_op op, int n));
+static void generic_ext (struct agent_expr *x, enum agent_op op, int n);
 
 /* Functions for building expressions.  */
 
 /* Allocate a new, empty agent expression.  */
 struct agent_expr *
-new_agent_expr (scope)
-     CORE_ADDR scope;
+new_agent_expr (CORE_ADDR scope)
 {
   struct agent_expr *x = xmalloc (sizeof (*x));
   x->len = 0;
@@ -55,20 +55,29 @@ new_agent_expr (scope)
 
 /* Free a agent expression.  */
 void
-free_agent_expr (x)
-     struct agent_expr *x;
+free_agent_expr (struct agent_expr *x)
 {
-  free (x->buf);
-  free (x);
+  xfree (x->buf);
+  xfree (x);
+}
+
+static void
+do_free_agent_expr_cleanup (void *x)
+{
+  free_agent_expr (x);
+}
+
+struct cleanup *
+make_cleanup_free_agent_expr (struct agent_expr *x)
+{
+  return make_cleanup (do_free_agent_expr_cleanup, x);
 }
 
 
 /* Make sure that X has room for at least N more bytes.  This doesn't
    affect the length, just the allocated size.  */
 static void
-grow_expr (x, n)
-     struct agent_expr *x;
-     int n;
+grow_expr (struct agent_expr *x, int n)
 {
   if (x->len + n > x->size)
     {
@@ -83,10 +92,7 @@ grow_expr (x, n)
 /* Append the low N bytes of VAL as an N-byte integer to the
    expression X, in big-endian order.  */
 static void
-append_const (x, val, n)
-     struct agent_expr *x;
-     LONGEST val;
-     int n;
+append_const (struct agent_expr *x, LONGEST val, int n)
 {
   int i;
 
@@ -103,9 +109,7 @@ append_const (x, val, n)
 /* Extract an N-byte big-endian unsigned integer from expression X at
    offset O.  */
 static LONGEST
-read_const (x, o, n)
-     struct agent_expr *x;
-     int o, n;
+read_const (struct agent_expr *x, int o, int n)
 {
   int i;
   LONGEST accum = 0;
@@ -123,9 +127,7 @@ read_const (x, o, n)
 
 /* Append a simple operator OP to EXPR.  */
 void
-ax_simple (x, op)
-     struct agent_expr *x;
-     enum agent_op op;
+ax_simple (struct agent_expr *x, enum agent_op op)
 {
   grow_expr (x, 1);
   x->buf[x->len++] = op;
@@ -135,10 +137,7 @@ ax_simple (x, op)
 /* Append a sign-extension or zero-extension instruction to EXPR, to
    extend an N-bit value.  */
 static void
-generic_ext (x, op, n)
-     struct agent_expr *x;
-     enum agent_op op;
-     int n;
+generic_ext (struct agent_expr *x, enum agent_op op, int n)
 {
   /* N must fit in a byte.  */
   if (n < 0 || n > 255)
@@ -155,9 +154,7 @@ generic_ext (x, op, n)
 
 /* Append a sign-extension instruction to EXPR, to extend an N-bit value.  */
 void
-ax_ext (x, n)
-     struct agent_expr *x;
-     int n;
+ax_ext (struct agent_expr *x, int n)
 {
   generic_ext (x, aop_ext, n);
 }
@@ -165,9 +162,7 @@ ax_ext (x, n)
 
 /* Append a zero-extension instruction to EXPR, to extend an N-bit value.  */
 void
-ax_zero_ext (x, n)
-     struct agent_expr *x;
-     int n;
+ax_zero_ext (struct agent_expr *x, int n)
 {
   generic_ext (x, aop_zero_ext, n);
 }
@@ -175,9 +170,7 @@ ax_zero_ext (x, n)
 
 /* Append a trace_quick instruction to EXPR, to record N bytes.  */
 void
-ax_trace_quick (x, n)
-     struct agent_expr *x;
-     int n;
+ax_trace_quick (struct agent_expr *x, int n)
 {
   /* N must fit in a byte.  */
   if (n < 0 || n > 255)
@@ -196,9 +189,7 @@ ax_trace_quick (x, n)
    can backpatch it once we do know the target offset.  Use ax_label
    to do the backpatching.  */
 int
-ax_goto (x, op)
-     struct agent_expr *x;
-     enum agent_op op;
+ax_goto (struct agent_expr *x, enum agent_op op)
 {
   grow_expr (x, 3);
   x->buf[x->len + 0] = op;
@@ -213,10 +204,7 @@ ax_goto (x, op)
    ax_label (EXPR, PATCH, TARGET)
    to patch TARGET into the ax_goto instruction.  */
 void
-ax_label (x, patch, target)
-     struct agent_expr *x;
-     int patch;
-     int target;
+ax_label (struct agent_expr *x, int patch, int target)
 {
   /* Make sure the value is in range.  Don't accept 0xffff as an
      offset; that's our magic sentinel value for unpatched branches.  */
@@ -230,9 +218,7 @@ ax_label (x, patch, target)
 
 /* Assemble code to push a constant on the stack.  */
 void
-ax_const_l (x, l)
-     struct agent_expr *x;
-     LONGEST l;
+ax_const_l (struct agent_expr *x, LONGEST l)
 {
   static enum agent_op ops[]
   =
@@ -262,9 +248,7 @@ ax_const_l (x, l)
 
 
 void
-ax_const_d (x, d)
-     struct agent_expr *x;
-     LONGEST d;
+ax_const_d (struct agent_expr *x, LONGEST d)
 {
   /* FIXME: floating-point support not present yet.  */
   error ("GDB bug: ax-general.c (ax_const_d): floating point not supported yet");
@@ -274,9 +258,7 @@ ax_const_d (x, d)
 /* Assemble code to push the value of register number REG on the
    stack.  */
 void
-ax_reg (x, reg)
-     struct agent_expr *x;
-     int reg;
+ax_reg (struct agent_expr *x, int reg)
 {
   /* Make sure the register number is in range.  */
   if (reg < 0 || reg > 0xffff)
@@ -349,9 +331,7 @@ struct aop_map aop_map[] =
 
 /* Disassemble the expression EXPR, writing to F.  */
 void
-ax_print (f, x)
-     struct ui_file *f;
-     struct agent_expr *x;
+ax_print (struct ui_file *f, struct agent_expr *x)
 {
   int i;
   int is_float = 0;
@@ -399,9 +379,7 @@ ax_print (f, x)
 /* Given an agent expression AX, fill in an agent_reqs structure REQS
    describing it.  */
 void
-ax_reqs (ax, reqs)
-     struct agent_expr *ax;
-     struct agent_reqs *reqs;
+ax_reqs (struct agent_expr *ax, struct agent_reqs *reqs)
 {
   int i;
   int height;
@@ -439,7 +417,7 @@ ax_reqs (ax, reqs)
       if (ax->buf[i] > (sizeof (aop_map) / sizeof (aop_map[0])))
 	{
 	  reqs->flaw = agent_flaw_bad_instruction;
-	  free (reg_mask);
+	  xfree (reg_mask);
 	  return;
 	}
 
@@ -448,14 +426,14 @@ ax_reqs (ax, reqs)
       if (!op->name)
 	{
 	  reqs->flaw = agent_flaw_bad_instruction;
-	  free (reg_mask);
+	  xfree (reg_mask);
 	  return;
 	}
 
       if (i + 1 + op->op_size > ax->len)
 	{
 	  reqs->flaw = agent_flaw_incomplete_instruction;
-	  free (reg_mask);
+	  xfree (reg_mask);
 	  return;
 	}
 
@@ -464,7 +442,7 @@ ax_reqs (ax, reqs)
       if (targets[i] && (heights[i] != height))
 	{
 	  reqs->flaw = agent_flaw_height_mismatch;
-	  free (reg_mask);
+	  xfree (reg_mask);
 	  return;
 	}
 
@@ -491,7 +469,7 @@ ax_reqs (ax, reqs)
 	  if (target < 0 || target >= ax->len)
 	    {
 	      reqs->flaw = agent_flaw_bad_jump;
-	      free (reg_mask);
+	      xfree (reg_mask);
 	      return;
 	    }
 	  /* Have we already found other jumps to the same location?  */
@@ -500,7 +478,7 @@ ax_reqs (ax, reqs)
 	      if (heights[i] != height)
 		{
 		  reqs->flaw = agent_flaw_height_mismatch;
-		  free (reg_mask);
+		  xfree (reg_mask);
 		  return;
 		}
 	    }
@@ -519,7 +497,7 @@ ax_reqs (ax, reqs)
 	  if (!targets[i + 3])
 	    {
 	      reqs->flaw = agent_flaw_hole;
-	      free (reg_mask);
+	      xfree (reg_mask);
 	      return;
 	    }
 
@@ -554,7 +532,7 @@ ax_reqs (ax, reqs)
     if (targets[i] && !boundary[i])
       {
 	reqs->flaw = agent_flaw_bad_jump;
-	free (reg_mask);
+	xfree (reg_mask);
 	return;
       }
 

@@ -1,6 +1,8 @@
 /* Print values for GDB, the GNU debugger.
-   Copyright 1986, 1988, 1989, 1991-1994, 1998, 2000
-   Free Software Foundation, Inc.
+
+   Copyright 1986, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995,
+   1996, 1997, 1998, 1999, 2000, 2001, 2002 Free Software Foundation,
+   Inc.
 
    This file is part of GDB.
 
@@ -27,11 +29,11 @@
 #include "gdbcore.h"
 #include "gdbcmd.h"
 #include "target.h"
-#include "obstack.h"
 #include "language.h"
-#include "demangle.h"
 #include "annotate.h"
 #include "valprint.h"
+#include "floatformat.h"
+#include "doublest.h"
 
 #include <errno.h>
 
@@ -43,23 +45,23 @@ static int partial_memory_read (CORE_ADDR memaddr, char *myaddr,
 static void print_hex_chars (struct ui_file *, unsigned char *,
 			     unsigned int);
 
-static void show_print PARAMS ((char *, int));
+static void show_print (char *, int);
 
-static void set_print PARAMS ((char *, int));
+static void set_print (char *, int);
 
-static void set_radix PARAMS ((char *, int));
+static void set_radix (char *, int);
 
-static void show_radix PARAMS ((char *, int));
+static void show_radix (char *, int);
 
-static void set_input_radix PARAMS ((char *, int, struct cmd_list_element *));
+static void set_input_radix (char *, int, struct cmd_list_element *);
 
-static void set_input_radix_1 PARAMS ((int, unsigned));
+static void set_input_radix_1 (int, unsigned);
 
-static void set_output_radix PARAMS ((char *, int, struct cmd_list_element *));
+static void set_output_radix (char *, int, struct cmd_list_element *);
 
-static void set_output_radix_1 PARAMS ((int, unsigned));
+static void set_output_radix_1 (int, unsigned);
 
-void _initialize_valprint PARAMS ((void));
+void _initialize_valprint (void);
 
 /* Maximum number of chars to print for a string pointer value or vector
    contents, or UINT_MAX for no limit.  Note that "set print elements 0"
@@ -124,17 +126,9 @@ int addressprint;		/* Controls printing of machine addresses */
 
 
 int
-val_print (type, valaddr, embedded_offset, address,
-	   stream, format, deref_ref, recurse, pretty)
-     struct type *type;
-     char *valaddr;
-     int embedded_offset;
-     CORE_ADDR address;
-     struct ui_file *stream;
-     int format;
-     int deref_ref;
-     int recurse;
-     enum val_prettyprint pretty;
+val_print (struct type *type, char *valaddr, int embedded_offset,
+	   CORE_ADDR address, struct ui_file *stream, int format, int deref_ref,
+	   int recurse, enum val_prettyprint pretty)
 {
   struct type *real_type = check_typedef (type);
   if (pretty == Val_pretty_default)
@@ -148,7 +142,7 @@ val_print (type, valaddr, embedded_offset, address,
      only a stub and we can't find and substitute its complete type, then
      print appropriate string and return.  */
 
-  if (TYPE_FLAGS (real_type) & TYPE_FLAG_STUB)
+  if (TYPE_STUB (real_type))
     {
       fprintf_filtered (stream, "<incomplete type>");
       gdb_flush (stream);
@@ -165,11 +159,8 @@ val_print (type, valaddr, embedded_offset, address,
    the number of string bytes printed.  */
 
 int
-value_print (val, stream, format, pretty)
-     value_ptr val;
-     struct ui_file *stream;
-     int format;
-     enum val_prettyprint pretty;
+value_print (struct value *val, struct ui_file *stream, int format,
+	     enum val_prettyprint pretty)
 {
   if (val == 0)
     {
@@ -189,10 +180,8 @@ value_print (val, stream, format, pretty)
    value.  STREAM is where to print the value.  */
 
 void
-val_print_type_code_int (type, valaddr, stream)
-     struct type *type;
-     char *valaddr;
-     struct ui_file *stream;
+val_print_type_code_int (struct type *type, char *valaddr,
+			 struct ui_file *stream)
 {
   if (TYPE_LENGTH (type) > sizeof (LONGEST))
     {
@@ -243,11 +232,8 @@ val_print_type_code_int (type, valaddr, stream)
 static void print_decimal (struct ui_file * stream, char *sign,
 			   int use_local, ULONGEST val_ulong);
 static void
-print_decimal (stream, sign, use_local, val_ulong)
-     struct ui_file *stream;
-     char *sign;
-     int use_local;
-     ULONGEST val_ulong;
+print_decimal (struct ui_file *stream, char *sign, int use_local,
+	       ULONGEST val_ulong)
 {
   unsigned long temp[3];
   int i = 0;
@@ -273,18 +259,15 @@ print_decimal (stream, sign, use_local, val_ulong)
 			sign, temp[2], temp[1], temp[0]);
       break;
     default:
-      abort ();
+      internal_error (__FILE__, __LINE__, "failed internal consistency check");
     }
   return;
 }
 #endif
 
 void
-print_longest (stream, format, use_local, val_long)
-     struct ui_file *stream;
-     int format;
-     int use_local;
-     LONGEST val_long;
+print_longest (struct ui_file *stream, int format, int use_local,
+	       LONGEST val_long)
 {
 #if defined (CC_HAS_LONG_LONG) && !defined (PRINTF_HAS_LONG_LONG)
   if (sizeof (long) < sizeof (LONGEST))
@@ -352,7 +335,7 @@ print_longest (stream, format, use_local, val_long)
 			val_long);
       break;
     case 'u':
-      fprintf_filtered (stream, "%llu", val_long);
+      fprintf_filtered (stream, "%llu", (long long) val_long);
       break;
     case 'x':
       fprintf_filtered (stream,
@@ -379,7 +362,7 @@ print_longest (stream, format, use_local, val_long)
       fprintf_filtered (stream, local_hex_format_custom ("016ll"), val_long);
       break;
     default:
-      abort ();
+      internal_error (__FILE__, __LINE__, "failed internal consistency check");
     }
 #else /* !CC_HAS_LONG_LONG || !PRINTF_HAS_LONG_LONG */
   /* In the following it is important to coerce (val_long) to a long. It does
@@ -426,116 +409,10 @@ print_longest (stream, format, use_local, val_long)
 			(unsigned long) val_long);
       break;
     default:
-      abort ();
+      internal_error (__FILE__, __LINE__, "failed internal consistency check");
     }
 #endif /* CC_HAS_LONG_LONG || PRINTF_HAS_LONG_LONG */
 }
-
-#if 0
-void
-strcat_longest (format, use_local, val_long, buf, buflen)
-     int format;
-     int use_local;
-     LONGEST val_long;
-     char *buf;
-     int buflen;		/* ignored, for now */
-{
-#if defined (CC_HAS_LONG_LONG) && !defined (PRINTF_HAS_LONG_LONG)
-  long vtop, vbot;
-
-  vtop = val_long >> (sizeof (long) * HOST_CHAR_BIT);
-  vbot = (long) val_long;
-
-  if ((format == 'd' && (val_long < INT_MIN || val_long > INT_MAX))
-      || ((format == 'u' || format == 'x') && (unsigned long long) val_long > UINT_MAX))
-    {
-      sprintf (buf, "0x%lx%08lx", vtop, vbot);
-      return;
-    }
-#endif
-
-#ifdef PRINTF_HAS_LONG_LONG
-  switch (format)
-    {
-    case 'd':
-      sprintf (buf,
-	       (use_local ? local_decimal_format_custom ("ll") : "%lld"),
-	       val_long);
-      break;
-    case 'u':
-      sprintf (buf, "%llu", val_long);
-      break;
-    case 'x':
-      sprintf (buf,
-	       (use_local ? local_hex_format_custom ("ll") : "%llx"),
-
-	       val_long);
-      break;
-    case 'o':
-      sprintf (buf,
-	       (use_local ? local_octal_format_custom ("ll") : "%llo"),
-	       val_long);
-      break;
-    case 'b':
-      sprintf (buf, local_hex_format_custom ("02ll"), val_long);
-      break;
-    case 'h':
-      sprintf (buf, local_hex_format_custom ("04ll"), val_long);
-      break;
-    case 'w':
-      sprintf (buf, local_hex_format_custom ("08ll"), val_long);
-      break;
-    case 'g':
-      sprintf (buf, local_hex_format_custom ("016ll"), val_long);
-      break;
-    default:
-      abort ();
-    }
-#else /* !PRINTF_HAS_LONG_LONG */
-  /* In the following it is important to coerce (val_long) to a long. It does
-     nothing if !LONG_LONG, but it will chop off the top half (which we know
-     we can ignore) if the host supports long longs.  */
-
-  switch (format)
-    {
-    case 'd':
-      sprintf (buf, (use_local ? local_decimal_format_custom ("l") : "%ld"),
-	       ((long) val_long));
-      break;
-    case 'u':
-      sprintf (buf, "%lu", ((unsigned long) val_long));
-      break;
-    case 'x':
-      sprintf (buf, (use_local ? local_hex_format_custom ("l") : "%lx"),
-	       ((long) val_long));
-      break;
-    case 'o':
-      sprintf (buf, (use_local ? local_octal_format_custom ("l") : "%lo"),
-	       ((long) val_long));
-      break;
-    case 'b':
-      sprintf (buf, local_hex_format_custom ("02l"),
-	       ((long) val_long));
-      break;
-    case 'h':
-      sprintf (buf, local_hex_format_custom ("04l"),
-	       ((long) val_long));
-      break;
-    case 'w':
-      sprintf (buf, local_hex_format_custom ("08l"),
-	       ((long) val_long));
-      break;
-    case 'g':
-      sprintf (buf, local_hex_format_custom ("016l"),
-	       ((long) val_long));
-      break;
-    default:
-      abort ();
-    }
-
-#endif /* !PRINTF_HAS_LONG_LONG */
-}
-#endif
 
 /* This used to be a macro, but I don't think it is called often enough
    to merit such treatment.  */
@@ -544,8 +421,7 @@ strcat_longest (format, use_local, val_long, buf, buflen)
    where the value must not be larger than can fit in an int.  */
 
 int
-longest_to_int (arg)
-     LONGEST arg;
+longest_to_int (LONGEST arg)
 {
   /* Let the compiler do the work */
   int rtnval = (int) arg;
@@ -561,98 +437,40 @@ longest_to_int (arg)
   return (rtnval);
 }
 
-/* Print a floating point value of type TYPE, pointed to in GDB by VALADDR,
-   on STREAM.  */
+/* Print a floating point value of type TYPE (not always a
+   TYPE_CODE_FLT), pointed to in GDB by VALADDR, on STREAM.  */
 
 void
-print_floating (valaddr, type, stream)
-     char *valaddr;
-     struct type *type;
-     struct ui_file *stream;
+print_floating (char *valaddr, struct type *type, struct ui_file *stream)
 {
   DOUBLEST doub;
   int inv;
+  const struct floatformat *fmt = NULL;
   unsigned len = TYPE_LENGTH (type);
 
-#if defined (IEEE_FLOAT)
+  /* If it is a floating-point, check for obvious problems.  */
+  if (TYPE_CODE (type) == TYPE_CODE_FLT)
+    fmt = floatformat_from_type (type);
+  if (fmt != NULL && floatformat_is_nan (fmt, valaddr))
+    {
+      if (floatformat_is_negative (fmt, valaddr))
+	fprintf_filtered (stream, "-");
+      fprintf_filtered (stream, "nan(");
+      fprintf_filtered (stream, local_hex_format_prefix ());
+      fprintf_filtered (stream, floatformat_mantissa (fmt, valaddr));
+      fprintf_filtered (stream, local_hex_format_suffix ());
+      fprintf_filtered (stream, ")");
+      return;
+    }
 
-  /* Check for NaN's.  Note that this code does not depend on us being
-     on an IEEE conforming system.  It only depends on the target
-     machine using IEEE representation.  This means (a)
-     cross-debugging works right, and (2) IEEE_FLOAT can (and should)
-     be defined for systems like the 68881, which uses IEEE
-     representation, but is not IEEE conforming.  */
-
-  {
-    unsigned long low, high;
-    /* Is the sign bit 0?  */
-    int nonnegative;
-    /* Is it is a NaN (i.e. the exponent is all ones and
-       the fraction is nonzero)?  */
-    int is_nan;
-
-    /* For lint, initialize these two variables to suppress warning: */
-    low = high = nonnegative = 0;
-    if (len == 4)
-      {
-	/* It's single precision.  */
-	/* Assume that floating point byte order is the same as
-	   integer byte order.  */
-	low = extract_unsigned_integer (valaddr, 4);
-	nonnegative = ((low & 0x80000000) == 0);
-	is_nan = ((((low >> 23) & 0xFF) == 0xFF)
-		  && 0 != (low & 0x7FFFFF));
-	low &= 0x7fffff;
-	high = 0;
-      }
-    else if (len == 8)
-      {
-	/* It's double precision.  Get the high and low words.  */
-
-	/* Assume that floating point byte order is the same as
-	   integer byte order.  */
-	if (TARGET_BYTE_ORDER == BIG_ENDIAN)
-	  {
-	    low = extract_unsigned_integer (valaddr + 4, 4);
-	    high = extract_unsigned_integer (valaddr, 4);
-	  }
-	else
-	  {
-	    low = extract_unsigned_integer (valaddr, 4);
-	    high = extract_unsigned_integer (valaddr + 4, 4);
-	  }
-	nonnegative = ((high & 0x80000000) == 0);
-	is_nan = (((high >> 20) & 0x7ff) == 0x7ff
-		  && !((((high & 0xfffff) == 0)) && (low == 0)));
-	high &= 0xfffff;
-      }
-    else
-      {
-#ifdef TARGET_ANALYZE_FLOATING
-	TARGET_ANALYZE_FLOATING;
-#else
-	/* Extended.  We can't detect extended NaNs for this target.
-	   Also note that currently extendeds get nuked to double in
-	   REGISTER_CONVERTIBLE.  */
-	is_nan = 0;
-#endif 
-      }
-
-    if (is_nan)
-      {
-	/* The meaning of the sign and fraction is not defined by IEEE.
-	   But the user might know what they mean.  For example, they
-	   (in an implementation-defined manner) distinguish between
-	   signaling and quiet NaN's.  */
-	if (high)
-	  fprintf_filtered (stream, "-NaN(0x%lx%.8lx)" + !!nonnegative,
-			    high, low);
-	else
-	  fprintf_filtered (stream, "-NaN(0x%lx)" + nonnegative, low);
-	return;
-      }
-  }
-#endif /* IEEE_FLOAT.  */
+  /* NOTE: cagney/2002-01-15: The TYPE passed into print_floating()
+     isn't necessarily a TYPE_CODE_FLT.  Consequently, unpack_double
+     needs to be used as that takes care of any necessary type
+     conversions.  Such conversions are of course direct to DOUBLEST
+     and disregard any possible target floating point limitations.
+     For instance, a u64 would be converted and displayed exactly on a
+     host with 80 bit DOUBLEST but with loss of information on a host
+     with 64 bit DOUBLEST.  */
 
   doub = unpack_double (type, valaddr, &inv);
   if (inv)
@@ -660,6 +478,14 @@ print_floating (valaddr, type, stream)
       fprintf_filtered (stream, "<invalid float value>");
       return;
     }
+
+  /* FIXME: kettenis/2001-01-20: The following code makes too much
+     assumptions about the host and target floating point format.  */
+
+  /* NOTE: cagney/2002-02-03: Since the TYPE of what was passed in may
+     not necessarially be a TYPE_CODE_FLT, the below ignores that and
+     instead uses the type's length to determine the precision of the
+     floating-point value being printed.  */
 
   if (len < sizeof (double))
       fprintf_filtered (stream, "%.9g", (double) doub);
@@ -669,22 +495,21 @@ print_floating (valaddr, type, stream)
 #ifdef PRINTF_HAS_LONG_DOUBLE
     fprintf_filtered (stream, "%.35Lg", doub);
 #else
-    /* This at least wins with values that are representable as doubles */
+    /* This at least wins with values that are representable as
+       doubles.  */
     fprintf_filtered (stream, "%.17g", (double) doub);
 #endif
 }
 
 void
-print_binary_chars (stream, valaddr, len)
-     struct ui_file *stream;
-     unsigned char *valaddr;
-     unsigned len;
+print_binary_chars (struct ui_file *stream, unsigned char *valaddr,
+		    unsigned len)
 {
 
 #define BITS_IN_BYTES 8
 
   unsigned char *p;
-  int i;
+  unsigned int i;
   int b;
 
   /* Declared "int" so it will be signed.
@@ -695,7 +520,7 @@ print_binary_chars (stream, valaddr, len)
   /* FIXME: We should be not printing leading zeroes in most cases.  */
 
   fprintf_filtered (stream, local_binary_format_prefix ());
-  if (TARGET_BYTE_ORDER == BIG_ENDIAN)
+  if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
     {
       for (p = valaddr;
 	   p < valaddr + len;
@@ -739,10 +564,7 @@ print_binary_chars (stream, valaddr, len)
  * Print it in octal on stream or format it in buf.
  */
 void
-print_octal_chars (stream, valaddr, len)
-     struct ui_file *stream;
-     unsigned char *valaddr;
-     unsigned len;
+print_octal_chars (struct ui_file *stream, unsigned char *valaddr, unsigned len)
 {
   unsigned char *p;
   unsigned char octa1, octa2, octa3, carry;
@@ -785,7 +607,7 @@ print_octal_chars (stream, valaddr, len)
   carry = 0;
 
   fprintf_filtered (stream, local_octal_format_prefix ());
-  if (TARGET_BYTE_ORDER == BIG_ENDIAN)
+  if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
     {
       for (p = valaddr;
 	   p < valaddr + len;
@@ -890,10 +712,8 @@ print_octal_chars (stream, valaddr, len)
  * Print it in decimal on stream or format it in buf.
  */
 void
-print_decimal_chars (stream, valaddr, len)
-     struct ui_file *stream;
-     unsigned char *valaddr;
-     unsigned len;
+print_decimal_chars (struct ui_file *stream, unsigned char *valaddr,
+		     unsigned len)
 {
 #define TEN             10
 #define TWO_TO_FOURTH   16
@@ -901,11 +721,11 @@ print_decimal_chars (stream, valaddr, len)
 #define CARRY_LEFT( x ) ((x) % TEN)
 #define SHIFT( x )      ((x) << 4)
 #define START_P \
-        ((TARGET_BYTE_ORDER == BIG_ENDIAN) ? valaddr : valaddr + len - 1)
+        ((TARGET_BYTE_ORDER == BFD_ENDIAN_BIG) ? valaddr : valaddr + len - 1)
 #define NOT_END_P \
-        ((TARGET_BYTE_ORDER == BIG_ENDIAN) ? (p < valaddr + len) : (p >= valaddr))
+        ((TARGET_BYTE_ORDER == BFD_ENDIAN_BIG) ? (p < valaddr + len) : (p >= valaddr))
 #define NEXT_P \
-        ((TARGET_BYTE_ORDER == BIG_ENDIAN) ? p++ : p-- )
+        ((TARGET_BYTE_ORDER == BFD_ENDIAN_BIG) ? p++ : p-- )
 #define LOW_NIBBLE(  x ) ( (x) & 0x00F)
 #define HIGH_NIBBLE( x ) (((x) & 0x0F0) >> 4)
 
@@ -921,9 +741,7 @@ print_decimal_chars (stream, valaddr, len)
    * as the base 16 number, which is 2 digits per byte.
    */
   decimal_len = len * 2 * 2;
-  digits = (unsigned char *) malloc (decimal_len);
-  if (digits == NULL)
-    error ("Can't allocate memory for conversion to decimal.");
+  digits = xmalloc (decimal_len);
 
   for (i = 0; i < decimal_len; i++)
     {
@@ -1025,7 +843,7 @@ print_decimal_chars (stream, valaddr, len)
     {
       fprintf_filtered (stream, "%1d", digits[i]);
     }
-  free (digits);
+  xfree (digits);
 
   fprintf_filtered (stream, local_decimal_format_suffix ());
 }
@@ -1033,17 +851,14 @@ print_decimal_chars (stream, valaddr, len)
 /* VALADDR points to an integer of LEN bytes.  Print it in hex on stream.  */
 
 static void
-print_hex_chars (stream, valaddr, len)
-     struct ui_file *stream;
-     unsigned char *valaddr;
-     unsigned len;
+print_hex_chars (struct ui_file *stream, unsigned char *valaddr, unsigned len)
 {
   unsigned char *p;
 
   /* FIXME: We should be not printing leading zeroes in most cases.  */
 
   fprintf_filtered (stream, local_hex_format_prefix ());
-  if (TARGET_BYTE_ORDER == BIG_ENDIAN)
+  if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
     {
       for (p = valaddr;
 	   p < valaddr + len;
@@ -1074,17 +889,10 @@ print_hex_chars (stream, valaddr, len)
  */
 
 void
-val_print_array_elements (type, valaddr, address, stream, format, deref_ref,
-			  recurse, pretty, i)
-     struct type *type;
-     char *valaddr;
-     CORE_ADDR address;
-     struct ui_file *stream;
-     int format;
-     int deref_ref;
-     int recurse;
-     enum val_prettyprint pretty;
-     unsigned int i;
+val_print_array_elements (struct type *type, char *valaddr, CORE_ADDR address,
+			  struct ui_file *stream, int format, int deref_ref,
+			  int recurse, enum val_prettyprint pretty,
+			  unsigned int i)
 {
   unsigned int things_printed = 0;
   unsigned len;
@@ -1203,11 +1011,7 @@ partial_memory_read (CORE_ADDR memaddr, char *myaddr, int len, int *errnoptr)
 /* FIXME: Use target_read_string.  */
 
 int
-val_print_string (addr, len, width, stream)
-     CORE_ADDR addr;
-     int len;
-     int width;
-     struct ui_file *stream;
+val_print_string (CORE_ADDR addr, int len, int width, struct ui_file *stream)
 {
   int force_ellipsis = 0;	/* Force ellipsis to be printed if nonzero. */
   int errcode;			/* Errno returned from bad reads. */
@@ -1251,7 +1055,7 @@ val_print_string (addr, len, width, stream)
     {
       buffer = (char *) xmalloc (len * width);
       bufptr = buffer;
-      old_chain = make_cleanup (free, buffer);
+      old_chain = make_cleanup (xfree, buffer);
 
       nfetch = partial_memory_read (addr, bufptr, len * width, &errcode)
 	/ width;
@@ -1274,7 +1078,7 @@ val_print_string (addr, len, width, stream)
 	      buffer = (char *) xrealloc (buffer, (nfetch + bufsize) * width);
 	    }
 
-	  old_chain = make_cleanup (free, buffer);
+	  old_chain = make_cleanup (xfree, buffer);
 	  bufptr = buffer + bufsize * width;
 	  bufsize += nfetch;
 
@@ -1385,19 +1189,14 @@ val_print_string (addr, len, width, stream)
 
 /* ARGSUSED */
 static void
-set_input_radix (args, from_tty, c)
-     char *args;
-     int from_tty;
-     struct cmd_list_element *c;
+set_input_radix (char *args, int from_tty, struct cmd_list_element *c)
 {
-  set_input_radix_1 (from_tty, *(unsigned *) c->var);
+  set_input_radix_1 (from_tty, input_radix);
 }
 
 /* ARGSUSED */
 static void
-set_input_radix_1 (from_tty, radix)
-     int from_tty;
-     unsigned radix;
+set_input_radix_1 (int from_tty, unsigned radix)
 {
   /* We don't currently disallow any input radix except 0 or 1, which don't
      make any mathematical sense.  In theory, we can deal with any input
@@ -1408,6 +1207,8 @@ set_input_radix_1 (from_tty, radix)
 
   if (radix < 2)
     {
+      /* FIXME: cagney/2002-03-17: This needs to revert the bad radix
+         value.  */
       error ("Nonsense input radix ``decimal %u''; input radix unchanged.",
 	     radix);
     }
@@ -1421,18 +1222,13 @@ set_input_radix_1 (from_tty, radix)
 
 /* ARGSUSED */
 static void
-set_output_radix (args, from_tty, c)
-     char *args;
-     int from_tty;
-     struct cmd_list_element *c;
+set_output_radix (char *args, int from_tty, struct cmd_list_element *c)
 {
-  set_output_radix_1 (from_tty, *(unsigned *) c->var);
+  set_output_radix_1 (from_tty, output_radix);
 }
 
 static void
-set_output_radix_1 (from_tty, radix)
-     int from_tty;
-     unsigned radix;
+set_output_radix_1 (int from_tty, unsigned radix)
 {
   /* Validate the radix and disallow ones that we aren't prepared to
      handle correctly, leaving the radix unchanged. */
@@ -1448,6 +1244,8 @@ set_output_radix_1 (from_tty, radix)
       output_format = 'o';	/* octal */
       break;
     default:
+      /* FIXME: cagney/2002-03-17: This needs to revert the bad radix
+         value.  */
       error ("Unsupported output radix ``decimal %u''; output radix unchanged.",
 	     radix);
     }
@@ -1468,13 +1266,11 @@ set_output_radix_1 (from_tty, radix)
    the 'set input-radix' command. */
 
 static void
-set_radix (arg, from_tty)
-     char *arg;
-     int from_tty;
+set_radix (char *arg, int from_tty)
 {
   unsigned radix;
 
-  radix = (arg == NULL) ? 10 : parse_and_eval_address (arg);
+  radix = (arg == NULL) ? 10 : parse_and_eval_long (arg);
   set_output_radix_1 (0, radix);
   set_input_radix_1 (0, radix);
   if (from_tty)
@@ -1488,9 +1284,7 @@ set_radix (arg, from_tty)
 
 /*ARGSUSED */
 static void
-show_radix (arg, from_tty)
-     char *arg;
-     int from_tty;
+show_radix (char *arg, int from_tty)
 {
   if (from_tty)
     {
@@ -1512,9 +1306,7 @@ show_radix (arg, from_tty)
 
 /*ARGSUSED */
 static void
-set_print (arg, from_tty)
-     char *arg;
-     int from_tty;
+set_print (char *arg, int from_tty)
 {
   printf_unfiltered (
      "\"set print\" must be followed by the name of a print subcommand.\n");
@@ -1523,15 +1315,13 @@ set_print (arg, from_tty)
 
 /*ARGSUSED */
 static void
-show_print (args, from_tty)
-     char *args;
-     int from_tty;
+show_print (char *args, int from_tty)
 {
   cmd_show_list (showprintlist, from_tty, "");
 }
 
 void
-_initialize_valprint ()
+_initialize_valprint (void)
 {
   struct cmd_list_element *c;
 
@@ -1601,14 +1391,14 @@ _initialize_valprint ()
 		   "Set default input radix for entering numbers.",
 		   &setlist);
   add_show_from_set (c, &showlist);
-  c->function.sfunc = set_input_radix;
+  set_cmd_sfunc (c, set_input_radix);
 
   c = add_set_cmd ("output-radix", class_support, var_uinteger,
 		   (char *) &output_radix,
 		   "Set default output radix for printing of values.",
 		   &setlist);
   add_show_from_set (c, &showlist);
-  c->function.sfunc = set_output_radix;
+  set_cmd_sfunc (c, set_output_radix);
 
   /* The "set radix" and "show radix" commands are special in that they are
      like normal set and show commands but allow two normally independent

@@ -1,5 +1,8 @@
 /* Target-machine dependent code for the Intel 960
-   Copyright 1991, 1992, 1993, 1994, 1995 Free Software Foundation, Inc.
+
+   Copyright 1991, 1992, 1993, 1994, 1995, 1996, 1998, 1999, 2000,
+   2001, 2002 Free Software Foundation, Inc.
+
    Contributed by Intel Corporation.
    examine_prologue and other parts contributed by Wind River Systems.
 
@@ -28,10 +31,21 @@
 #include "target.h"
 #include "gdbcore.h"
 #include "inferior.h"
+#include "regcache.h"
+#include "gdb_string.h"
 
-static CORE_ADDR next_insn PARAMS ((CORE_ADDR memaddr,
-				    unsigned int *pword1,
-				    unsigned int *pword2));
+static CORE_ADDR next_insn (CORE_ADDR memaddr,
+			    unsigned int *pword1, unsigned int *pword2);
+
+struct type *
+i960_register_type (int regnum)
+{
+  if (regnum < FP0_REGNUM)
+    return builtin_type_int32;
+  else
+    return builtin_type_i960_ext;
+}
+
 
 /* Does the specified function use the "struct returning" convention
    or the "value returning" convention?  The "value returning" convention
@@ -48,9 +62,7 @@ static CORE_ADDR next_insn PARAMS ((CORE_ADDR memaddr,
    If it's more than 16 bytes long, g13 pointed to it on entry.  */
 
 int
-i960_use_struct_convention (gcc_p, type)
-     int gcc_p;
-     struct type *type;
+i960_use_struct_convention (int gcc_p, struct type *type)
 {
   return (TYPE_LENGTH (type) > 16);
 }
@@ -59,7 +71,7 @@ i960_use_struct_convention (gcc_p, type)
    This routine must be called as part of gdb initialization.  */
 
 static void
-check_host ()
+check_host (void)
 {
   int i;
 
@@ -109,6 +121,155 @@ check_host ()
 	}
 
     }
+}
+
+/* Is this register part of the register window system?  A yes answer
+   implies that 1) The name of this register will not be the same in
+   other frames, and 2) This register is automatically "saved" upon
+   subroutine calls and thus there is no need to search more than one
+   stack frame for it.
+
+   On the i960, in fact, the name of this register in another frame is
+   "mud" -- there is no overlap between the windows.  Each window is
+   simply saved into the stack (true for our purposes, after having been
+   flushed; normally they reside on-chip and are restored from on-chip
+   without ever going to memory).  */
+
+static int
+register_in_window_p (int regnum)
+{
+  return regnum <= R15_REGNUM;
+}
+
+/* i960_find_saved_register ()
+
+   Return the address in which frame FRAME's value of register REGNUM
+   has been saved in memory.  Or return zero if it has not been saved.
+   If REGNUM specifies the SP, the value we return is actually the SP
+   value, not an address where it was saved.  */
+
+static CORE_ADDR
+i960_find_saved_register (struct frame_info *frame, int regnum)
+{
+  register struct frame_info *frame1 = NULL;
+  register CORE_ADDR addr = 0;
+
+  if (frame == NULL)		/* No regs saved if want current frame */
+    return 0;
+
+  /* We assume that a register in a register window will only be saved
+     in one place (since the name changes and/or disappears as you go
+     towards inner frames), so we only call get_frame_saved_regs on
+     the current frame.  This is directly in contradiction to the
+     usage below, which assumes that registers used in a frame must be
+     saved in a lower (more interior) frame.  This change is a result
+     of working on a register window machine; get_frame_saved_regs
+     always returns the registers saved within a frame, within the
+     context (register namespace) of that frame. */
+
+  /* However, note that we don't want this to return anything if
+     nothing is saved (if there's a frame inside of this one).  Also,
+     callers to this routine asking for the stack pointer want the
+     stack pointer saved for *this* frame; this is returned from the
+     next frame.  */
+
+  if (register_in_window_p (regnum))
+    {
+      frame1 = get_next_frame (frame);
+      if (!frame1)
+	return 0;		/* Registers of this frame are active.  */
+
+      /* Get the SP from the next frame in; it will be this
+         current frame.  */
+      if (regnum != SP_REGNUM)
+	frame1 = frame;
+
+      FRAME_INIT_SAVED_REGS (frame1);
+      return frame1->saved_regs[regnum];	/* ... which might be zero */
+    }
+
+  /* Note that this next routine assumes that registers used in
+     frame x will be saved only in the frame that x calls and
+     frames interior to it.  This is not true on the sparc, but the
+     above macro takes care of it, so we should be all right. */
+  while (1)
+    {
+      QUIT;
+      frame1 = get_next_frame (frame);
+      if (frame1 == 0)
+	break;
+      frame = frame1;
+      FRAME_INIT_SAVED_REGS (frame1);
+      if (frame1->saved_regs[regnum])
+	addr = frame1->saved_regs[regnum];
+    }
+
+  return addr;
+}
+
+/* i960_get_saved_register ()
+
+   Find register number REGNUM relative to FRAME and put its (raw,
+   target format) contents in *RAW_BUFFER.  Set *OPTIMIZED if the
+   variable was optimized out (and thus can't be fetched).  Set *LVAL
+   to lval_memory, lval_register, or not_lval, depending on whether
+   the value was fetched from memory, from a register, or in a strange
+   and non-modifiable way (e.g. a frame pointer which was calculated
+   rather than fetched).  Set *ADDRP to the address, either in memory
+   on as a REGISTER_BYTE offset into the registers array.
+
+   Note that this implementation never sets *LVAL to not_lval.  But it
+   can be replaced by defining GET_SAVED_REGISTER and supplying your
+   own.
+
+   The argument RAW_BUFFER must point to aligned memory.  */
+
+void
+i960_get_saved_register (char *raw_buffer,
+			 int *optimized,
+			 CORE_ADDR *addrp,
+			 struct frame_info *frame,
+			 int regnum,
+			 enum lval_type *lval)
+{
+  CORE_ADDR addr;
+
+  if (!target_has_registers)
+    error ("No registers.");
+
+  /* Normal systems don't optimize out things with register numbers.  */
+  if (optimized != NULL)
+    *optimized = 0;
+  addr = i960_find_saved_register (frame, regnum);
+  if (addr != 0)
+    {
+      if (lval != NULL)
+	*lval = lval_memory;
+      if (regnum == SP_REGNUM)
+	{
+	  if (raw_buffer != NULL)
+	    {
+	      /* Put it back in target format.  */
+	      store_address (raw_buffer, REGISTER_RAW_SIZE (regnum),
+			     (LONGEST) addr);
+	    }
+	  if (addrp != NULL)
+	    *addrp = 0;
+	  return;
+	}
+      if (raw_buffer != NULL)
+	target_read_memory (addr, raw_buffer, REGISTER_RAW_SIZE (regnum));
+    }
+  else
+    {
+      if (lval != NULL)
+	*lval = lval_register;
+      addr = REGISTER_BYTE (regnum);
+      if (raw_buffer != NULL)
+	read_register_gen (regnum, raw_buffer);
+    }
+  if (addrp != NULL)
+    *addrp = addr;
 }
 
 /* Examine an i960 function prologue, recording the addresses at which
@@ -171,11 +332,8 @@ check_host ()
   (((addr) < (lim)) ? next_insn (addr, pword1, pword2) : 0)
 
 static CORE_ADDR
-examine_prologue (ip, limit, frame_addr, fsr)
-     register CORE_ADDR ip;
-     register CORE_ADDR limit;
-     CORE_ADDR frame_addr;
-     struct frame_saved_regs *fsr;
+examine_prologue (register CORE_ADDR ip, register CORE_ADDR limit,
+		  CORE_ADDR frame_addr, struct frame_saved_regs *fsr)
 {
   register CORE_ADDR next_ip;
   register int src, dst;
@@ -337,8 +495,7 @@ examine_prologue (ip, limit, frame_addr, fsr)
    prologue.  */
 
 CORE_ADDR
-i960_skip_prologue (ip)
-CORE_ADDR (ip);
+i960_skip_prologue (CORE_ADDR ip)
 {
   struct frame_saved_regs saved_regs_dummy;
   struct symtab_and_line sal;
@@ -360,9 +517,7 @@ CORE_ADDR (ip);
    fairly expensive.  */
 
 void
-frame_find_saved_regs (fi, fsr)
-     struct frame_info *fi;
-     struct frame_saved_regs *fsr;
+frame_find_saved_regs (struct frame_info *fi, struct frame_saved_regs *fsr)
 {
   register CORE_ADDR next_addr;
   register CORE_ADDR *saved_regs;
@@ -428,8 +583,7 @@ frame_find_saved_regs (fi, fsr)
    described by FI.  Returns 0 if the address is unknown.  */
 
 CORE_ADDR
-frame_args_address (fi, must_be_correct)
-     struct frame_info *fi;
+frame_args_address (struct frame_info *fi, int must_be_correct)
 {
   struct frame_saved_regs fsr;
   CORE_ADDR ap;
@@ -460,8 +614,7 @@ frame_args_address (fi, must_be_correct)
    described by FI.  Returns 0 if the address is unknown.  */
 
 CORE_ADDR
-frame_struct_result_address (fi)
-     struct frame_info *fi;
+frame_struct_result_address (struct frame_info *fi)
 {
   struct frame_saved_regs fsr;
   CORE_ADDR ap;
@@ -489,9 +642,11 @@ frame_struct_result_address (fi)
 }
 
 /* Return address to which the currently executing leafproc will return,
-   or 0 if ip is not in a leafproc (or if we can't tell if it is).
+   or 0 if IP, the value of the instruction pointer from the currently
+   executing function, is not in a leafproc (or if we can't tell if it
+   is).
 
-   Do this by finding the starting address of the routine in which ip lies.
+   Do this by finding the starting address of the routine in which IP lies.
    If the instruction there is "mov g14, gx" (where x is in [0,7]), this
    is a leafproc and the return address is in register gx.  Well, this is
    true unless the return address points at a RET instruction in the current
@@ -499,8 +654,7 @@ frame_struct_result_address (fi)
    has been entered through the CALL entry point.  */
 
 CORE_ADDR
-leafproc_return (ip)
-     CORE_ADDR ip;		/* ip from currently executing function */
+leafproc_return (CORE_ADDR ip)
 {
   register struct minimal_symbol *msymbol;
   char *p;
@@ -552,8 +706,7 @@ leafproc_return (ip)
    unless the function is a leaf procedure.  */
 
 CORE_ADDR
-saved_pc_after_call (frame)
-     struct frame_info *frame;
+saved_pc_after_call (struct frame_info *frame)
 {
   CORE_ADDR saved_pc;
 
@@ -621,8 +774,7 @@ i960_pop_frame (void)
    corresponds.  */
 
 enum target_signal
-i960_fault_to_signal (fault)
-     int fault;
+i960_fault_to_signal (int fault)
 {
   switch (fault)
     {
@@ -696,12 +848,13 @@ struct tabent
   char numops;
 };
 
-static int			/* returns instruction length: 4 or 8 */
-mem (memaddr, word1, word2, noprint)
-     unsigned long memaddr;
-     unsigned long word1, word2;
-     int noprint;		/* If TRUE, return instruction length, but
-				   don't output any text.  */
+/* Return instruction length, either 4 or 8.  When NOPRINT is non-zero
+   (TRUE), don't output any text.  (Actually, as implemented, if NOPRINT
+   is 0, abort() is called.) */
+
+static int
+mem (unsigned long memaddr, unsigned long word1, unsigned long word2,
+     int noprint)
 {
   int i, j;
   int len;
@@ -785,7 +938,7 @@ mem (memaddr, word1, word2, noprint)
     {
       return len;
     }
-  abort ();
+  internal_error (__FILE__, __LINE__, "failed internal consistency check");
 }
 
 /* Read the i960 instruction at 'memaddr' and return the address of 
@@ -795,9 +948,7 @@ mem (memaddr, word1, word2, noprint)
    'pword2'.  */
 
 static CORE_ADDR
-next_insn (memaddr, pword1, pword2)
-     unsigned int *pword1, *pword2;
-     CORE_ADDR memaddr;
+next_insn (CORE_ADDR memaddr, unsigned int *pword1, unsigned int *pword2)
 {
   int len;
   char buf[8];
@@ -853,9 +1004,7 @@ next_insn (memaddr, pword1, pword2)
    they display this frame.  */
 
 int
-mon960_frame_chain_valid (chain, curframe)
-     CORE_ADDR chain;
-     struct frame_info *curframe;
+mon960_frame_chain_valid (CORE_ADDR chain, struct frame_info *curframe)
 {
   struct symbol *sym;
   struct minimal_symbol *msymbol;
@@ -899,7 +1048,7 @@ mon960_frame_chain_valid (chain, curframe)
 
 
 void
-_initialize_i960_tdep ()
+_initialize_i960_tdep (void)
 {
   check_host ();
 
