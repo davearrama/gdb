@@ -1,24 +1,25 @@
-/* This file is part of psim (model of the PowerPC(tm) architecture)
+/* The common simulator framework for GDB, the GNU Debugger.
 
-   Copyright (C) 1994-1997, Andrew Cagney <cagney@highland.com.au>
+   Copyright 2002 Free Software Foundation, Inc.
 
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public License
-   as published by the Free Software Foundation; either version 2 of
-   the License, or (at your option) any later version.
- 
-   This library is distributed in the hope that it will be useful, but
-   WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License for more details.
- 
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
- 
-   --
+   Contributed by Andrew Cagney and Red Hat.
 
-   PowerPC is a trademark of International Business Machines Corporation. */
+   This file is part of GDB.
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place - Suite 330,
+   Boston, MA 02111-1307, USA.  */
 
 
 #ifndef SIM_TYPES_H
@@ -164,6 +165,10 @@ typedef signed64 signed_word;
 typedef unsigned32 unsigned_word;
 typedef signed32 signed_word;
 #endif
+#if (WITH_TARGET_WORD_BITSIZE == 16)
+typedef unsigned16 unsigned_word;
+typedef signed16 signed_word;
+#endif
 
 
 /* Other instructions */
@@ -174,6 +179,10 @@ typedef signed64 signed_address;
 #if (WITH_TARGET_ADDRESS_BITSIZE == 32)
 typedef unsigned32 unsigned_address;
 typedef signed32 signed_address;
+#endif
+#if (WITH_TARGET_ADDRESS_BITSIZE == 16)
+typedef unsigned16 unsigned_address;
+typedef signed16 signed_address;
 #endif
 typedef unsigned_address address_word;
 

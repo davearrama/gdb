@@ -1,5 +1,6 @@
 /* Fork a Unix child process, and set up to debug it, for GDB.
-   Copyright 1990, 91, 92, 93, 94, 1996, 1999 Free Software Foundation, Inc.
+   Copyright 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1998, 1999, 2000,
+   2001 Free Software Foundation, Inc.
    Contributed by Cygnus Support.
 
    This file is part of GDB.
@@ -24,7 +25,8 @@
 #include "frame.h"		/* required by inferior.h */
 #include "inferior.h"
 #include "target.h"
-#include "wait.h"
+#include "gdb_wait.h"
+#include "gdb_vfork.h"
 #include "gdbcore.h"
 #include "terminal.h"
 #include "gdbthread.h"
@@ -46,11 +48,7 @@ extern char **environ;
  * the four arguments "a", "b", "c", "d".
  */
 static void
-breakup_args (
-	       scratch,
-	       argv)
-     char *scratch;
-     char **argv;
+breakup_args (char *scratch, char **argv)
 {
   char *cp = scratch;
 
@@ -91,22 +89,19 @@ breakup_args (
 }
 
 
-/* Start an inferior Unix child process and sets inferior_pid to its pid.
+/* Start an inferior Unix child process and sets inferior_ptid to its pid.
    EXEC_FILE is the file to run.
    ALLARGS is a string containing the arguments to the program.
    ENV is the environment vector to pass.  SHELL_FILE is the shell file,
    or NULL if we should pick one.  Errors reported with error().  */
 
+/* This function is NOT-REENTRANT.  Some of the variables have been
+   made static to ensure that they survive the vfork() call.  */
+
 void
-fork_inferior (exec_file, allargs, env, traceme_fun, init_trace_fun,
-	       pre_trace_fun, shell_file)
-     char *exec_file;
-     char *allargs;
-     char **env;
-     void (*traceme_fun) PARAMS ((void));
-     void (*init_trace_fun) PARAMS ((int));
-     void (*pre_trace_fun) PARAMS ((void));
-     char *shell_file;
+fork_inferior (char *exec_file_arg, char *allargs, char **env,
+	       void (*traceme_fun) (void), void (*init_trace_fun) (int),
+	       void (*pre_trace_fun) (void), char *shell_file_arg)
 {
   int pid;
   char *shell_command;
@@ -117,12 +112,15 @@ fork_inferior (exec_file, allargs, env, traceme_fun, init_trace_fun,
   /* This is set to the result of setpgrp, which if vforked, will be visible
      to you in the parent process.  It's only used by humans for debugging.  */
   static int debug_setpgrp = 657473;
+  static char *shell_file;
+  static char *exec_file;
   char **save_our_env;
   int shell = 0;
-  char **argv;
+  static char **argv;
 
   /* If no exec file handed to us, get it from the exec-file command -- with
      a good, common error message if none is specified.  */
+  exec_file = exec_file_arg;
   if (exec_file == 0)
     exec_file = get_exec_file (1);
 
@@ -130,6 +128,7 @@ fork_inferior (exec_file, allargs, env, traceme_fun, init_trace_fun,
    * If 0, we'll just do a fork/exec, no shell, so don't
    * bother figuring out what shell.
    */
+  shell_file = shell_file_arg;
   if (STARTUP_WITH_SHELL)
     {
       /* Figure out what shell to start up the user program under. */
@@ -184,6 +183,7 @@ fork_inferior (exec_file, allargs, env, traceme_fun, init_trace_fun,
 	  switch (*p)
 	    {
 	    case '\'':
+	    case '!':
 	    case '"':
 	    case '(':
 	    case ')':
@@ -215,6 +215,8 @@ fork_inferior (exec_file, allargs, env, traceme_fun, init_trace_fun,
 	    {
 	      if (*p == '\'')
 		strcat (shell_command, "'\\''");
+	      else if (*p == '!')
+		strcat (shell_command, "\\!");
 	      else
 		strncat (shell_command, p, 1);
 	    }
@@ -254,14 +256,13 @@ fork_inferior (exec_file, allargs, env, traceme_fun, init_trace_fun,
   if (pre_trace_fun != NULL)
     (*pre_trace_fun) ();
 
-#if defined(USG) && !defined(HAVE_VFORK)
-  pid = fork ();
-#else
+  /* Create the child process.  Note that the apparent call to vfork()
+     below *might* actually be a call to fork() due to the fact that
+     autoconf will ``#define vfork fork'' on certain platforms.  */
   if (debug_fork)
     pid = fork ();
   else
     pid = vfork ();
-#endif
 
   if (pid < 0)
     perror_with_name ("vfork");
@@ -357,7 +358,7 @@ fork_inferior (exec_file, allargs, env, traceme_fun, init_trace_fun,
 
   init_thread_list ();
 
-  inferior_pid = pid;		/* Needed for wait_for_inferior stuff below */
+  inferior_ptid = pid_to_ptid (pid);	/* Needed for wait_for_inferior stuff below */
 
   /* Now that we have a child process, make it our target, and
      initialize anything target-vector-specific that needs initializing.  */
@@ -368,7 +369,7 @@ fork_inferior (exec_file, allargs, env, traceme_fun, init_trace_fun,
      correct program, and are poised at the first instruction of the
      new program.  */
 
-  /* Allow target dependant code to play with the new process.  This might be
+  /* Allow target dependent code to play with the new process.  This might be
      used to have target-specific code initialize a variable in the new process
      prior to executing the first instruction.  */
   TARGET_CREATE_INFERIOR_HOOK (pid);
@@ -378,142 +379,10 @@ fork_inferior (exec_file, allargs, env, traceme_fun, init_trace_fun,
 #endif
 }
 
-/* An inferior Unix process CHILD_PID has been created by a call to
-   fork() (or variants like vfork).  It is presently stopped, and waiting
-   to be resumed.  clone_and_follow_inferior will fork the debugger,
-   and that clone will "follow" (attach to) CHILD_PID.  The original copy
-   of the debugger will not touch CHILD_PID again.
-
-   Also, the original debugger will set FOLLOWED_CHILD FALSE, while the
-   clone will set it TRUE.
- */
-void
-clone_and_follow_inferior (child_pid, followed_child)
-     int child_pid;
-     int *followed_child;
-{
-  extern int auto_solib_add;
-
-  int debugger_pid;
-  int status;
-  char pid_spelling[100];	/* Arbitrary but sufficient length. */
-
-  /* This semaphore is used to coordinate the two debuggers' handoff
-     of CHILD_PID.  The original debugger will detach from CHILD_PID,
-     and then the clone debugger will attach to it.  (It must be done
-     this way because on some targets, only one process at a time can
-     trace another.  Thus, the original debugger must relinquish its
-     tracing rights before the clone can pick them up.)
-   */
-#define SEM_TALK (1)
-#define SEM_LISTEN (0)
-  int handoff_semaphore[2];	/* Original "talks" to [1], clone "listens" to [0] */
-  int talk_value = 99;
-  int listen_value;
-
-  /* Set debug_fork then attach to the child while it sleeps, to debug. */
-  static int debug_fork = 0;
-
-  /* It is generally good practice to flush any possible pending stdio
-     output prior to doing a fork, to avoid the possibility of both the
-     parent and child flushing the same data after the fork. */
-
-  gdb_flush (gdb_stdout);
-  gdb_flush (gdb_stderr);
-
-  /* Open the semaphore pipes.
-   */
-  status = pipe (handoff_semaphore);
-  if (status < 0)
-    error ("error getting pipe for handoff semaphore");
-
-  /* Clone the debugger. */
-#if defined(USG) && !defined(HAVE_VFORK)
-  debugger_pid = fork ();
-#else
-  if (debug_fork)
-    debugger_pid = fork ();
-  else
-    debugger_pid = vfork ();
-#endif
-
-  if (debugger_pid < 0)
-    perror_with_name ("fork");
-
-  /* Are we the original debugger?  If so, we must relinquish all claims
-     to CHILD_PID. */
-  if (debugger_pid != 0)
-    {
-      char signal_spelling[100];	/* Arbitrary but sufficient length */
-
-      /* Detach from CHILD_PID.  Deliver a "stop" signal when we do, though,
-         so that it remains stopped until the clone debugger can attach
-         to it.
-       */
-      detach_breakpoints (child_pid);
-
-      sprintf (signal_spelling, "%d", target_signal_to_host (TARGET_SIGNAL_STOP));
-      target_require_detach (child_pid, signal_spelling, 1);
-
-      /* Notify the clone debugger that it should attach to CHILD_PID. */
-      write (handoff_semaphore[SEM_TALK], &talk_value, sizeof (talk_value));
-
-      *followed_child = 0;
-    }
-
-  /* We're the child. */
-  else
-    {
-      if (debug_fork)
-	sleep (debug_fork);
-
-      /* The child (i.e., the cloned debugger) must now attach to
-         CHILD_PID.  inferior_pid is presently set to the parent process
-         of the fork, while CHILD_PID should be the child process of the
-         fork.
-
-         Wait until the original debugger relinquishes control of CHILD_PID,
-         though.
-       */
-      read (handoff_semaphore[SEM_LISTEN], &listen_value, sizeof (listen_value));
-
-      /* Note that we DON'T want to actually detach from inferior_pid,
-         because that would allow it to run free.  The original
-         debugger wants to retain control of the process.  So, we
-         just reset inferior_pid to CHILD_PID, and then ensure that all
-         breakpoints are really set in CHILD_PID.
-       */
-      target_mourn_inferior ();
-
-      /* Ask the tty subsystem to switch to the one we specified earlier
-         (or to share the current terminal, if none was specified).  */
-
-      new_tty ();
-
-      dont_repeat ();
-      sprintf (pid_spelling, "%d", child_pid);
-      target_require_attach (pid_spelling, 1);
-
-      /* Perform any necessary cleanup, after attachment.  (This form
-         of attaching can behave differently on some targets than the
-         standard method, where a process formerly not under debugger
-         control was suddenly attached to..)
-       */
-      target_post_follow_inferior_by_clone ();
-
-      *followed_child = 1;
-    }
-
-  /* Discard the handoff sempahore. */
-  (void) close (handoff_semaphore[SEM_LISTEN]);
-  (void) close (handoff_semaphore[SEM_TALK]);
-}
-
 /* Accept NTRAPS traps from the inferior.  */
 
 void
-startup_inferior (ntraps)
-     int ntraps;
+startup_inferior (int ntraps)
 {
   int pending_execs = ntraps;
   int terminal_initted;

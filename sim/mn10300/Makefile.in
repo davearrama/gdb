@@ -1,5 +1,5 @@
 #    Makefile template for Configure for the mn10300 sim library.
-#    Copyright (C) 1996, 1997 Free Software Foundation, Inc.
+#    Copyright (C) 1996, 1997, 2000, 2001 Free Software Foundation, Inc.
 #    Written by Cygnus Support.
 # 
 # This program is free software; you can redistribute it and/or modify
@@ -44,11 +44,13 @@ WITH_COMMON_RUN_OBJS = nrun.o
 SIM_RUN_OBJS = $(@mn10300_common@_COMMON_RUN_OBJS)
 
 SIM_EXTRA_CLEAN = clean-extra
+# Extra dependencies for "sim-main.h"
+SIM_EXTRA_DEPS = mn10300_sim.h itable.h idecode.h
 
 # Select mn10300 support in nltvals.def.
 NL_TARGET = -DNL_TARGET_mn10300
 
-INCLUDE = mn10300_sim.h $(srcdir)/../../include/callback.h
+INCLUDE = mn10300_sim.h $(srcdir)/../../include/gdb/callback.h
 
 # List of extra flags to always pass to $(CC).
 SIM_EXTRA_CFLAGS = @sim_gen@ -DPOLL_QUIT_INTERVAL=0x20
@@ -75,7 +77,7 @@ m10300-opc.o: $(srcdir)/../../opcodes/m10300-opc.c
 gencode: gencode.o m10300-opc.o
 	$(CC_FOR_BUILD) $(BUILD_CFLAGS) -o gencode gencode.o m10300-opc.o $(BUILD_LIB)
 
-
+idecode.o op_utils.o semantics.o simops.o: targ-vals.h
 
 
 BUILT_SRC_FROM_IGEN = \
@@ -106,7 +108,7 @@ clean-igen:
 	cd ../igen && $(MAKE)
 
 IGEN_TRACE= # -G omit-line-numbers # -G trace-rule-selection -G trace-rule-rejection -G trace-entries
-IGEN_INSN=$(srcdir)/mn10300.igen
+IGEN_INSN=$(srcdir)/mn10300.igen $(srcdir)/am33.igen
 IGEN_DC=$(srcdir)/mn10300.dc
 tmp-igen: $(IGEN_INSN) $(IGEN_DC) ../igen/igen
 	cd ../igen && $(MAKE)
@@ -152,7 +154,7 @@ tmp-igen: $(IGEN_INSN) $(IGEN_DC) ../igen/igen
 
 
 interp.o: interp.c $(MN10300_INTERP_DEP) $(INCLUDE)
-simops.o: simops.c $(INCLUDE)
+simops.o: simops.c simops.h $(INCLUDE)
 table.o: table.c
 
 clean-extra: clean-igen

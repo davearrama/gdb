@@ -1,22 +1,25 @@
-/*  This file is part of the program psim.
+/* The common simulator framework for GDB, the GNU Debugger.
 
-    Copyright (C) 1994-1997, Andrew Cagney <cagney@highland.com.au>
+   Copyright 2002 Free Software Foundation, Inc.
 
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+   Contributed by Andrew Cagney and Red Hat.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
- 
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
- 
-    */
+   This file is part of GDB.
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place - Suite 330,
+   Boston, MA 02111-1307, USA.  */
 
 
 #ifndef SIM_CORE_H
@@ -167,7 +170,7 @@ extern void sim_core_detach
 /* Variable sized read/write
 
    Transfer a variable sized block of raw data between the host and
-   target.  Should any problems occure, the number of bytes
+   target.  Should any problems occur, the number of bytes
    successfully transfered is returned.
 
    No host/target byte endian conversion is performed.  No xor-endian
@@ -213,7 +216,7 @@ extern void sim_core_set_xor
 /* XOR version of variable sized read/write.
 
    Transfer a variable sized block of raw data between the host and
-   target.  Should any problems occure, the number of bytes
+   target.  Should any problems occur, the number of bytes
    successfully transfered is returned.
 
    No host/target byte endian conversion is performed.  If applicable

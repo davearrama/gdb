@@ -2,9 +2,9 @@
 
 THIS FILE IS MACHINE GENERATED WITH CGEN.
 
-Copyright (C) 1996, 1997, 1998, 1999 Free Software Foundation, Inc.
+Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002 Free Software Foundation, Inc.
 
-This file is part of the GNU Simulators.
+This file is part of the GNU simulators.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -50,21 +50,21 @@ typedef struct {
 #define SET_H_CR(index, x) \
 do { \
 m32rxf_h_cr_set_handler (current_cpu, (index), (x));\
-} while (0)
+;} while (0)
   /* accumulator */
   DI h_accum;
 #define GET_H_ACCUM() m32rxf_h_accum_get_handler (current_cpu)
 #define SET_H_ACCUM(x) \
 do { \
 m32rxf_h_accum_set_handler (current_cpu, (x));\
-} while (0)
+;} while (0)
   /* accumulators */
   DI h_accums[2];
 #define GET_H_ACCUMS(index) m32rxf_h_accums_get_handler (current_cpu, index)
 #define SET_H_ACCUMS(index, x) \
 do { \
 m32rxf_h_accums_set_handler (current_cpu, (index), (x));\
-} while (0)
+;} while (0)
   /* condition bit */
   BI h_cond;
 #define GET_H_COND() CPU (h_cond)
@@ -75,7 +75,7 @@ m32rxf_h_accums_set_handler (current_cpu, (index), (x));\
 #define SET_H_PSW(x) \
 do { \
 m32rxf_h_psw_set_handler (current_cpu, (x));\
-} while (0)
+;} while (0)
   /* backup psw */
   UQI h_bpsw;
 #define GET_H_BPSW() CPU (h_bpsw)
@@ -133,54 +133,50 @@ union sem_fields {
   } sfmt_trap;
   struct { /*  */
     IADDR i_disp24;
-    unsigned char out_h_gr_14;
+    unsigned char out_h_gr_SI_14;
   } sfmt_bl24;
   struct { /*  */
     IADDR i_disp8;
-    unsigned char out_h_gr_14;
+    unsigned char out_h_gr_SI_14;
   } sfmt_bl8;
-  struct { /*  */
-    SI* i_dr;
-    UINT f_hi16;
-    unsigned char out_dr;
-  } sfmt_seth;
   struct { /*  */
     SI f_imm1;
     UINT f_accd;
     UINT f_accs;
   } sfmt_rac_dsi;
   struct { /*  */
-    SI* i_sr;
+    SI* i_dr;
+    UINT f_hi16;
     UINT f_r1;
-    unsigned char in_sr;
-  } sfmt_mvtc;
+    unsigned char out_dr;
+  } sfmt_seth;
   struct { /*  */
     SI* i_src1;
     UINT f_accs;
+    UINT f_r1;
     unsigned char in_src1;
   } sfmt_mvtachi_a;
   struct { /*  */
     SI* i_dr;
-    UINT f_r2;
-    unsigned char out_dr;
-  } sfmt_mvfc;
-  struct { /*  */
-    SI* i_dr;
     UINT f_accs;
+    UINT f_r1;
     unsigned char out_dr;
   } sfmt_mvfachi_a;
   struct { /*  */
     ADDR i_uimm24;
     SI* i_dr;
+    UINT f_r1;
     unsigned char out_dr;
   } sfmt_ld24;
   struct { /*  */
     SI* i_sr;
+    UINT f_r2;
     unsigned char in_sr;
-    unsigned char out_h_gr_14;
+    unsigned char out_h_gr_SI_14;
   } sfmt_jl;
   struct { /*  */
     SI* i_dr;
+    UINT f_r1;
     UINT f_uimm5;
     unsigned char in_dr;
     unsigned char out_dr;
@@ -188,12 +184,15 @@ union sem_fields {
   struct { /*  */
     SI* i_dr;
     INT f_simm8;
+    UINT f_r1;
     unsigned char in_dr;
     unsigned char out_dr;
   } sfmt_addi;
   struct { /*  */
     SI* i_src1;
     SI* i_src2;
+    UINT f_r1;
+    UINT f_r2;
     unsigned char in_src1;
     unsigned char in_src2;
     unsigned char out_src2;
@@ -202,6 +201,8 @@ union sem_fields {
     SI* i_src1;
     SI* i_src2;
     INT f_simm16;
+    UINT f_r1;
+    UINT f_r2;
     unsigned char in_src1;
     unsigned char in_src2;
   } sfmt_st_d;
@@ -209,12 +210,16 @@ union sem_fields {
     SI* i_src1;
     SI* i_src2;
     UINT f_acc;
+    UINT f_r1;
+    UINT f_r2;
     unsigned char in_src1;
     unsigned char in_src2;
   } sfmt_machi_a;
   struct { /*  */
     SI* i_dr;
     SI* i_sr;
+    UINT f_r1;
+    UINT f_r2;
     unsigned char in_sr;
     unsigned char out_dr;
     unsigned char out_sr;
@@ -223,12 +228,16 @@ union sem_fields {
     IADDR i_disp16;
     SI* i_src1;
     SI* i_src2;
+    UINT f_r1;
+    UINT f_r2;
     unsigned char in_src1;
     unsigned char in_src2;
   } sfmt_beq;
   struct { /*  */
     SI* i_dr;
     SI* i_sr;
+    UINT f_r1;
+    UINT f_r2;
     UINT f_uimm16;
     unsigned char in_sr;
     unsigned char out_dr;
@@ -237,12 +246,16 @@ union sem_fields {
     SI* i_dr;
     SI* i_sr;
     INT f_simm16;
+    UINT f_r1;
+    UINT f_r2;
     unsigned char in_sr;
     unsigned char out_dr;
   } sfmt_add3;
   struct { /*  */
     SI* i_dr;
     SI* i_sr;
+    UINT f_r1;
+    UINT f_r2;
     unsigned char in_dr;
     unsigned char in_sr;
     unsigned char out_dr;
@@ -759,19 +772,19 @@ struct parexec {
       USI pc;
     } sfmt_beqz;
     struct { /* e.g. bl.s $disp8 */
-      SI h_gr_14;
+      SI h_gr_SI_14;
       USI pc;
     } sfmt_bl8;
     struct { /* e.g. bl.l $disp24 */
-      SI h_gr_14;
+      SI h_gr_SI_14;
       USI pc;
     } sfmt_bl24;
     struct { /* e.g. bcl.s $disp8 */
-      SI h_gr_14;
+      SI h_gr_SI_14;
       USI pc;
     } sfmt_bcl8;
     struct { /* e.g. bcl.l $disp24 */
-      SI h_gr_14;
+      SI h_gr_SI_14;
       USI pc;
     } sfmt_bcl24;
     struct { /* e.g. bra.s $disp8 */
@@ -796,7 +809,7 @@ struct parexec {
       USI pc;
     } sfmt_jc;
     struct { /* e.g. jl $sr */
-      SI h_gr_14;
+      SI h_gr_SI_14;
       USI pc;
     } sfmt_jl;
     struct { /* e.g. jmp $sr */
@@ -808,6 +821,18 @@ struct parexec {
     struct { /* e.g. ld $dr,@($slo16,$sr) */
       SI dr;
     } sfmt_ld_d;
+    struct { /* e.g. ldb $dr,@$sr */
+      SI dr;
+    } sfmt_ldb;
+    struct { /* e.g. ldb $dr,@($slo16,$sr) */
+      SI dr;
+    } sfmt_ldb_d;
+    struct { /* e.g. ldh $dr,@$sr */
+      SI dr;
+    } sfmt_ldh;
+    struct { /* e.g. ldh $dr,@($slo16,$sr) */
+      SI dr;
+    } sfmt_ldh_d;
     struct { /* e.g. ld $dr,@$sr+ */
       SI dr;
       SI sr;
@@ -823,7 +848,7 @@ struct parexec {
     } sfmt_ldi16;
     struct { /* e.g. lock $dr,@$sr */
       SI dr;
-      BI h_lock;
+      BI h_lock_BI;
     } sfmt_lock;
     struct { /* e.g. machi $src1,$src2,$acc */
       DI acc;
@@ -853,9 +878,9 @@ struct parexec {
       DI accd;
     } sfmt_rac_dsi;
     struct { /* e.g. rte */
-      UQI h_bpsw;
-      USI h_cr_6;
-      UQI h_psw;
+      UQI h_bpsw_UQI;
+      USI h_cr_USI_6;
+      UQI h_psw_UQI;
       USI pc;
     } sfmt_rte;
     struct { /* e.g. seth $dr,$hash$hi16 */
@@ -868,46 +893,46 @@ struct parexec {
       SI dr;
     } sfmt_slli;
     struct { /* e.g. st $src1,@$src2 */
-      SI h_memory_src2;
-      USI h_memory_src2_idx;
+      SI h_memory_SI_src2;
+      USI h_memory_SI_src2_idx;
     } sfmt_st;
     struct { /* e.g. st $src1,@($slo16,$src2) */
-      SI h_memory_add__DFLT_src2_slo16;
-      USI h_memory_add__DFLT_src2_slo16_idx;
+      SI h_memory_SI_add__DFLT_src2_slo16;
+      USI h_memory_SI_add__DFLT_src2_slo16_idx;
     } sfmt_st_d;
     struct { /* e.g. stb $src1,@$src2 */
-      QI h_memory_src2;
-      USI h_memory_src2_idx;
+      QI h_memory_QI_src2;
+      USI h_memory_QI_src2_idx;
     } sfmt_stb;
     struct { /* e.g. stb $src1,@($slo16,$src2) */
-      QI h_memory_add__DFLT_src2_slo16;
-      USI h_memory_add__DFLT_src2_slo16_idx;
+      QI h_memory_QI_add__DFLT_src2_slo16;
+      USI h_memory_QI_add__DFLT_src2_slo16_idx;
     } sfmt_stb_d;
     struct { /* e.g. sth $src1,@$src2 */
-      HI h_memory_src2;
-      USI h_memory_src2_idx;
+      HI h_memory_HI_src2;
+      USI h_memory_HI_src2_idx;
     } sfmt_sth;
     struct { /* e.g. sth $src1,@($slo16,$src2) */
-      HI h_memory_add__DFLT_src2_slo16;
-      USI h_memory_add__DFLT_src2_slo16_idx;
+      HI h_memory_HI_add__DFLT_src2_slo16;
+      USI h_memory_HI_add__DFLT_src2_slo16_idx;
     } sfmt_sth_d;
     struct { /* e.g. st $src1,@+$src2 */
-      SI h_memory_new_src2;
-      USI h_memory_new_src2_idx;
+      SI h_memory_SI_new_src2;
+      USI h_memory_SI_new_src2_idx;
       SI src2;
     } sfmt_st_plus;
     struct { /* e.g. trap $uimm4 */
-      UQI h_bbpsw;
-      UQI h_bpsw;
-      USI h_cr_14;
-      USI h_cr_6;
-      UQI h_psw;
+      UQI h_bbpsw_UQI;
+      UQI h_bpsw_UQI;
+      USI h_cr_USI_14;
+      USI h_cr_USI_6;
+      UQI h_psw_UQI;
       SI pc;
     } sfmt_trap;
     struct { /* e.g. unlock $src1,@$src2 */
-      BI h_lock;
-      SI h_memory_src2;
-      USI h_memory_src2_idx;
+      BI h_lock_BI;
+      SI h_memory_SI_src2;
+      USI h_memory_SI_src2_idx;
     } sfmt_unlock;
     struct { /* e.g. satb $dr,$sr */
       SI dr;
@@ -916,16 +941,16 @@ struct parexec {
       SI dr;
     } sfmt_sat;
     struct { /* e.g. sadd */
-      DI h_accums_0;
+      DI h_accums_DI_0;
     } sfmt_sadd;
     struct { /* e.g. macwu1 $src1,$src2 */
-      DI h_accums_1;
+      DI h_accums_DI_1;
     } sfmt_macwu1;
     struct { /* e.g. msblo $src1,$src2 */
       DI accum;
     } sfmt_msblo;
     struct { /* e.g. mulwu1 $src1,$src2 */
-      DI h_accums_1;
+      DI h_accums_DI_1;
     } sfmt_mulwu1;
     struct { /* e.g. sc */
       int empty;

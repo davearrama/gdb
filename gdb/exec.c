@@ -1,5 +1,6 @@
 /* Work with executable files, for GDB. 
-   Copyright 1988, 1989, 1991, 1992, 1993, 1994, 1997, 1998
+   Copyright 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997,
+   1998, 1999, 2000, 2001, 2002
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -27,12 +28,15 @@
 #include "language.h"
 #include "symfile.h"
 #include "objfiles.h"
+#include "completer.h"
+#include "value.h"
 
 #ifdef USG
 #include <sys/types.h>
 #endif
 
 #include <fcntl.h>
+#include <readline/readline.h>
 #include "gdb_string.h"
 
 #include "gdbcore.h"
@@ -45,31 +49,29 @@
 
 #include "xcoffsolib.h"
 
-struct vmap *map_vmap PARAMS ((bfd *, bfd *));
+struct vmap *map_vmap (bfd *, bfd *);
 
-void (*file_changed_hook) PARAMS ((char *));
+void (*file_changed_hook) (char *);
 
 /* Prototypes for local functions */
 
-static void add_to_section_table PARAMS ((bfd *, sec_ptr, PTR));
+static void add_to_section_table (bfd *, sec_ptr, PTR);
 
-static void exec_close PARAMS ((int));
+static void exec_close (int);
 
-static void file_command PARAMS ((char *, int));
+static void file_command (char *, int);
 
-static void set_section_command PARAMS ((char *, int));
+static void set_section_command (char *, int);
 
-static void exec_files_info PARAMS ((struct target_ops *));
+static void exec_files_info (struct target_ops *);
 
-static void bfdsec_to_vmap PARAMS ((bfd *, sec_ptr, PTR));
+static void bfdsec_to_vmap (bfd *, sec_ptr, PTR);
 
-static int ignore PARAMS ((CORE_ADDR, char *));
+static int ignore (CORE_ADDR, char *);
 
-static void init_exec_ops PARAMS ((void));
+static void init_exec_ops (void);
 
-void _initialize_exec PARAMS ((void));
-
-extern int info_verbose;
+void _initialize_exec (void);
 
 /* The target vector for executable files.  */
 
@@ -93,10 +95,16 @@ CORE_ADDR text_end = 0;
 
 struct vmap *vmap;
 
+void
+exec_open (char *args, int from_tty)
+{
+  target_preopen (from_tty);
+  exec_file_attach (args, from_tty);
+}
+
 /* ARGSUSED */
 static void
-exec_close (quitting)
-     int quitting;
+exec_close (int quitting)
 {
   int need_symtab_cleanup = 0;
   struct vmap *vp, *nxt;
@@ -126,7 +134,7 @@ exec_close (quitting)
          FIXME-as-well: free_objfile already free'd vp->name, so it isn't
          valid here.  */
       free_named_symtabs (vp->name);
-      free (vp);
+      xfree (vp);
     }
 
   vmap = NULL;
@@ -138,16 +146,26 @@ exec_close (quitting)
       if (!bfd_close (exec_bfd))
 	warning ("cannot close \"%s\": %s",
 		 name, bfd_errmsg (bfd_get_error ()));
-      free (name);
+      xfree (name);
       exec_bfd = NULL;
     }
 
   if (exec_ops.to_sections)
     {
-      free ((PTR) exec_ops.to_sections);
+      xfree (exec_ops.to_sections);
       exec_ops.to_sections = NULL;
       exec_ops.to_sections_end = NULL;
     }
+}
+
+void
+exec_file_clear (int from_tty)
+{
+  /* Remove exec file.  */
+  unpush_target (&exec_ops);
+
+  if (from_tty)
+    printf_unfiltered ("No executable file now.\n");
 }
 
 /*  Process the first arg in ARGS as the new exec file.
@@ -165,48 +183,32 @@ exec_close (quitting)
    given a pid but not a exec pathname, and the attach command could
    figure out the pathname from the pid.  (In this case, we shouldn't
    ask the user whether the current target should be shut down --
-   we're supplying the exec pathname late for good reason.) */
+   we're supplying the exec pathname late for good reason.)
+   
+   ARGS is assumed to be the filename. */
 
 void
-exec_file_attach (args, from_tty)
-     char *args;
-     int from_tty;
+exec_file_attach (char *filename, int from_tty)
 {
-  char **argv;
-  char *filename;
-
   /* Remove any previous exec file.  */
   unpush_target (&exec_ops);
 
   /* Now open and digest the file the user requested, if any.  */
 
-  if (args)
+  if (!filename)
+    {
+      if (from_tty)
+        printf_unfiltered ("No executable file now.\n");
+    }
+  else
     {
       char *scratch_pathname;
       int scratch_chan;
 
-      /* Scan through the args and pick up the first non option arg
-         as the filename.  */
-
-      argv = buildargv (args);
-      if (argv == NULL)
-	nomem (0);
-
-      make_cleanup_freeargv (argv);
-
-      for (; (*argv != NULL) && (**argv == '-'); argv++)
-	{;
-	}
-      if (*argv == NULL)
-	error ("No executable file name was specified");
-
-      filename = tilde_expand (*argv);
-      make_cleanup (free, filename);
-
       scratch_chan = openp (getenv ("PATH"), 1, filename,
 		   write_files ? O_RDWR | O_BINARY : O_RDONLY | O_BINARY, 0,
 			    &scratch_pathname);
-#if defined(__GO32__) || defined(_WIN32)
+#if defined(__GO32__) || defined(_WIN32) || defined(__CYGWIN__)
       if (scratch_chan < 0)
 	{
 	  char *exename = alloca (strlen (filename) + 5);
@@ -228,7 +230,7 @@ exec_file_attach (args, from_tty)
          via the exec_bfd->name pointer, so we need to make another copy and
          leave exec_bfd as the new owner of the original copy. */
       scratch_pathname = xstrdup (scratch_pathname);
-      make_cleanup (free, scratch_pathname);
+      make_cleanup (xfree, scratch_pathname);
 
       if (!bfd_check_format (exec_bfd, bfd_object))
 	{
@@ -300,23 +302,47 @@ exec_file_attach (args, from_tty)
       if (exec_file_display_hook)
 	(*exec_file_display_hook) (filename);
     }
-  else if (from_tty)
-    printf_unfiltered ("No executable file now.\n");
 }
 
 /*  Process the first arg in ARGS as the new exec file.
 
    Note that we have to explicitly ignore additional args, since we can
    be called from file_command(), which also calls symbol_file_command()
-   which can take multiple args. */
+   which can take multiple args.
+   
+   If ARGS is NULL, we just want to close the exec file. */
 
-void
-exec_file_command (args, from_tty)
-     char *args;
-     int from_tty;
+static void
+exec_file_command (char *args, int from_tty)
 {
+  char **argv;
+  char *filename;
+  
   target_preopen (from_tty);
-  exec_file_attach (args, from_tty);
+
+  if (args)
+    {
+      /* Scan through the args and pick up the first non option arg
+         as the filename.  */
+
+      argv = buildargv (args);
+      if (argv == NULL)
+        nomem (0);
+
+      make_cleanup_freeargv (argv);
+
+      for (; (*argv != NULL) && (**argv == '-'); argv++)
+        {;
+        }
+      if (*argv == NULL)
+        error ("No executable file name was specified");
+
+      filename = tilde_expand (*argv);
+      make_cleanup (xfree, filename);
+      exec_file_attach (filename, from_tty);
+    }
+  else
+    exec_file_attach (NULL, from_tty);
 }
 
 /* Set both the exec file and the symbol file, in one command.  
@@ -324,9 +350,7 @@ exec_file_command (args, from_tty)
    command was added?  */
 
 static void
-file_command (arg, from_tty)
-     char *arg;
-     int from_tty;
+file_command (char *arg, int from_tty)
 {
   /* FIXME, if we lose on reading the symbol file, we should revert
      the exec file, but that's rough.  */
@@ -342,10 +366,7 @@ file_command (arg, from_tty)
    we cast it back to its proper type.  */
 
 static void
-add_to_section_table (abfd, asect, table_pp_char)
-     bfd *abfd;
-     sec_ptr asect;
-     PTR table_pp_char;
+add_to_section_table (bfd *abfd, sec_ptr asect, PTR table_pp_char)
 {
   struct section_table **table_pp = (struct section_table **) table_pp_char;
   flagword aflag;
@@ -366,29 +387,25 @@ add_to_section_table (abfd, asect, table_pp_char)
    Returns 0 if OK, 1 on error.  */
 
 int
-build_section_table (some_bfd, start, end)
-     bfd *some_bfd;
-     struct section_table **start, **end;
+build_section_table (bfd *some_bfd, struct section_table **start,
+		     struct section_table **end)
 {
   unsigned count;
 
   count = bfd_count_sections (some_bfd);
   if (*start)
-    free ((PTR) * start);
+    xfree (* start);
   *start = (struct section_table *) xmalloc (count * sizeof (**start));
   *end = *start;
   bfd_map_over_sections (some_bfd, add_to_section_table, (char *) end);
   if (*end > *start + count)
-    abort ();
+    internal_error (__FILE__, __LINE__, "failed internal consistency check");
   /* We could realloc the table, but it probably loses for most files.  */
   return 0;
 }
 
 static void
-bfdsec_to_vmap (abfd, sect, arg3)
-     bfd *abfd;
-     sec_ptr sect;
-     PTR arg3;
+bfdsec_to_vmap (bfd *abfd, sec_ptr sect, PTR arg3)
 {
   struct vmap_and_bfd *vmap_bfd = (struct vmap_and_bfd *) arg3;
   struct vmap *vp;
@@ -418,9 +435,7 @@ bfdsec_to_vmap (abfd, sect, arg3)
    Return the new vmap.  */
 
 struct vmap *
-map_vmap (abfd, arch)
-     bfd *abfd;
-     bfd *arch;
+map_vmap (bfd *abfd, bfd *arch)
 {
   struct vmap_and_bfd vmap_bfd;
   struct vmap *vp, **vpp;
@@ -463,21 +478,18 @@ map_vmap (abfd, arch)
    we just tail-call it with more arguments to select between them.  */
 
 int
-xfer_memory (memaddr, myaddr, len, write, target)
-     CORE_ADDR memaddr;
-     char *myaddr;
-     int len;
-     int write;
-     struct target_ops *target;
+xfer_memory (CORE_ADDR memaddr, char *myaddr, int len, int write,
+	     struct mem_attrib *attrib,
+	     struct target_ops *target)
 {
-  boolean res;
+  int res;
   struct section_table *p;
   CORE_ADDR nextsectaddr, memend;
-  boolean (*xfer_fn) PARAMS ((bfd *, sec_ptr, PTR, file_ptr, bfd_size_type));
-  asection *section;
+  int (*xfer_fn) (bfd *, sec_ptr, PTR, file_ptr, bfd_size_type);
+  asection *section = NULL;
 
   if (len <= 0)
-    abort ();
+    internal_error (__FILE__, __LINE__, "failed internal consistency check");
 
   if (overlay_debugging)
     {
@@ -490,75 +502,34 @@ xfer_memory (memaddr, myaddr, len, write, target)
   xfer_fn = write ? bfd_set_section_contents : bfd_get_section_contents;
   nextsectaddr = memend;
 
-#if 0				/* Stu's implementation */
-/* If a section has been specified, try to use it.  Note that we cannot use the
-   specified section directly.  This is because it usually comes from the
-   symbol file, which may be different from the exec or core file.  Instead, we
-   have to lookup the specified section by name in the bfd associated with
-   to_sections.  */
-
-  if (target_memory_bfd_section)
-    {
-      asection *s;
-      bfd *abfd;
-      asection *target_section;
-      bfd *target_bfd;
-
-      s = target_memory_bfd_section;
-      abfd = s->owner;
-
-      target_bfd = target->to_sections->bfd;
-      target_section = bfd_get_section_by_name (target_bfd, bfd_section_name (abfd, s));
-
-      if (target_section)
-	{
-	  bfd_vma sec_addr;
-	  bfd_size_type sec_size;
-
-	  sec_addr = bfd_section_vma (target_bfd, target_section);
-	  sec_size = target_section->_raw_size;
-
-	  /* Make sure the requested memory starts inside the section.  */
-
-	  if (memaddr >= sec_addr
-	      && memaddr < sec_addr + sec_size)
-	    {
-	      /* Cut back length in case request overflows the end of the section. */
-	      len = min (len, sec_addr + sec_size - memaddr);
-
-	      res = xfer_fn (target_bfd, target_section, myaddr, memaddr - sec_addr, len);
-
-	      return res ? len : 0;
-	    }
-	}
-    }
-#endif /* 0, Stu's implementation */
   for (p = target->to_sections; p < target->to_sections_end; p++)
     {
       if (overlay_debugging && section && p->the_bfd_section &&
 	  strcmp (section->name, p->the_bfd_section->name) != 0)
 	continue;		/* not the section we need */
       if (memaddr >= p->addr)
-	if (memend <= p->endaddr)
-	  {
-	    /* Entire transfer is within this section.  */
-	    res = xfer_fn (p->bfd, p->the_bfd_section, myaddr,
-			   memaddr - p->addr, len);
-	    return (res != 0) ? len : 0;
-	  }
-	else if (memaddr >= p->endaddr)
-	  {
-	    /* This section ends before the transfer starts.  */
-	    continue;
-	  }
-	else
-	  {
-	    /* This section overlaps the transfer.  Just do half.  */
-	    len = p->endaddr - memaddr;
-	    res = xfer_fn (p->bfd, p->the_bfd_section, myaddr,
-			   memaddr - p->addr, len);
-	    return (res != 0) ? len : 0;
-	  }
+        {
+	  if (memend <= p->endaddr)
+	    {
+	      /* Entire transfer is within this section.  */
+	      res = xfer_fn (p->bfd, p->the_bfd_section, myaddr,
+	  		     memaddr - p->addr, len);
+	      return (res != 0) ? len : 0;
+	    }
+	  else if (memaddr >= p->endaddr)
+	    {
+	      /* This section ends before the transfer starts.  */
+	      continue;
+	    }
+	  else
+	    {
+	      /* This section overlaps the transfer.  Just do half.  */
+	      len = p->endaddr - memaddr;
+	      res = xfer_fn (p->bfd, p->the_bfd_section, myaddr,
+	  		     memaddr - p->addr, len);
+	      return (res != 0) ? len : 0;
+	    }
+        }
       else
 	nextsectaddr = min (nextsectaddr, p->addr);
     }
@@ -571,11 +542,10 @@ xfer_memory (memaddr, myaddr, len, write, target)
 
 
 void
-print_section_info (t, abfd)
-     struct target_ops *t;
-     bfd *abfd;
+print_section_info (struct target_ops *t, bfd *abfd)
 {
   struct section_table *p;
+  char *fmt = TARGET_ADDR_BIT <= 32 ? "08l" : "016l";
 
   printf_filtered ("\t`%s', ", bfd_get_filename (abfd));
   wrap_here ("        ");
@@ -588,12 +558,11 @@ print_section_info (t, abfd)
     }
   for (p = t->to_sections; p < t->to_sections_end; p++)
     {
-      /* FIXME-32x64 need a print_address_numeric with field width */
-      printf_filtered ("\t%s", local_hex_string_custom ((unsigned long) p->addr, "08l"));
-      printf_filtered (" - %s", local_hex_string_custom ((unsigned long) p->endaddr, "08l"));
+      printf_filtered ("\t%s", local_hex_string_custom (p->addr, fmt));
+      printf_filtered (" - %s", local_hex_string_custom (p->endaddr, fmt));
       if (info_verbose)
 	printf_filtered (" @ %s",
-			 local_hex_string_custom ((unsigned long) p->the_bfd_section->filepos, "08l"));
+			 local_hex_string_custom (p->the_bfd_section->filepos, "08l"));
       printf_filtered (" is %s", bfd_section_name (p->bfd, p->the_bfd_section));
       if (p->bfd != abfd)
 	{
@@ -604,8 +573,7 @@ print_section_info (t, abfd)
 }
 
 static void
-exec_files_info (t)
-     struct target_ops *t;
+exec_files_info (struct target_ops *t)
 {
   print_section_info (t, exec_bfd);
 
@@ -639,10 +607,8 @@ exec_files_info (t)
    in the exec objfile.  */
 
 void
-exec_set_section_offsets (text_off, data_off, bss_off)
-     bfd_signed_vma text_off;
-     bfd_signed_vma data_off;
-     bfd_signed_vma bss_off;
+exec_set_section_offsets (bfd_signed_vma text_off, bfd_signed_vma data_off,
+			  bfd_signed_vma bss_off)
 {
   struct section_table *sect;
 
@@ -673,9 +639,7 @@ exec_set_section_offsets (text_off, data_off, bss_off)
 }
 
 static void
-set_section_command (args, from_tty)
-     char *args;
-     int from_tty;
+set_section_command (char *args, int from_tty)
 {
   struct section_table *p;
   char *secname;
@@ -719,41 +683,51 @@ set_section_command (args, from_tty)
    breakpoint_init_inferior).  */
 
 static int
-ignore (addr, contents)
-     CORE_ADDR addr;
-     char *contents;
+ignore (CORE_ADDR addr, char *contents)
 {
   return 0;
 }
 
+/* Find mapped memory. */
+
+extern void
+exec_set_find_memory_regions (int (*func) (int (*) (CORE_ADDR, 
+						    unsigned long, 
+						    int, int, int, 
+						    void *),
+					   void *))
+{
+  exec_ops.to_find_memory_regions = func;
+}
+
+static char *exec_make_note_section (bfd *, int *);
+
 /* Fill in the exec file target vector.  Very few entries need to be
    defined.  */
 
-void
-init_exec_ops ()
+static void
+init_exec_ops (void)
 {
   exec_ops.to_shortname = "exec";
   exec_ops.to_longname = "Local exec file";
   exec_ops.to_doc = "Use an executable file as a target.\n\
 Specify the filename of the executable file.";
-  exec_ops.to_open = exec_file_command;
+  exec_ops.to_open = exec_open;
   exec_ops.to_close = exec_close;
   exec_ops.to_attach = find_default_attach;
-  exec_ops.to_require_attach = find_default_require_attach;
-  exec_ops.to_require_detach = find_default_require_detach;
   exec_ops.to_xfer_memory = xfer_memory;
   exec_ops.to_files_info = exec_files_info;
   exec_ops.to_insert_breakpoint = ignore;
   exec_ops.to_remove_breakpoint = ignore;
   exec_ops.to_create_inferior = find_default_create_inferior;
-  exec_ops.to_clone_and_follow_inferior = find_default_clone_and_follow_inferior;
   exec_ops.to_stratum = file_stratum;
   exec_ops.to_has_memory = 1;
+  exec_ops.to_make_corefile_notes = exec_make_note_section;
   exec_ops.to_magic = OPS_MAGIC;
 }
 
 void
-_initialize_exec ()
+_initialize_exec (void)
 {
   struct cmd_list_element *c;
 
@@ -768,7 +742,7 @@ and it is the program executed when you use the `run' command.\n\
 If FILE cannot be found as specified, your execution directory path\n\
 ($PATH) is searched for a command of that name.\n\
 No arg means to have no executable file and no symbols.", &cmdlist);
-      c->completer = filename_completer;
+      set_cmd_completer (c, filename_completer);
     }
 
   c = add_cmd ("exec-file", class_files, exec_file_command,
@@ -776,7 +750,7 @@ No arg means to have no executable file and no symbols.", &cmdlist);
 If FILE cannot be found as specified, your execution directory path\n\
 is searched for a command of that name.\n\
 No arg means have no executable file.", &cmdlist);
-  c->completer = filename_completer;
+  set_cmd_completer (c, filename_completer);
 
   add_com ("section", class_files, set_section_command,
 	   "Change the base address of section SECTION of the exec file to ADDR.\n\
@@ -792,4 +766,10 @@ file itself are wrong.  Each section must be changed separately.  The\n\
      &showlist);
 
   add_target (&exec_ops);
+}
+
+static char *
+exec_make_note_section (bfd *obfd, int *note_size)
+{
+  error ("Can't create a corefile");
 }

@@ -733,129 +733,188 @@ AC_SUBST(ITKHDIR)
 #AC_SUBST(ITKLIB)
 ])
 
-# check for Tix headers. 
 
-AC_DEFUN(CY_AC_PATH_TIXH, [
-AC_MSG_CHECKING(for Tix private headers. srcdir=${srcdir})
-if test x"${ac_cv_c_tixh}" = x ; then
-  for i in ${srcdir}/../tix ${srcdir}/../../tix ${srcdir}/../../../tix ; do
-    if test -f $i/generic/tix.h ; then
-      ac_cv_c_tixh=`(cd $i/generic; pwd)`
-      break
-    fi
-  done
-fi
-if test x"${ac_cv_c_tixh}" = x ; then
-  TIXHDIR="# no Tix private headers found"
-  AC_MSG_ERROR([Can't find Tix private headers])
-fi
-if test x"${ac_cv_c_tixh}" != x ; then
-     TIXHDIR="-I${ac_cv_c_tixh}"
-fi
-AC_SUBST(TIXHDIR)
+dnl sinclude(../gettext.m4) already included by bfd/acinclude.m4
+dnl The lines below arrange for aclocal not to bring gettext.m4's
+dnl CY_GNU_GETTEXT into aclocal.m4.
+ifelse(yes,no,[
+AC_DEFUN([CY_GNU_GETTEXT],)
 ])
 
-AC_DEFUN(CY_AC_PATH_TIXCONFIG, [
-#
-# Ok, lets find the tix configuration
-# First, look for one uninstalled.  
-# the alternative search directory is invoked by --with-itkconfig
-#
+## ----------------------------------------- ##
+## ANSIfy the C compiler whenever possible.  ##
+## From Franc,ois Pinard                     ##
+## ----------------------------------------- ##
 
-if test x"${no_tix}" = x ; then
-  # we reset no_tix in case something fails here
-  no_tix=true
-  AC_ARG_WITH(tixconfig, [  --with-tixconfig        Directory containing tix configuration (tixConfig.sh)],
-         with_tixconfig=${withval})
-  AC_MSG_CHECKING([for Tix configuration])
-  AC_CACHE_VAL(ac_cv_c_tixconfig,[
+# Copyright 1996, 1997, 1999, 2000, 2001 Free Software Foundation, Inc.
 
-  # First check to see if --with-tixconfig was specified.
-  if test x"${with_tixconfig}" != x ; then
-    if test -f "${with_tixconfig}/tixConfig.sh" ; then
-      ac_cv_c_tixconfig=`(cd ${with_tixconfig}; pwd)`
-    else
-      AC_MSG_ERROR([${with_tixconfig} directory doesn't contain tixConfig.sh])
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2, or (at your option)
+# any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
+# 02111-1307, USA.
+
+# serial 1
+
+# @defmac AC_PROG_CC_STDC
+# @maindex PROG_CC_STDC
+# @ovindex CC
+# If the C compiler in not in ANSI C mode by default, try to add an option
+# to output variable @code{CC} to make it so.  This macro tries various
+# options that select ANSI C on some system or another.  It considers the
+# compiler to be in ANSI C mode if it handles function prototypes correctly.
+#
+# If you use this macro, you should check after calling it whether the C
+# compiler has been set to accept ANSI C; if not, the shell variable
+# @code{am_cv_prog_cc_stdc} is set to @samp{no}.  If you wrote your source
+# code in ANSI C, you can make an un-ANSIfied copy of it by using the
+# program @code{ansi2knr}, which comes with Ghostscript.
+# @end defmac
+
+AC_DEFUN([AM_PROG_CC_STDC],
+[AC_REQUIRE([AC_PROG_CC])
+AC_BEFORE([$0], [AC_C_INLINE])
+AC_BEFORE([$0], [AC_C_CONST])
+dnl Force this before AC_PROG_CPP.  Some cpp's, eg on HPUX, require
+dnl a magic option to avoid problems with ANSI preprocessor commands
+dnl like #elif.
+dnl FIXME: can't do this because then AC_AIX won't work due to a
+dnl circular dependency.
+dnl AC_BEFORE([$0], [AC_PROG_CPP])
+AC_MSG_CHECKING([for ${CC-cc} option to accept ANSI C])
+AC_CACHE_VAL(am_cv_prog_cc_stdc,
+[am_cv_prog_cc_stdc=no
+ac_save_CC="$CC"
+# Don't try gcc -ansi; that turns off useful extensions and
+# breaks some systems' header files.
+# AIX			-qlanglvl=ansi
+# Ultrix and OSF/1	-std1
+# HP-UX 10.20 and later	-Ae
+# HP-UX older versions	-Aa -D_HPUX_SOURCE
+# SVR4			-Xc -D__EXTENSIONS__
+for ac_arg in "" -qlanglvl=ansi -std1 -Ae "-Aa -D_HPUX_SOURCE" "-Xc -D__EXTENSIONS__"
+do
+  CC="$ac_save_CC $ac_arg"
+  AC_TRY_COMPILE(
+[#include <stdarg.h>
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+/* Most of the following tests are stolen from RCS 5.7's src/conf.sh.  */
+struct buf { int x; };
+FILE * (*rcsopen) (struct buf *, struct stat *, int);
+static char *e (p, i)
+     char **p;
+     int i;
+{
+  return p[i];
+}
+static char *f (char * (*g) (char **, int), char **p, ...)
+{
+  char *s;
+  va_list v;
+  va_start (v,p);
+  s = g (p, va_arg (v,int));
+  va_end (v);
+  return s;
+}
+int test (int i, double x);
+struct s1 {int (*f) (int a);};
+struct s2 {int (*f) (double a);};
+int pairnames (int, char **, FILE *(*)(struct buf *, struct stat *, int), int, int);
+int argc;
+char **argv;
+], [
+return f (e, argv, 0) != argv[0]  ||  f (e, argv, 1) != argv[1];
+],
+[am_cv_prog_cc_stdc="$ac_arg"; break])
+done
+CC="$ac_save_CC"
+])
+if test -z "$am_cv_prog_cc_stdc"; then
+  AC_MSG_RESULT([none needed])
+else
+  AC_MSG_RESULT([$am_cv_prog_cc_stdc])
+fi
+case "x$am_cv_prog_cc_stdc" in
+  x|xno) ;;
+  *) CC="$CC $am_cv_prog_cc_stdc" ;;
+esac
+])
+
+dnl From Bruno Haible.
+
+AC_DEFUN([AM_ICONV],
+[
+  dnl Some systems have iconv in libc, some have it in libiconv (OSF/1 and
+  dnl those with the standalone portable GNU libiconv installed).
+
+  AC_ARG_WITH([libiconv-prefix],
+[  --with-libiconv-prefix=DIR  search for libiconv in DIR/include and DIR/lib], [
+    for dir in `echo "$withval" | tr : ' '`; do
+      if test -d $dir/include; then CPPFLAGS="$CPPFLAGS -I$dir/include"; fi
+      if test -d $dir/lib; then LDFLAGS="$LDFLAGS -L$dir/lib"; fi
+    done
+   ])
+
+  AC_CACHE_CHECK(for iconv, am_cv_func_iconv, [
+    am_cv_func_iconv="no, consider installing GNU libiconv"
+    am_cv_lib_iconv=no
+    AC_TRY_LINK([#include <stdlib.h>
+#include <iconv.h>],
+      [iconv_t cd = iconv_open("","");
+       iconv(cd,NULL,NULL,NULL,NULL);
+       iconv_close(cd);],
+      am_cv_func_iconv=yes)
+    if test "$am_cv_func_iconv" != yes; then
+      am_save_LIBS="$LIBS"
+      LIBS="$LIBS -liconv"
+      AC_TRY_LINK([#include <stdlib.h>
+#include <iconv.h>],
+        [iconv_t cd = iconv_open("","");
+         iconv(cd,NULL,NULL,NULL,NULL);
+         iconv_close(cd);],
+        am_cv_lib_iconv=yes
+        am_cv_func_iconv=yes)
+      LIBS="$am_save_LIBS"
     fi
-  fi
-
-  # then check for a private Tix library
-  if test x"${ac_cv_c_tixconfig}" = x ; then
-    for i in \
-		../tix \
-		`ls -dr ../tix 2>/dev/null` \
-		../../tix \
-		`ls -dr ../../tix 2>/dev/null` \
-		../../../tix \
-		`ls -dr ../../../tix 2>/dev/null` ; do
-      echo "**** Looking at $i - with ${configdir}"
-      if test -f "$i/tixConfig.sh" ; then
-        ac_cv_c_tixconfig=`(cd $i; pwd)`
-	break
-      fi
-    done
-  fi
-  # check in a few common install locations
-  if test x"${ac_cv_c_tixconfig}" = x ; then
-    for i in `ls -d ${prefix}/lib /usr/local/lib 2>/dev/null` ; do
-      echo "**** Looking at $i"
-      if test -f "$i/tixConfig.sh" ; then
-        ac_cv_c_tixconfig=`(cd $i; pwd)`
-	break
-      fi
-    done
-  fi
-  # check in a few other private locations
-  echo "**** Other private locations"
-  if test x"${ac_cv_c_tixconfig}" = x ; then
-    for i in \
-		${srcdir}/../tix \
-		`ls -dr ${srcdir}/../tix 2>/dev/null` ; do
-      echo "**** Looking at $i - with ${configdir}"
-      if test -f "$i/${configdir}/tixConfig.sh" ; then
-        ac_cv_c_tixconfig=`(cd $i/${configdir}; pwd)`
-	break
-      fi
-    done
-  fi
   ])
-  if test x"${ac_cv_c_tixconfig}" = x ; then
-    TIXCONFIG="# no Tix configs found"
-    AC_MSG_WARN(Can't find Tix configuration definitions)
-  else
-    no_tix=
-    TIXCONFIG=${ac_cv_c_tixconfig}/tixConfig.sh
-    AC_MSG_RESULT(found $TIXCONFIG)
+  if test "$am_cv_func_iconv" = yes; then
+    AC_DEFINE(HAVE_ICONV, 1, [Define if you have the iconv() function.])
+    AC_MSG_CHECKING([for iconv declaration])
+    AC_CACHE_VAL(am_cv_proto_iconv, [
+      AC_TRY_COMPILE([
+#include <stdlib.h>
+#include <iconv.h>
+extern
+#ifdef __cplusplus
+"C"
+#endif
+#if defined(__STDC__) || defined(__cplusplus)
+size_t iconv (iconv_t cd, char * *inbuf, size_t *inbytesleft, char * *outbuf, size_t *outbytesleft);
+#else
+size_t iconv();
+#endif
+], [], am_cv_proto_iconv_arg1="", am_cv_proto_iconv_arg1="const")
+      am_cv_proto_iconv="extern size_t iconv (iconv_t cd, $am_cv_proto_iconv_arg1 char * *inbuf, size_t *inbytesleft, char * *outbuf, size_t *outbytesleft);"])
+    am_cv_proto_iconv=`echo "[$]am_cv_proto_iconv" | tr -s ' ' | sed -e 's/( /(/'`
+    AC_MSG_RESULT([$]{ac_t:-
+         }[$]am_cv_proto_iconv)
+    AC_DEFINE_UNQUOTED(ICONV_CONST, $am_cv_proto_iconv_arg1,
+      [Define as const if the declaration of iconv() needs const.])
   fi
-fi
-
-])
-
-# Defined as a separate macro so we don't have to cache the values
-# from PATH_TIXCONFIG (because this can also be cached).
-AC_DEFUN(CY_AC_LOAD_TIXCONFIG, [
-    if test -f "$TIXCONFIG" ; then
-      . $TIXCONFIG
-    fi
-
-    AC_SUBST(TIX_VERSION)
-dnl not actually used, don't export to save symbols
-dnl    AC_SUBST(TIX_MAJOR_VERSION)
-dnl    AC_SUBST(TIX_MINOR_VERSION)
-dnl    AC_SUBST(TIX_DEFS)
-
-dnl not used, don't export to save symbols
-dnl    dnl AC_SUBST(TIX_LIB_FILE)
-
-dnl not used outside of configure
-dnl    AC_SUBST(TIX_LIBS)
-dnl not used, don't export to save symbols
-dnl    AC_SUBST(TIX_PREFIX)
-
-dnl not used, don't export to save symbols
-dnl    AC_SUBST(TIX_EXEC_PREFIX)
-
-dnl    AC_SUBST(TIX_BUILD_INCLUDES)
-    AC_SUBST(TIX_BUILD_LIB_SPEC)
-dnl    AC_SUBST(TIX_LIB_SPEC)
+  LIBICONV=
+  if test "$am_cv_lib_iconv" = yes; then
+    LIBICONV="-liconv"
+  fi
+  AC_SUBST(LIBICONV)
 ])
