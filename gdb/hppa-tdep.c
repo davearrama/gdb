@@ -1,5 +1,7 @@
 /* Target-dependent code for the HP PA architecture, for GDB.
-   Copyright 1986, 1987, 1989-1996, 1999-2000 Free Software Foundation, Inc.
+
+   Copyright 1986, 1987, 1989, 1990, 1991, 1992, 1993, 1994, 1995,
+   1996, 1998, 1999, 2000, 2001, 2002, 2003 Free Software Foundation, Inc.
 
    Contributed by the Center for Software Science at the
    University of Utah (pa-gdb-bugs@cs.utah.edu).
@@ -26,9 +28,15 @@
 #include "bfd.h"
 #include "inferior.h"
 #include "value.h"
-
+#include "regcache.h"
+#include "completer.h"
+#include "language.h"
+#include "osabi.h"
+#include "gdb_assert.h"
+#include "infttrace.h"
 /* For argument passing to the inferior */
 #include "symtab.h"
+#include "infcall.h"
 
 #ifdef USG
 #include <sys/types.h>
@@ -49,7 +57,7 @@
 /*#include <sys/user.h>         After a.out.h  */
 #include <sys/file.h>
 #include "gdb_stat.h"
-#include "wait.h"
+#include "gdb_wait.h"
 
 #include "gdbcore.h"
 #include "gdbcmd.h"
@@ -57,75 +65,136 @@
 #include "symfile.h"
 #include "objfiles.h"
 
+/* Some local constants.  */
+static const int hppa_num_regs = 128;
+
+/* Get at various relevent fields of an instruction word. */
+#define MASK_5 0x1f
+#define MASK_11 0x7ff
+#define MASK_14 0x3fff
+#define MASK_21 0x1fffff
+
+/* Define offsets into the call dummy for the target function address.
+   See comments related to CALL_DUMMY for more info.  */
+#define FUNC_LDIL_OFFSET (INSTRUCTION_SIZE * 9)
+#define FUNC_LDO_OFFSET (INSTRUCTION_SIZE * 10)
+
+/* Define offsets into the call dummy for the _sr4export address.
+   See comments related to CALL_DUMMY for more info.  */
+#define SR4EXPORT_LDIL_OFFSET (INSTRUCTION_SIZE * 12)
+#define SR4EXPORT_LDO_OFFSET (INSTRUCTION_SIZE * 13)
+
 /* To support detection of the pseudo-initial frame
    that threads have. */
 #define THREAD_INITIAL_FRAME_SYMBOL  "__pthread_exit"
 #define THREAD_INITIAL_FRAME_SYM_LEN  sizeof(THREAD_INITIAL_FRAME_SYMBOL)
 
-static int extract_5_load PARAMS ((unsigned int));
+/* Sizes (in bytes) of the native unwind entries.  */
+#define UNWIND_ENTRY_SIZE 16
+#define STUB_UNWIND_ENTRY_SIZE 8
 
-static unsigned extract_5R_store PARAMS ((unsigned int));
+static int get_field (unsigned word, int from, int to);
 
-static unsigned extract_5r_store PARAMS ((unsigned int));
+static int extract_5_load (unsigned int);
 
-static void find_dummy_frame_regs PARAMS ((struct frame_info *,
-					   struct frame_saved_regs *));
+static unsigned extract_5R_store (unsigned int);
 
-static int find_proc_framesize PARAMS ((CORE_ADDR));
+static unsigned extract_5r_store (unsigned int);
 
-static int find_return_regnum PARAMS ((CORE_ADDR));
+static void find_dummy_frame_regs (struct frame_info *, CORE_ADDR *);
 
-struct unwind_table_entry *find_unwind_entry PARAMS ((CORE_ADDR));
+static int find_proc_framesize (CORE_ADDR);
 
-static int extract_17 PARAMS ((unsigned int));
+static int find_return_regnum (CORE_ADDR);
 
-static unsigned deposit_21 PARAMS ((unsigned int, unsigned int));
+struct unwind_table_entry *find_unwind_entry (CORE_ADDR);
 
-static int extract_21 PARAMS ((unsigned));
+static int extract_17 (unsigned int);
 
-static unsigned deposit_14 PARAMS ((int, unsigned int));
+static unsigned deposit_21 (unsigned int, unsigned int);
 
-static int extract_14 PARAMS ((unsigned));
+static int extract_21 (unsigned);
 
-static void unwind_command PARAMS ((char *, int));
+static unsigned deposit_14 (int, unsigned int);
 
-static int low_sign_extend PARAMS ((unsigned int, unsigned int));
+static int extract_14 (unsigned);
 
-static int sign_extend PARAMS ((unsigned int, unsigned int));
+static void unwind_command (char *, int);
 
-static int restore_pc_queue PARAMS ((struct frame_saved_regs *));
+static int low_sign_extend (unsigned int, unsigned int);
 
-static int hppa_alignof PARAMS ((struct type *));
+static int sign_extend (unsigned int, unsigned int);
 
-/* To support multi-threading and stepping. */
-int hppa_prepare_to_proceed PARAMS (());
+static int restore_pc_queue (CORE_ADDR *);
 
-static int prologue_inst_adjust_sp PARAMS ((unsigned long));
+static int hppa_alignof (struct type *);
 
-static int is_branch PARAMS ((unsigned long));
+static int prologue_inst_adjust_sp (unsigned long);
 
-static int inst_saves_gr PARAMS ((unsigned long));
+static int is_branch (unsigned long);
 
-static int inst_saves_fr PARAMS ((unsigned long));
+static int inst_saves_gr (unsigned long);
 
-static int pc_in_interrupt_handler PARAMS ((CORE_ADDR));
+static int inst_saves_fr (unsigned long);
 
-static int pc_in_linker_stub PARAMS ((CORE_ADDR));
+static int pc_in_interrupt_handler (CORE_ADDR);
 
-static int compare_unwind_entries PARAMS ((const void *, const void *));
+static int pc_in_linker_stub (CORE_ADDR);
 
-static void read_unwind_info PARAMS ((struct objfile *));
+static int compare_unwind_entries (const void *, const void *);
 
-static void internalize_unwinds PARAMS ((struct objfile *,
-					 struct unwind_table_entry *,
-					 asection *, unsigned int,
-					 unsigned int, CORE_ADDR));
-static void pa_print_registers PARAMS ((char *, int, int));
+static void read_unwind_info (struct objfile *);
+
+static void internalize_unwinds (struct objfile *,
+				 struct unwind_table_entry *,
+				 asection *, unsigned int,
+				 unsigned int, CORE_ADDR);
+static void pa_print_registers (char *, int, int);
 static void pa_strcat_registers (char *, int, int, struct ui_file *);
-static void pa_register_look_aside PARAMS ((char *, int, long *));
-static void pa_print_fp_reg PARAMS ((int));
+static void pa_register_look_aside (char *, int, long *);
+static void pa_print_fp_reg (int);
 static void pa_strcat_fp_reg (int, struct ui_file *, enum precision_type);
-static void record_text_segment_lowaddr PARAMS ((bfd *, asection *, void *));
+static void record_text_segment_lowaddr (bfd *, asection *, void *);
+/* FIXME: brobecker 2002-11-07: We will likely be able to make the
+   following functions static, once we hppa is partially multiarched.  */
+int hppa_reg_struct_has_addr (int gcc_p, struct type *type);
+CORE_ADDR hppa_skip_prologue (CORE_ADDR pc);
+CORE_ADDR hppa_skip_trampoline_code (CORE_ADDR pc);
+int hppa_in_solib_call_trampoline (CORE_ADDR pc, char *name);
+int hppa_in_solib_return_trampoline (CORE_ADDR pc, char *name);
+CORE_ADDR hppa_saved_pc_after_call (struct frame_info *frame);
+int hppa_inner_than (CORE_ADDR lhs, CORE_ADDR rhs);
+CORE_ADDR hppa_stack_align (CORE_ADDR sp);
+int hppa_pc_requires_run_before_use (CORE_ADDR pc);
+int hppa_instruction_nullified (void);
+int hppa_register_raw_size (int reg_nr);
+int hppa_register_byte (int reg_nr);
+struct type * hppa_register_virtual_type (int reg_nr);
+void hppa_store_struct_return (CORE_ADDR addr, CORE_ADDR sp);
+void hppa_extract_return_value (struct type *type, char *regbuf, char *valbuf);
+int hppa_use_struct_convention (int gcc_p, struct type *type);
+void hppa_store_return_value (struct type *type, char *valbuf);
+CORE_ADDR hppa_extract_struct_value_address (char *regbuf);
+int hppa_cannot_store_register (int regnum);
+void hppa_init_extra_frame_info (int fromleaf, struct frame_info *frame);
+CORE_ADDR hppa_frame_chain (struct frame_info *frame);
+int hppa_frame_chain_valid (CORE_ADDR chain, struct frame_info *thisframe);
+int hppa_frameless_function_invocation (struct frame_info *frame);
+CORE_ADDR hppa_frame_saved_pc (struct frame_info *frame);
+CORE_ADDR hppa_frame_args_address (struct frame_info *fi);
+CORE_ADDR hppa_frame_locals_address (struct frame_info *fi);
+int hppa_frame_num_args (struct frame_info *frame);
+void hppa_push_dummy_frame (void);
+void hppa_pop_frame (void);
+CORE_ADDR hppa_fix_call_dummy (char *dummy, CORE_ADDR pc, CORE_ADDR fun,
+                               int nargs, struct value **args,
+                               struct type *type, int gcc_p);
+CORE_ADDR hppa_push_arguments (int nargs, struct value **args, CORE_ADDR sp,
+		               int struct_return, CORE_ADDR struct_addr);
+CORE_ADDR hppa_smash_text_address (CORE_ADDR addr);
+CORE_ADDR hppa_target_read_pc (ptid_t ptid);
+void hppa_target_write_pc (CORE_ADDR v, ptid_t ptid);
+CORE_ADDR hppa_target_read_fp (void);
 
 typedef struct
   {
@@ -135,7 +204,7 @@ typedef struct
   }
 args_for_find_stub;
 
-static int cover_find_stub_with_shl_get (PTR);
+static int cover_find_stub_with_shl_get (void *);
 
 static int is_pa_2 = 0;		/* False */
 
@@ -145,17 +214,12 @@ extern int hp_som_som_object_present;
 /* In breakpoint.c */
 extern int exception_catchpoints_are_fragile;
 
-/* This is defined in valops.c. */
-extern value_ptr
-  find_function_in_inferior PARAMS ((char *));
-
 /* Should call_function allocate stack space for a struct return?  */
+
 int
-hppa_use_struct_convention (gcc_p, type)
-     int gcc_p;
-     struct type *type;
+hppa_use_struct_convention (int gcc_p, struct type *type)
 {
-  return (TYPE_LENGTH (type) > 2 * REGISTER_SIZE);
+  return (TYPE_LENGTH (type) > 2 * DEPRECATED_REGISTER_SIZE);
 }
 
 
@@ -166,8 +230,7 @@ hppa_use_struct_convention (gcc_p, type)
    value. */
 
 static int
-sign_extend (val, bits)
-     unsigned val, bits;
+sign_extend (unsigned val, unsigned bits)
 {
   return (int) (val >> (bits - 1) ? (-1 << bits) | val : val);
 }
@@ -175,17 +238,24 @@ sign_extend (val, bits)
 /* For many immediate values the sign bit is the low bit! */
 
 static int
-low_sign_extend (val, bits)
-     unsigned val, bits;
+low_sign_extend (unsigned val, unsigned bits)
 {
   return (int) ((val & 0x1 ? (-1 << (bits - 1)) : 0) | val >> 1);
+}
+
+/* Extract the bits at positions between FROM and TO, using HP's numbering
+   (MSB = 0). */
+
+static int
+get_field (unsigned word, int from, int to)
+{
+  return ((word) >> (31 - (to)) & ((1 << ((to) - (from) + 1)) - 1));
 }
 
 /* extract the immediate field from a ld{bhw}s instruction */
 
 static int
-extract_5_load (word)
-     unsigned word;
+extract_5_load (unsigned word)
 {
   return low_sign_extend (word >> 16 & MASK_5, 5);
 }
@@ -193,8 +263,7 @@ extract_5_load (word)
 /* extract the immediate field from a break instruction */
 
 static unsigned
-extract_5r_store (word)
-     unsigned word;
+extract_5r_store (unsigned word)
 {
   return (word & MASK_5);
 }
@@ -202,8 +271,7 @@ extract_5r_store (word)
 /* extract the immediate field from a {sr}sm instruction */
 
 static unsigned
-extract_5R_store (word)
-     unsigned word;
+extract_5R_store (unsigned word)
 {
   return (word >> 16 & MASK_5);
 }
@@ -211,8 +279,7 @@ extract_5R_store (word)
 /* extract a 14 bit immediate field */
 
 static int
-extract_14 (word)
-     unsigned word;
+extract_14 (unsigned word)
 {
   return low_sign_extend (word & MASK_14, 14);
 }
@@ -220,9 +287,7 @@ extract_14 (word)
 /* deposit a 14 bit constant in a word */
 
 static unsigned
-deposit_14 (opnd, word)
-     int opnd;
-     unsigned word;
+deposit_14 (int opnd, unsigned word)
 {
   unsigned sign = (opnd < 0 ? 1 : 0);
 
@@ -232,22 +297,21 @@ deposit_14 (opnd, word)
 /* extract a 21 bit constant */
 
 static int
-extract_21 (word)
-     unsigned word;
+extract_21 (unsigned word)
 {
   int val;
 
   word &= MASK_21;
   word <<= 11;
-  val = GET_FIELD (word, 20, 20);
+  val = get_field (word, 20, 20);
   val <<= 11;
-  val |= GET_FIELD (word, 9, 19);
+  val |= get_field (word, 9, 19);
   val <<= 2;
-  val |= GET_FIELD (word, 5, 6);
+  val |= get_field (word, 5, 6);
   val <<= 5;
-  val |= GET_FIELD (word, 0, 4);
+  val |= get_field (word, 0, 4);
   val <<= 2;
-  val |= GET_FIELD (word, 7, 8);
+  val |= get_field (word, 7, 8);
   return sign_extend (val, 21) << 11;
 }
 
@@ -256,20 +320,19 @@ extract_21 (word)
    the low 21 bits of opnd are relevant */
 
 static unsigned
-deposit_21 (opnd, word)
-     unsigned opnd, word;
+deposit_21 (unsigned opnd, unsigned word)
 {
   unsigned val = 0;
 
-  val |= GET_FIELD (opnd, 11 + 14, 11 + 18);
+  val |= get_field (opnd, 11 + 14, 11 + 18);
   val <<= 2;
-  val |= GET_FIELD (opnd, 11 + 12, 11 + 13);
+  val |= get_field (opnd, 11 + 12, 11 + 13);
   val <<= 2;
-  val |= GET_FIELD (opnd, 11 + 19, 11 + 20);
+  val |= get_field (opnd, 11 + 19, 11 + 20);
   val <<= 11;
-  val |= GET_FIELD (opnd, 11 + 1, 11 + 11);
+  val |= get_field (opnd, 11 + 1, 11 + 11);
   val <<= 1;
-  val |= GET_FIELD (opnd, 11 + 0, 11 + 0);
+  val |= get_field (opnd, 11 + 0, 11 + 0);
   return word | val;
 }
 
@@ -277,12 +340,11 @@ deposit_21 (opnd, word)
    19 bit signed value. */
 
 static int
-extract_17 (word)
-     unsigned word;
+extract_17 (unsigned word)
 {
-  return sign_extend (GET_FIELD (word, 19, 28) |
-		      GET_FIELD (word, 29, 29) << 10 |
-		      GET_FIELD (word, 11, 15) << 11 |
+  return sign_extend (get_field (word, 19, 28) |
+		      get_field (word, 29, 29) << 10 |
+		      get_field (word, 11, 15) << 11 |
 		      (word & 0x1) << 16, 17) << 2;
 }
 
@@ -292,9 +354,7 @@ extract_17 (word)
    larger than the first, and zero if they are equal.  */
 
 static int
-compare_unwind_entries (arg1, arg2)
-     const void *arg1;
-     const void *arg2;
+compare_unwind_entries (const void *arg1, const void *arg2)
 {
   const struct unwind_table_entry *a = arg1;
   const struct unwind_table_entry *b = arg2;
@@ -310,24 +370,18 @@ compare_unwind_entries (arg1, arg2)
 static CORE_ADDR low_text_segment_address;
 
 static void
-record_text_segment_lowaddr (abfd, section, ignored)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     asection *section;
-     PTR ignored ATTRIBUTE_UNUSED;
+record_text_segment_lowaddr (bfd *abfd, asection *section, void *ignored)
 {
-  if ((section->flags & (SEC_ALLOC | SEC_LOAD | SEC_READONLY)
+  if (((section->flags & (SEC_ALLOC | SEC_LOAD | SEC_READONLY))
        == (SEC_ALLOC | SEC_LOAD | SEC_READONLY))
       && section->vma < low_text_segment_address)
     low_text_segment_address = section->vma;
 }
 
 static void
-internalize_unwinds (objfile, table, section, entries, size, text_offset)
-     struct objfile *objfile;
-     struct unwind_table_entry *table;
-     asection *section;
-     unsigned int entries, size;
-     CORE_ADDR text_offset;
+internalize_unwinds (struct objfile *objfile, struct unwind_table_entry *table,
+		     asection *section, unsigned int entries, unsigned int size,
+		     CORE_ADDR text_offset)
 {
   /* We will read the unwind entries into temporary memory, then
      fill in the actual unwind table.  */
@@ -348,7 +402,7 @@ internalize_unwinds (objfile, table, section, entries, size, text_offset)
       if (TARGET_PTR_BIT == 64 && text_offset == 0)
 	{
 	  bfd_map_over_sections (objfile->obfd,
-				 record_text_segment_lowaddr, (PTR) NULL);
+				 record_text_segment_lowaddr, NULL);
 
 	  /* ?!? Mask off some low bits.  Should this instead subtract
 	     out the lowest section's filepos or something like that?
@@ -419,8 +473,7 @@ internalize_unwinds (objfile, table, section, entries, size, text_offset)
    gets freed when the objfile is destroyed.  */
 
 static void
-read_unwind_info (objfile)
-     struct objfile *objfile;
+read_unwind_info (struct objfile *objfile)
 {
   asection *unwind_sec, *stub_unwind_sec;
   unsigned unwind_size, stub_unwind_size, total_size;
@@ -550,7 +603,7 @@ read_unwind_info (objfile)
       obj_private->so_info = NULL;
       obj_private->dp = 0;
 
-      objfile->obj_private = (PTR) obj_private;
+      objfile->obj_private = obj_private;
     }
   obj_private = (obj_private_data_t *) objfile->obj_private;
   obj_private->unwind_info = ui;
@@ -562,8 +615,7 @@ read_unwind_info (objfile)
    search of the unwind tables, we depend upon them to be sorted.  */
 
 struct unwind_table_entry *
-find_unwind_entry (pc)
-     CORE_ADDR pc;
+find_unwind_entry (CORE_ADDR pc)
 {
   int first, middle, last;
   struct objfile *objfile;
@@ -618,6 +670,96 @@ find_unwind_entry (pc)
   return NULL;
 }
 
+const unsigned char *
+hppa_breakpoint_from_pc (CORE_ADDR *pc, int *len)
+{
+  static const char breakpoint[] = {0x00, 0x01, 0x00, 0x04};
+  (*len) = sizeof (breakpoint);
+  return breakpoint;
+}
+
+/* Return the name of a register.  */
+
+const char *
+hppa_register_name (int i)
+{
+  static char *names[] = {
+    "flags",  "r1",      "rp",     "r3",
+    "r4",     "r5",      "r6",     "r7",
+    "r8",     "r9",      "r10",    "r11",
+    "r12",    "r13",     "r14",    "r15",
+    "r16",    "r17",     "r18",    "r19",
+    "r20",    "r21",     "r22",    "r23",
+    "r24",    "r25",     "r26",    "dp",
+    "ret0",   "ret1",    "sp",     "r31",
+    "sar",    "pcoqh",   "pcsqh",  "pcoqt",
+    "pcsqt",  "eiem",    "iir",    "isr",
+    "ior",    "ipsw",    "goto",   "sr4",
+    "sr0",    "sr1",     "sr2",    "sr3",
+    "sr5",    "sr6",     "sr7",    "cr0",
+    "cr8",    "cr9",     "ccr",    "cr12",
+    "cr13",   "cr24",    "cr25",   "cr26",
+    "mpsfu_high","mpsfu_low","mpsfu_ovflo","pad",
+    "fpsr",    "fpe1",   "fpe2",   "fpe3",
+    "fpe4",   "fpe5",    "fpe6",   "fpe7",
+    "fr4",     "fr4R",   "fr5",    "fr5R",
+    "fr6",    "fr6R",    "fr7",    "fr7R",
+    "fr8",     "fr8R",   "fr9",    "fr9R",
+    "fr10",   "fr10R",   "fr11",   "fr11R",
+    "fr12",    "fr12R",  "fr13",   "fr13R",
+    "fr14",   "fr14R",   "fr15",   "fr15R",
+    "fr16",    "fr16R",  "fr17",   "fr17R",
+    "fr18",   "fr18R",   "fr19",   "fr19R",
+    "fr20",    "fr20R",  "fr21",   "fr21R",
+    "fr22",   "fr22R",   "fr23",   "fr23R",
+    "fr24",    "fr24R",  "fr25",   "fr25R",
+    "fr26",   "fr26R",   "fr27",   "fr27R",
+    "fr28",    "fr28R",  "fr29",   "fr29R",
+    "fr30",   "fr30R",   "fr31",   "fr31R"
+  };
+  if (i < 0 || i >= (sizeof (names) / sizeof (*names)))
+    return NULL;
+  else
+    return names[i];
+}
+
+const char *
+hppa64_register_name (int i)
+{
+  static char *names[] = {
+    "flags",  "r1",      "rp",     "r3",
+    "r4",     "r5",      "r6",     "r7",
+    "r8",     "r9",      "r10",    "r11",
+    "r12",    "r13",     "r14",    "r15",
+    "r16",    "r17",     "r18",    "r19",
+    "r20",    "r21",     "r22",    "r23",
+    "r24",    "r25",     "r26",    "dp",
+    "ret0",   "ret1",    "sp",     "r31",
+    "sar",    "pcoqh",   "pcsqh",  "pcoqt",
+    "pcsqt",  "eiem",    "iir",    "isr",
+    "ior",    "ipsw",    "goto",   "sr4",
+    "sr0",    "sr1",     "sr2",    "sr3",
+    "sr5",    "sr6",     "sr7",    "cr0",
+    "cr8",    "cr9",     "ccr",    "cr12",
+    "cr13",   "cr24",    "cr25",   "cr26",
+    "mpsfu_high","mpsfu_low","mpsfu_ovflo","pad",
+    "fpsr",    "fpe1",   "fpe2",   "fpe3",
+    "fr4",    "fr5",     "fr6",    "fr7",
+    "fr8",     "fr9",    "fr10",   "fr11",
+    "fr12",   "fr13",    "fr14",   "fr15",
+    "fr16",    "fr17",   "fr18",   "fr19",
+    "fr20",   "fr21",    "fr22",   "fr23",
+    "fr24",    "fr25",   "fr26",   "fr27",
+    "fr28",  "fr29",    "fr30",   "fr31"
+  };
+  if (i < 0 || i >= (sizeof (names) / sizeof (*names)))
+    return NULL;
+  else
+    return names[i];
+}
+
+
+
 /* Return the adjustment necessary to make for addresses on the stack
    as presented by hpread.c.
 
@@ -625,8 +767,7 @@ find_unwind_entry (pc)
    bizarre way in which someone (?) decided they wanted to handle
    frame pointerless code in GDB.  */
 int
-hpread_adjust_stack_address (func_addr)
-     CORE_ADDR func_addr;
+hpread_adjust_stack_address (CORE_ADDR func_addr)
 {
   struct unwind_table_entry *u;
 
@@ -641,8 +782,7 @@ hpread_adjust_stack_address (func_addr)
    kind.  */
 
 static int
-pc_in_interrupt_handler (pc)
-     CORE_ADDR pc;
+pc_in_interrupt_handler (CORE_ADDR pc)
 {
   struct unwind_table_entry *u;
   struct minimal_symbol *msym_us;
@@ -655,7 +795,8 @@ pc_in_interrupt_handler (pc)
      its frame isn't a pure interrupt frame.  Deal with this.  */
   msym_us = lookup_minimal_symbol_by_pc (pc);
 
-  return u->HP_UX_interrupt_marker && !IN_SIGTRAMP (pc, SYMBOL_NAME (msym_us));
+  return (u->HP_UX_interrupt_marker
+	  && !PC_IN_SIGTRAMP (pc, DEPRECATED_SYMBOL_NAME (msym_us)));
 }
 
 /* Called when no unwind descriptor was found for PC.  Returns 1 if it
@@ -664,8 +805,7 @@ pc_in_interrupt_handler (pc)
    ?!? Need to handle stubs which appear in PA64 code.  */
 
 static int
-pc_in_linker_stub (pc)
-     CORE_ADDR pc;
+pc_in_linker_stub (CORE_ADDR pc)
 {
   int found_magic_instruction = 0;
   int i;
@@ -730,8 +870,7 @@ pc_in_linker_stub (pc)
 }
 
 static int
-find_return_regnum (pc)
-     CORE_ADDR pc;
+find_return_regnum (CORE_ADDR pc)
 {
   struct unwind_table_entry *u;
 
@@ -748,8 +887,7 @@ find_return_regnum (pc)
 
 /* Return size of frame, or -1 if we should use a frame pointer.  */
 static int
-find_proc_framesize (pc)
-     CORE_ADDR pc;
+find_proc_framesize (CORE_ADDR pc)
 {
   struct unwind_table_entry *u;
   struct minimal_symbol *msym_us;
@@ -773,19 +911,20 @@ find_proc_framesize (pc)
 
   /* If Save_SP is set, and we're not in an interrupt or signal caller,
      then we have a frame pointer.  Use it.  */
-  if (u->Save_SP && !pc_in_interrupt_handler (pc)
-      && !IN_SIGTRAMP (pc, SYMBOL_NAME (msym_us)))
+  if (u->Save_SP
+      && !pc_in_interrupt_handler (pc)
+      && msym_us
+      && !PC_IN_SIGTRAMP (pc, DEPRECATED_SYMBOL_NAME (msym_us)))
     return -1;
 
   return u->Total_frame_size << 3;
 }
 
 /* Return offset from sp at which rp is saved, or 0 if not saved.  */
-static int rp_saved PARAMS ((CORE_ADDR));
+static int rp_saved (CORE_ADDR);
 
 static int
-rp_saved (pc)
-     CORE_ADDR pc;
+rp_saved (CORE_ADDR pc)
 {
   struct unwind_table_entry *u;
 
@@ -824,12 +963,11 @@ rp_saved (pc)
 }
 
 int
-frameless_function_invocation (frame)
-     struct frame_info *frame;
+hppa_frameless_function_invocation (struct frame_info *frame)
 {
   struct unwind_table_entry *u;
 
-  u = find_unwind_entry (frame->pc);
+  u = find_unwind_entry (get_frame_pc (frame));
 
   if (u == 0)
     return 0;
@@ -837,9 +975,13 @@ frameless_function_invocation (frame)
   return (u->Total_frame_size == 0 && u->stub_unwind.stub_type == 0);
 }
 
+/* Immediately after a function call, return the saved pc.
+   Can't go through the frames for this because on some machines
+   the new frame is not set up until the new function executes
+   some instructions.  */
+
 CORE_ADDR
-saved_pc_after_call (frame)
-     struct frame_info *frame;
+hppa_saved_pc_after_call (struct frame_info *frame)
 {
   int ret_regnum;
   CORE_ADDR pc;
@@ -852,18 +994,17 @@ saved_pc_after_call (frame)
      the stub will return to out of the stack.  */
   u = find_unwind_entry (pc);
   if (u && u->stub_unwind.stub_type != 0)
-    return FRAME_SAVED_PC (frame);
+    return DEPRECATED_FRAME_SAVED_PC (frame);
   else
     return pc;
 }
 
 CORE_ADDR
-hppa_frame_saved_pc (frame)
-     struct frame_info *frame;
+hppa_frame_saved_pc (struct frame_info *frame)
 {
   CORE_ADDR pc = get_frame_pc (frame);
   struct unwind_table_entry *u;
-  CORE_ADDR old_pc;
+  CORE_ADDR old_pc = 0;
   int spun_around_loop = 0;
   int rp_offset = 0;
 
@@ -872,33 +1013,34 @@ hppa_frame_saved_pc (frame)
      are saved in the exact same order as GDB numbers registers.  How
      convienent.  */
   if (pc_in_interrupt_handler (pc))
-    return read_memory_integer (frame->frame + PC_REGNUM * 4,
+    return read_memory_integer (get_frame_base (frame) + PC_REGNUM * 4,
 				TARGET_PTR_BIT / 8) & ~0x3;
 
-  if ((frame->pc >= frame->frame
-       && frame->pc <= (frame->frame
-                        /* A call dummy is sized in words, but it is
-                           actually a series of instructions.  Account
-                           for that scaling factor.  */
-                        + ((REGISTER_SIZE / INSTRUCTION_SIZE)
-                           * CALL_DUMMY_LENGTH)
-                        /* Similarly we have to account for 64bit
-                           wide register saves.  */
-                        + (32 * REGISTER_SIZE)
-                        /* We always consider FP regs 8 bytes long.  */
-                        + (NUM_REGS - FP0_REGNUM) * 8
-                        /* Similarly we have to account for 64bit
-                           wide register saves.  */
-                        + (6 * REGISTER_SIZE))))
+  if ((get_frame_pc (frame) >= get_frame_base (frame)
+       && (get_frame_pc (frame)
+	   <= (get_frame_base (frame)
+	       /* A call dummy is sized in words, but it is actually a
+		  series of instructions.  Account for that scaling
+		  factor.  */
+	       + ((DEPRECATED_REGISTER_SIZE / INSTRUCTION_SIZE)
+		  * DEPRECATED_CALL_DUMMY_LENGTH)
+	       /* Similarly we have to account for 64bit wide register
+		  saves.  */
+	       + (32 * DEPRECATED_REGISTER_SIZE)
+	       /* We always consider FP regs 8 bytes long.  */
+	       + (NUM_REGS - FP0_REGNUM) * 8
+	       /* Similarly we have to account for 64bit wide register
+		  saves.  */
+	       + (6 * DEPRECATED_REGISTER_SIZE)))))
     {
-      return read_memory_integer ((frame->frame
+      return read_memory_integer ((get_frame_base (frame)
 				   + (TARGET_PTR_BIT == 64 ? -16 : -20)),
 				  TARGET_PTR_BIT / 8) & ~0x3;
     }
 
 #ifdef FRAME_SAVED_PC_IN_SIGTRAMP
   /* Deal with signal handler caller frames too.  */
-  if (frame->signal_handler_caller)
+  if ((get_frame_type (frame) == SIGTRAMP_FRAME))
     {
       CORE_ADDR rp;
       FRAME_SAVED_PC_IN_SIGTRAMP (frame, &rp);
@@ -906,7 +1048,7 @@ hppa_frame_saved_pc (frame)
     }
 #endif
 
-  if (frameless_function_invocation (frame))
+  if (hppa_frameless_function_invocation (frame))
     {
       int ret_regnum;
 
@@ -916,29 +1058,29 @@ hppa_frame_saved_pc (frame)
          handler caller, then we need to look in the saved
          register area to get the return pointer (the values
          in the registers may not correspond to anything useful).  */
-      if (frame->next
-	  && (frame->next->signal_handler_caller
-	      || pc_in_interrupt_handler (frame->next->pc)))
+      if (get_next_frame (frame)
+	  && ((get_frame_type (get_next_frame (frame)) == SIGTRAMP_FRAME)
+	      || pc_in_interrupt_handler (get_frame_pc (get_next_frame (frame)))))
 	{
-	  struct frame_saved_regs saved_regs;
-
-	  get_frame_saved_regs (frame->next, &saved_regs);
-	  if (read_memory_integer (saved_regs.regs[FLAGS_REGNUM],
+	  CORE_ADDR *saved_regs;
+	  hppa_frame_init_saved_regs (get_next_frame (frame));
+	  saved_regs = get_frame_saved_regs (get_next_frame (frame));
+	  if (read_memory_integer (saved_regs[FLAGS_REGNUM],
 				   TARGET_PTR_BIT / 8) & 0x2)
 	    {
-	      pc = read_memory_integer (saved_regs.regs[31],
+	      pc = read_memory_integer (saved_regs[31],
 					TARGET_PTR_BIT / 8) & ~0x3;
 
 	      /* Syscalls are really two frames.  The syscall stub itself
 	         with a return pointer in %rp and the kernel call with
 	         a return pointer in %r31.  We return the %rp variant
 	         if %r31 is the same as frame->pc.  */
-	      if (pc == frame->pc)
-		pc = read_memory_integer (saved_regs.regs[RP_REGNUM],
+	      if (pc == get_frame_pc (frame))
+		pc = read_memory_integer (saved_regs[RP_REGNUM],
 					  TARGET_PTR_BIT / 8) & ~0x3;
 	    }
 	  else
-	    pc = read_memory_integer (saved_regs.regs[RP_REGNUM],
+	    pc = read_memory_integer (saved_regs[RP_REGNUM],
 				      TARGET_PTR_BIT / 8) & ~0x3;
 	}
       else
@@ -956,29 +1098,29 @@ hppa_frame_saved_pc (frame)
          frame is a signal or interrupt handler, then dig the right
          information out of the saved register info.  */
       if (rp_offset == 0
-	  && frame->next
-	  && (frame->next->signal_handler_caller
-	      || pc_in_interrupt_handler (frame->next->pc)))
+	  && get_next_frame (frame)
+	  && ((get_frame_type (get_next_frame (frame)) == SIGTRAMP_FRAME)
+	      || pc_in_interrupt_handler (get_frame_pc (get_next_frame (frame)))))
 	{
-	  struct frame_saved_regs saved_regs;
-
-	  get_frame_saved_regs (frame->next, &saved_regs);
-	  if (read_memory_integer (saved_regs.regs[FLAGS_REGNUM],
+	  CORE_ADDR *saved_regs;
+	  hppa_frame_init_saved_regs (get_next_frame (frame));
+	  saved_regs = get_frame_saved_regs (get_next_frame (frame));
+	  if (read_memory_integer (saved_regs[FLAGS_REGNUM],
 				   TARGET_PTR_BIT / 8) & 0x2)
 	    {
-	      pc = read_memory_integer (saved_regs.regs[31],
+	      pc = read_memory_integer (saved_regs[31],
 					TARGET_PTR_BIT / 8) & ~0x3;
 
 	      /* Syscalls are really two frames.  The syscall stub itself
 	         with a return pointer in %rp and the kernel call with
 	         a return pointer in %r31.  We return the %rp variant
 	         if %r31 is the same as frame->pc.  */
-	      if (pc == frame->pc)
-		pc = read_memory_integer (saved_regs.regs[RP_REGNUM],
+	      if (pc == get_frame_pc (frame))
+		pc = read_memory_integer (saved_regs[RP_REGNUM],
 					  TARGET_PTR_BIT / 8) & ~0x3;
 	    }
 	  else
-	    pc = read_memory_integer (saved_regs.regs[RP_REGNUM],
+	    pc = read_memory_integer (saved_regs[RP_REGNUM],
 				      TARGET_PTR_BIT / 8) & ~0x3;
 	}
       else if (rp_offset == 0)
@@ -989,7 +1131,7 @@ hppa_frame_saved_pc (frame)
       else
 	{
 	  old_pc = pc;
-	  pc = read_memory_integer (frame->frame + rp_offset,
+	  pc = read_memory_integer (get_frame_base (frame) + rp_offset,
 				    TARGET_PTR_BIT / 8) & ~0x3;
 	}
     }
@@ -1038,39 +1180,38 @@ hppa_frame_saved_pc (frame)
    in a system call.  */
 
 void
-init_extra_frame_info (fromleaf, frame)
-     int fromleaf;
-     struct frame_info *frame;
+hppa_init_extra_frame_info (int fromleaf, struct frame_info *frame)
 {
   int flags;
   int framesize;
 
-  if (frame->next && !fromleaf)
+  if (get_next_frame (frame) && !fromleaf)
     return;
 
-  /* If the next frame represents a frameless function invocation
-     then we have to do some adjustments that are normally done by
-     FRAME_CHAIN.  (FRAME_CHAIN is not called in this case.)  */
+  /* If the next frame represents a frameless function invocation then
+     we have to do some adjustments that are normally done by
+     DEPRECATED_FRAME_CHAIN.  (DEPRECATED_FRAME_CHAIN is not called in
+     this case.)  */
   if (fromleaf)
     {
       /* Find the framesize of *this* frame without peeking at the PC
          in the current frame structure (it isn't set yet).  */
-      framesize = find_proc_framesize (FRAME_SAVED_PC (get_next_frame (frame)));
+      framesize = find_proc_framesize (DEPRECATED_FRAME_SAVED_PC (get_next_frame (frame)));
 
       /* Now adjust our base frame accordingly.  If we have a frame pointer
          use it, else subtract the size of this frame from the current
          frame.  (we always want frame->frame to point at the lowest address
          in the frame).  */
       if (framesize == -1)
-	frame->frame = TARGET_READ_FP ();
+	deprecated_update_frame_base_hack (frame, deprecated_read_fp ());
       else
-	frame->frame -= framesize;
+	deprecated_update_frame_base_hack (frame, get_frame_base (frame) - framesize);
       return;
     }
 
   flags = read_register (FLAGS_REGNUM);
   if (flags & 2)		/* In system call? */
-    frame->pc = read_register (31) & ~0x3;
+    deprecated_update_frame_pc_hack (frame, read_register (31) & ~0x3);
 
   /* The outermost frame is always derived from PC-framesize
 
@@ -1081,24 +1222,24 @@ init_extra_frame_info (fromleaf, frame)
      explain, but the parent *always* creates some stack space for
      the child.  So the child actually does have a frame of some
      sorts, and its base is the high address in its parent's frame.  */
-  framesize = find_proc_framesize (frame->pc);
+  framesize = find_proc_framesize (get_frame_pc (frame));
   if (framesize == -1)
-    frame->frame = TARGET_READ_FP ();
+    deprecated_update_frame_base_hack (frame, deprecated_read_fp ());
   else
-    frame->frame = read_register (SP_REGNUM) - framesize;
+    deprecated_update_frame_base_hack (frame, read_register (SP_REGNUM) - framesize);
 }
 
-/* Given a GDB frame, determine the address of the calling function's frame.
-   This will be used to create a new GDB frame struct, and then
-   INIT_EXTRA_FRAME_INFO and INIT_FRAME_PC will be called for the new frame.
+/* Given a GDB frame, determine the address of the calling function's
+   frame.  This will be used to create a new GDB frame struct, and
+   then DEPRECATED_INIT_EXTRA_FRAME_INFO and DEPRECATED_INIT_FRAME_PC
+   will be called for the new frame.
 
    This may involve searching through prologues for several functions
    at boundaries where GCC calls HP C code, or where code which has
    a frame pointer calls code without a frame pointer.  */
 
 CORE_ADDR
-frame_chain (frame)
-     struct frame_info *frame;
+hppa_frame_chain (struct frame_info *frame)
 {
   int my_framesize, caller_framesize;
   struct unwind_table_entry *u;
@@ -1107,9 +1248,9 @@ frame_chain (frame)
 
   /* A frame in the current frame list, or zero.  */
   struct frame_info *saved_regs_frame = 0;
-  /* Where the registers were saved in saved_regs_frame.
-     If saved_regs_frame is zero, this is garbage.  */
-  struct frame_saved_regs saved_regs;
+  /* Where the registers were saved in saved_regs_frame.  If
+     saved_regs_frame is zero, this is garbage.  */
+  CORE_ADDR *saved_regs = NULL;
 
   CORE_ADDR caller_pc;
 
@@ -1120,8 +1261,8 @@ frame_chain (frame)
   /* If this is a threaded application, and we see the
      routine "__pthread_exit", treat it as the stack root
      for this thread. */
-  min_frame_symbol = lookup_minimal_symbol_by_pc (frame->pc);
-  frame_symbol = find_pc_function (frame->pc);
+  min_frame_symbol = lookup_minimal_symbol_by_pc (get_frame_pc (frame));
+  frame_symbol = find_pc_function (get_frame_pc (frame));
 
   if ((min_frame_symbol != 0) /* && (frame_symbol == 0) */ )
     {
@@ -1133,7 +1274,7 @@ frame_chain (frame)
          pthread library itself, you'd get errors.
 
          So for today, we don't make that check. */
-      frame_symbol_name = SYMBOL_NAME (min_frame_symbol);
+      frame_symbol_name = DEPRECATED_SYMBOL_NAME (min_frame_symbol);
       if (frame_symbol_name != 0)
 	{
 	  if (0 == strncmp (frame_symbol_name,
@@ -1150,22 +1291,22 @@ frame_chain (frame)
      are easy; at *sp we have a full save state strucutre which we can
      pull the old stack pointer from.  Also see frame_saved_pc for
      code to dig a saved PC out of the save state structure.  */
-  if (pc_in_interrupt_handler (frame->pc))
-    frame_base = read_memory_integer (frame->frame + SP_REGNUM * 4,
+  if (pc_in_interrupt_handler (get_frame_pc (frame)))
+    frame_base = read_memory_integer (get_frame_base (frame) + SP_REGNUM * 4,
 				      TARGET_PTR_BIT / 8);
 #ifdef FRAME_BASE_BEFORE_SIGTRAMP
-  else if (frame->signal_handler_caller)
+  else if ((get_frame_type (frame) == SIGTRAMP_FRAME))
     {
       FRAME_BASE_BEFORE_SIGTRAMP (frame, &frame_base);
     }
 #endif
   else
-    frame_base = frame->frame;
+    frame_base = get_frame_base (frame);
 
   /* Get frame sizes for the current frame and the frame of the 
      caller.  */
-  my_framesize = find_proc_framesize (frame->pc);
-  caller_pc = FRAME_SAVED_PC (frame);
+  my_framesize = find_proc_framesize (get_frame_pc (frame));
+  caller_pc = DEPRECATED_FRAME_SAVED_PC (frame);
 
   /* If we can't determine the caller's PC, then it's not likely we can
      really determine anything meaningful about its frame.  We'll consider
@@ -1173,7 +1314,7 @@ frame_chain (frame)
   if (caller_pc == (CORE_ADDR) 0)
     return (CORE_ADDR) 0;
 
-  caller_framesize = find_proc_framesize (FRAME_SAVED_PC (frame));
+  caller_framesize = find_proc_framesize (DEPRECATED_FRAME_SAVED_PC (frame));
 
   /* If caller does not have a frame pointer, then its frame
      can be found at current_frame - caller_framesize.  */
@@ -1204,9 +1345,9 @@ frame_chain (frame)
      We use information from unwind descriptors to determine if %r3
      is saved into the stack (Entry_GR field has this information).  */
 
-  for (tmp_frame = frame; tmp_frame; tmp_frame = tmp_frame->next)
+  for (tmp_frame = frame; tmp_frame; tmp_frame = get_next_frame (tmp_frame))
     {
-      u = find_unwind_entry (tmp_frame->pc);
+      u = find_unwind_entry (get_frame_pc (tmp_frame));
 
       if (!u)
 	{
@@ -1219,14 +1360,14 @@ frame_chain (frame)
 	     the dynamic linker will give you a PC that has none.  Thus, I've
 	     disabled this warning. */
 #if 0
-	  warning ("Unable to find unwind for PC 0x%x -- Help!", tmp_frame->pc);
+	  warning ("Unable to find unwind for PC 0x%x -- Help!", get_frame_pc (tmp_frame));
 #endif
 	  return (CORE_ADDR) 0;
 	}
 
       if (u->Save_SP
-	  || tmp_frame->signal_handler_caller
-	  || pc_in_interrupt_handler (tmp_frame->pc))
+	  || (get_frame_type (tmp_frame) == SIGTRAMP_FRAME)
+	  || pc_in_interrupt_handler (get_frame_pc (tmp_frame)))
 	break;
 
       /* Entry_GR specifies the number of callee-saved general registers
@@ -1236,11 +1377,12 @@ frame_chain (frame)
 	  /* The unwind entry claims that r3 is saved here.  However,
 	     in optimized code, GCC often doesn't actually save r3.
 	     We'll discover this if we look at the prologue.  */
-	  get_frame_saved_regs (tmp_frame, &saved_regs);
+	  hppa_frame_init_saved_regs (tmp_frame);
+	  saved_regs = get_frame_saved_regs (tmp_frame);
 	  saved_regs_frame = tmp_frame;
 
 	  /* If we have an address for r3, that's good.  */
-	  if (saved_regs.regs[FP_REGNUM])
+	  if (saved_regs[DEPRECATED_FP_REGNUM])
 	    break;
 	}
     }
@@ -1250,10 +1392,10 @@ frame_chain (frame)
       /* We may have walked down the chain into a function with a frame
          pointer.  */
       if (u->Save_SP
-	  && !tmp_frame->signal_handler_caller
-	  && !pc_in_interrupt_handler (tmp_frame->pc))
+	  && !(get_frame_type (tmp_frame) == SIGTRAMP_FRAME)
+	  && !pc_in_interrupt_handler (get_frame_pc (tmp_frame)))
 	{
-	  return read_memory_integer (tmp_frame->frame, TARGET_PTR_BIT / 8);
+	  return read_memory_integer (get_frame_base (tmp_frame), TARGET_PTR_BIT / 8);
 	}
       /* %r3 was saved somewhere in the stack.  Dig it out.  */
       else
@@ -1285,21 +1427,24 @@ frame_chain (frame)
 	     system call has a variable sized stack frame.  */
 
 	  if (tmp_frame != saved_regs_frame)
-	    get_frame_saved_regs (tmp_frame, &saved_regs);
+	    {
+	      hppa_frame_init_saved_regs (tmp_frame);
+	      saved_regs = get_frame_saved_regs (tmp_frame);
+	    }
 
 	  /* Abominable hack.  */
 	  if (current_target.to_has_execution == 0
-	      && ((saved_regs.regs[FLAGS_REGNUM]
-		   && (read_memory_integer (saved_regs.regs[FLAGS_REGNUM],
+	      && ((saved_regs[FLAGS_REGNUM]
+		   && (read_memory_integer (saved_regs[FLAGS_REGNUM],
 					    TARGET_PTR_BIT / 8)
 		       & 0x2))
-		  || (saved_regs.regs[FLAGS_REGNUM] == 0
+		  || (saved_regs[FLAGS_REGNUM] == 0
 		      && read_register (FLAGS_REGNUM) & 0x2)))
 	    {
-	      u = find_unwind_entry (FRAME_SAVED_PC (frame));
+	      u = find_unwind_entry (DEPRECATED_FRAME_SAVED_PC (frame));
 	      if (!u)
 		{
-		  return read_memory_integer (saved_regs.regs[FP_REGNUM],
+		  return read_memory_integer (saved_regs[DEPRECATED_FP_REGNUM],
 					      TARGET_PTR_BIT / 8);
 		}
 	      else
@@ -1308,7 +1453,7 @@ frame_chain (frame)
 		}
 	    }
 
-	  return read_memory_integer (saved_regs.regs[FP_REGNUM],
+	  return read_memory_integer (saved_regs[DEPRECATED_FP_REGNUM],
 				      TARGET_PTR_BIT / 8);
 	}
     }
@@ -1316,25 +1461,28 @@ frame_chain (frame)
     {
       /* Get the innermost frame.  */
       tmp_frame = frame;
-      while (tmp_frame->next != NULL)
-	tmp_frame = tmp_frame->next;
+      while (get_next_frame (tmp_frame) != NULL)
+	tmp_frame = get_next_frame (tmp_frame);
 
       if (tmp_frame != saved_regs_frame)
-	get_frame_saved_regs (tmp_frame, &saved_regs);
+	{
+	  hppa_frame_init_saved_regs (tmp_frame);
+	  saved_regs = get_frame_saved_regs (tmp_frame);
+	}
 
       /* Abominable hack.  See above.  */
       if (current_target.to_has_execution == 0
-	  && ((saved_regs.regs[FLAGS_REGNUM]
-	       && (read_memory_integer (saved_regs.regs[FLAGS_REGNUM],
+	  && ((saved_regs[FLAGS_REGNUM]
+	       && (read_memory_integer (saved_regs[FLAGS_REGNUM],
 					TARGET_PTR_BIT / 8)
 		   & 0x2))
-	      || (saved_regs.regs[FLAGS_REGNUM] == 0
+	      || (saved_regs[FLAGS_REGNUM] == 0
 		  && read_register (FLAGS_REGNUM) & 0x2)))
 	{
-	  u = find_unwind_entry (FRAME_SAVED_PC (frame));
+	  u = find_unwind_entry (DEPRECATED_FRAME_SAVED_PC (frame));
 	  if (!u)
 	    {
-	      return read_memory_integer (saved_regs.regs[FP_REGNUM],
+	      return read_memory_integer (saved_regs[DEPRECATED_FP_REGNUM],
 					  TARGET_PTR_BIT / 8);
 	    }
 	  else
@@ -1345,7 +1493,7 @@ frame_chain (frame)
 
       /* The value in %r3 was never saved into the stack (thus %r3 still
          holds the value of the previous frame pointer).  */
-      return TARGET_READ_FP ();
+      return deprecated_read_fp ();
     }
 }
 
@@ -1354,19 +1502,14 @@ frame_chain (frame)
    was compiled with gcc. */
 
 int
-hppa_frame_chain_valid (chain, thisframe)
-     CORE_ADDR chain;
-     struct frame_info *thisframe;
+hppa_frame_chain_valid (CORE_ADDR chain, struct frame_info *thisframe)
 {
   struct minimal_symbol *msym_us;
   struct minimal_symbol *msym_start;
   struct unwind_table_entry *u, *next_u = NULL;
   struct frame_info *next;
 
-  if (!chain)
-    return 0;
-
-  u = find_unwind_entry (thisframe->pc);
+  u = find_unwind_entry (get_frame_pc (thisframe));
 
   if (u == NULL)
     return 1;
@@ -1377,7 +1520,7 @@ hppa_frame_chain_valid (chain, thisframe)
      indistinguishable (as nearly as I can tell) from the symbol for a function
      which is (legitimately, since it is in the user's namespace)
      named Ltext_end, so we can't just ignore it.  */
-  msym_us = lookup_minimal_symbol_by_pc (FRAME_SAVED_PC (thisframe));
+  msym_us = lookup_minimal_symbol_by_pc (DEPRECATED_FRAME_SAVED_PC (thisframe));
   msym_start = lookup_minimal_symbol ("_start", NULL, NULL);
   if (msym_us
       && msym_start
@@ -1394,62 +1537,44 @@ hppa_frame_chain_valid (chain, thisframe)
 
   next = get_next_frame (thisframe);
   if (next)
-    next_u = find_unwind_entry (next->pc);
+    next_u = find_unwind_entry (get_frame_pc (next));
 
   /* If this frame does not save SP, has no stack, isn't a stub,
      and doesn't "call" an interrupt routine or signal handler caller,
      then its not valid.  */
   if (u->Save_SP || u->Total_frame_size || u->stub_unwind.stub_type != 0
-      || (thisframe->next && thisframe->next->signal_handler_caller)
+      || (get_next_frame (thisframe) && (get_frame_type (get_next_frame (thisframe)) == SIGTRAMP_FRAME))
       || (next_u && next_u->HP_UX_interrupt_marker))
     return 1;
 
-  if (pc_in_linker_stub (thisframe->pc))
+  if (pc_in_linker_stub (get_frame_pc (thisframe)))
     return 1;
 
   return 0;
 }
 
-/*
-   These functions deal with saving and restoring register state
-   around a function call in the inferior. They keep the stack
-   double-word aligned; eventually, on an hp700, the stack will have
-   to be aligned to a 64-byte boundary. */
+/* These functions deal with saving and restoring register state
+   around a function call in the inferior.  They keep the stack
+   double-word aligned;  eventually, on an hp700, the stack will have
+   to be aligned to a 64-byte boundary.  */
 
 void
-push_dummy_frame (inf_status)
-     struct inferior_status *inf_status;
+hppa_push_dummy_frame (void)
 {
   CORE_ADDR sp, pc, pcspace;
   register int regnum;
   CORE_ADDR int_buffer;
   double freg_buffer;
 
-  /* Oh, what a hack.  If we're trying to perform an inferior call
-     while the inferior is asleep, we have to make sure to clear
-     the "in system call" bit in the flag register (the call will
-     start after the syscall returns, so we're no longer in the system
-     call!)  This state is kept in "inf_status", change it there.
-
-     We also need a number of horrid hacks to deal with lossage in the
-     PC queue registers (apparently they're not valid when the in syscall
-     bit is set).  */
-  pc = target_read_pc (inferior_pid);
+  pc = hppa_target_read_pc (inferior_ptid);
   int_buffer = read_register (FLAGS_REGNUM);
   if (int_buffer & 0x2)
     {
-      unsigned int sid;
-      int_buffer &= ~0x2;
-      write_inferior_status_register (inf_status, 0, int_buffer);
-      write_inferior_status_register (inf_status, PCOQ_HEAD_REGNUM, pc + 0);
-      write_inferior_status_register (inf_status, PCOQ_TAIL_REGNUM, pc + 4);
-      sid = (pc >> 30) & 0x3;
+      const unsigned int sid = (pc >> 30) & 0x3;
       if (sid == 0)
 	pcspace = read_register (SR4_REGNUM);
       else
 	pcspace = read_register (SR4_REGNUM + 4 + sid);
-      write_inferior_status_register (inf_status, PCSQ_HEAD_REGNUM, pcspace);
-      write_inferior_status_register (inf_status, PCSQ_TAIL_REGNUM, pcspace);
     }
   else
     pcspace = read_register (PCSQ_HEAD_REGNUM);
@@ -1460,29 +1585,30 @@ push_dummy_frame (inf_status)
 
   /* The 32bit and 64bit ABIs save the return pointer into different
      stack slots.  */
-  if (REGISTER_SIZE == 8)
-    write_memory (sp - 16, (char *) &int_buffer, REGISTER_SIZE);
+  if (DEPRECATED_REGISTER_SIZE == 8)
+    write_memory (sp - 16, (char *) &int_buffer, DEPRECATED_REGISTER_SIZE);
   else
-    write_memory (sp - 20, (char *) &int_buffer, REGISTER_SIZE);
+    write_memory (sp - 20, (char *) &int_buffer, DEPRECATED_REGISTER_SIZE);
 
-  int_buffer = TARGET_READ_FP ();
-  write_memory (sp, (char *) &int_buffer, REGISTER_SIZE);
+  int_buffer = deprecated_read_fp ();
+  write_memory (sp, (char *) &int_buffer, DEPRECATED_REGISTER_SIZE);
 
-  write_register (FP_REGNUM, sp);
+  write_register (DEPRECATED_FP_REGNUM, sp);
 
-  sp += 2 * REGISTER_SIZE;
+  sp += 2 * DEPRECATED_REGISTER_SIZE;
 
   for (regnum = 1; regnum < 32; regnum++)
-    if (regnum != RP_REGNUM && regnum != FP_REGNUM)
+    if (regnum != RP_REGNUM && regnum != DEPRECATED_FP_REGNUM)
       sp = push_word (sp, read_register (regnum));
 
   /* This is not necessary for the 64bit ABI.  In fact it is dangerous.  */
-  if (REGISTER_SIZE != 8)
+  if (DEPRECATED_REGISTER_SIZE != 8)
     sp += 4;
 
   for (regnum = FP0_REGNUM; regnum < NUM_REGS; regnum++)
     {
-      read_register_bytes (REGISTER_BYTE (regnum), (char *) &freg_buffer, 8);
+      deprecated_read_register_bytes (REGISTER_BYTE (regnum),
+				      (char *) &freg_buffer, 8);
       sp = push_bytes (sp, (char *) &freg_buffer, 8);
     }
   sp = push_word (sp, read_register (IPSW_REGNUM));
@@ -1495,91 +1621,92 @@ push_dummy_frame (inf_status)
 }
 
 static void
-find_dummy_frame_regs (frame, frame_saved_regs)
-     struct frame_info *frame;
-     struct frame_saved_regs *frame_saved_regs;
+find_dummy_frame_regs (struct frame_info *frame,
+		       CORE_ADDR frame_saved_regs[])
 {
-  CORE_ADDR fp = frame->frame;
+  CORE_ADDR fp = get_frame_base (frame);
   int i;
 
   /* The 32bit and 64bit ABIs save RP into different locations.  */
-  if (REGISTER_SIZE == 8)
-    frame_saved_regs->regs[RP_REGNUM] = (fp - 16) & ~0x3;
+  if (DEPRECATED_REGISTER_SIZE == 8)
+    frame_saved_regs[RP_REGNUM] = (fp - 16) & ~0x3;
   else
-    frame_saved_regs->regs[RP_REGNUM] = (fp - 20) & ~0x3;
+    frame_saved_regs[RP_REGNUM] = (fp - 20) & ~0x3;
 
-  frame_saved_regs->regs[FP_REGNUM] = fp;
+  frame_saved_regs[DEPRECATED_FP_REGNUM] = fp;
 
-  frame_saved_regs->regs[1] = fp + (2 * REGISTER_SIZE);
+  frame_saved_regs[1] = fp + (2 * DEPRECATED_REGISTER_SIZE);
 
-  for (fp += 3 * REGISTER_SIZE, i = 3; i < 32; i++)
+  for (fp += 3 * DEPRECATED_REGISTER_SIZE, i = 3; i < 32; i++)
     {
-      if (i != FP_REGNUM)
+      if (i != DEPRECATED_FP_REGNUM)
 	{
-	  frame_saved_regs->regs[i] = fp;
-	  fp += REGISTER_SIZE;
+	  frame_saved_regs[i] = fp;
+	  fp += DEPRECATED_REGISTER_SIZE;
 	}
     }
 
   /* This is not necessary or desirable for the 64bit ABI.  */
-  if (REGISTER_SIZE != 8)
+  if (DEPRECATED_REGISTER_SIZE != 8)
     fp += 4;
 
   for (i = FP0_REGNUM; i < NUM_REGS; i++, fp += 8)
-    frame_saved_regs->regs[i] = fp;
+    frame_saved_regs[i] = fp;
 
-  frame_saved_regs->regs[IPSW_REGNUM] = fp;
-  frame_saved_regs->regs[SAR_REGNUM] = fp + REGISTER_SIZE;
-  frame_saved_regs->regs[PCOQ_HEAD_REGNUM] = fp + 2 * REGISTER_SIZE;
-  frame_saved_regs->regs[PCSQ_HEAD_REGNUM] = fp + 3 * REGISTER_SIZE;
-  frame_saved_regs->regs[PCOQ_TAIL_REGNUM] = fp + 4 * REGISTER_SIZE;
-  frame_saved_regs->regs[PCSQ_TAIL_REGNUM] = fp + 5 * REGISTER_SIZE;
+  frame_saved_regs[IPSW_REGNUM] = fp;
+  frame_saved_regs[SAR_REGNUM] = fp + DEPRECATED_REGISTER_SIZE;
+  frame_saved_regs[PCOQ_HEAD_REGNUM] = fp + 2 * DEPRECATED_REGISTER_SIZE;
+  frame_saved_regs[PCSQ_HEAD_REGNUM] = fp + 3 * DEPRECATED_REGISTER_SIZE;
+  frame_saved_regs[PCOQ_TAIL_REGNUM] = fp + 4 * DEPRECATED_REGISTER_SIZE;
+  frame_saved_regs[PCSQ_TAIL_REGNUM] = fp + 5 * DEPRECATED_REGISTER_SIZE;
 }
 
 void
-hppa_pop_frame ()
+hppa_pop_frame (void)
 {
   register struct frame_info *frame = get_current_frame ();
   register CORE_ADDR fp, npc, target_pc;
   register int regnum;
-  struct frame_saved_regs fsr;
+  CORE_ADDR *fsr;
   double freg_buffer;
 
-  fp = FRAME_FP (frame);
-  get_frame_saved_regs (frame, &fsr);
+  fp = get_frame_base (frame);
+  hppa_frame_init_saved_regs (frame);
+  fsr = get_frame_saved_regs (frame);
 
 #ifndef NO_PC_SPACE_QUEUE_RESTORE
-  if (fsr.regs[IPSW_REGNUM])	/* Restoring a call dummy frame */
-    restore_pc_queue (&fsr);
+  if (fsr[IPSW_REGNUM])	/* Restoring a call dummy frame */
+    restore_pc_queue (fsr);
 #endif
 
   for (regnum = 31; regnum > 0; regnum--)
-    if (fsr.regs[regnum])
-      write_register (regnum, read_memory_integer (fsr.regs[regnum],
-		      REGISTER_SIZE));
+    if (fsr[regnum])
+      write_register (regnum, read_memory_integer (fsr[regnum],
+						   DEPRECATED_REGISTER_SIZE));
 
   for (regnum = NUM_REGS - 1; regnum >= FP0_REGNUM; regnum--)
-    if (fsr.regs[regnum])
+    if (fsr[regnum])
       {
-	read_memory (fsr.regs[regnum], (char *) &freg_buffer, 8);
-	write_register_bytes (REGISTER_BYTE (regnum), (char *) &freg_buffer, 8);
+	read_memory (fsr[regnum], (char *) &freg_buffer, 8);
+	deprecated_write_register_bytes (REGISTER_BYTE (regnum),
+					 (char *) &freg_buffer, 8);
       }
 
-  if (fsr.regs[IPSW_REGNUM])
+  if (fsr[IPSW_REGNUM])
     write_register (IPSW_REGNUM,
-		    read_memory_integer (fsr.regs[IPSW_REGNUM],
-					 REGISTER_SIZE));
+		    read_memory_integer (fsr[IPSW_REGNUM],
+					 DEPRECATED_REGISTER_SIZE));
 
-  if (fsr.regs[SAR_REGNUM])
+  if (fsr[SAR_REGNUM])
     write_register (SAR_REGNUM,
-		    read_memory_integer (fsr.regs[SAR_REGNUM],
-					 REGISTER_SIZE));
+		    read_memory_integer (fsr[SAR_REGNUM],
+					 DEPRECATED_REGISTER_SIZE));
 
   /* If the PC was explicitly saved, then just restore it.  */
-  if (fsr.regs[PCOQ_TAIL_REGNUM])
+  if (fsr[PCOQ_TAIL_REGNUM])
     {
-      npc = read_memory_integer (fsr.regs[PCOQ_TAIL_REGNUM],
-				 REGISTER_SIZE);
+      npc = read_memory_integer (fsr[PCOQ_TAIL_REGNUM],
+				 DEPRECATED_REGISTER_SIZE);
       write_register (PCOQ_TAIL_REGNUM, npc);
     }
   /* Else use the value in %rp to set the new PC.  */
@@ -1589,9 +1716,9 @@ hppa_pop_frame ()
       write_pc (npc);
     }
 
-  write_register (FP_REGNUM, read_memory_integer (fp, REGISTER_SIZE));
+  write_register (DEPRECATED_FP_REGNUM, read_memory_integer (fp, DEPRECATED_REGISTER_SIZE));
 
-  if (fsr.regs[IPSW_REGNUM])	/* call dummy */
+  if (fsr[IPSW_REGNUM])	/* call dummy */
     write_register (SP_REGNUM, fp - 48);
   else
     write_register (SP_REGNUM, fp);
@@ -1604,7 +1731,7 @@ hppa_pop_frame ()
 
      Don't skip through the trampoline if we're popping a dummy frame.  */
   target_pc = SKIP_TRAMPOLINE_CODE (npc & ~0x3) & ~0x3;
-  if (target_pc && !fsr.regs[IPSW_REGNUM])
+  if (target_pc && !fsr[IPSW_REGNUM])
     {
       struct symtab_and_line sal;
       struct breakpoint *breakpoint;
@@ -1614,11 +1741,11 @@ hppa_pop_frame ()
          for "return_command" will print the frame we returned to.  */
       sal = find_pc_line (target_pc, 0);
       sal.pc = target_pc;
-      breakpoint = set_momentary_breakpoint (sal, NULL, bp_finish);
+      breakpoint = set_momentary_breakpoint (sal, null_frame_id, bp_finish);
       breakpoint->silent = 1;
 
       /* So we can clean things up.  */
-      old_chain = make_cleanup ((make_cleanup_func) delete_breakpoint, breakpoint);
+      old_chain = make_cleanup_delete_breakpoint (breakpoint);
 
       /* Start up the inferior.  */
       clear_proceed_status ();
@@ -1635,11 +1762,10 @@ hppa_pop_frame ()
    queue space registers. */
 
 static int
-restore_pc_queue (fsr)
-     struct frame_saved_regs *fsr;
+restore_pc_queue (CORE_ADDR *fsr)
 {
   CORE_ADDR pc = read_pc ();
-  CORE_ADDR new_pc = read_memory_integer (fsr->regs[PCOQ_HEAD_REGNUM],
+  CORE_ADDR new_pc = read_memory_integer (fsr[PCOQ_HEAD_REGNUM],
 					  TARGET_PTR_BIT / 8);
   struct target_waitstatus w;
   int insn_count;
@@ -1658,8 +1784,8 @@ restore_pc_queue (fsr)
      So, load up the registers and single step until we are in the
      right place. */
 
-  write_register (21, read_memory_integer (fsr->regs[PCSQ_HEAD_REGNUM],
-					   REGISTER_SIZE));
+  write_register (21, read_memory_integer (fsr[PCSQ_HEAD_REGNUM],
+					   DEPRECATED_REGISTER_SIZE));
   write_register (22, new_pc);
 
   for (insn_count = 0; insn_count < 3; insn_count++)
@@ -1670,7 +1796,7 @@ restore_pc_queue (fsr)
          any other choice?  Is there *any* way to do this stuff with
          ptrace() or some equivalent?).  */
       resume (1, 0);
-      target_wait (inferior_pid, &w);
+      target_wait (inferior_ptid, &w);
 
       if (w.kind == TARGET_WAITKIND_SIGNALLED)
 	{
@@ -1706,12 +1832,8 @@ restore_pc_queue (fsr)
    to the callee, so we do that too.  */
    
 CORE_ADDR
-hppa_push_arguments (nargs, args, sp, struct_return, struct_addr)
-     int nargs;
-     value_ptr *args;
-     CORE_ADDR sp;
-     int struct_return;
-     CORE_ADDR struct_addr;
+hppa_push_arguments (int nargs, struct value **args, CORE_ADDR sp,
+		     int struct_return, CORE_ADDR struct_addr)
 {
   /* array of arguments' offsets */
   int *offset = (int *) alloca (nargs * sizeof (int));
@@ -1743,7 +1865,7 @@ hppa_push_arguments (nargs, args, sp, struct_return, struct_addr)
          the left.  We do this by promoting them to full-width,
          although the ABI says to pad them with garbage.  */
       if (is_integral_type (arg_type)
-	  && TYPE_LENGTH (arg_type) < REGISTER_SIZE)
+	  && TYPE_LENGTH (arg_type) < DEPRECATED_REGISTER_SIZE)
 	{
 	  args[i] = value_cast ((TYPE_UNSIGNED (arg_type)
 				 ? builtin_type_unsigned_long
@@ -1756,7 +1878,7 @@ hppa_push_arguments (nargs, args, sp, struct_return, struct_addr)
 
       /* Align the size of the argument to the word size for this
 	 target.  */
-      bytes_reserved = (lengths[i] + REGISTER_SIZE - 1) & -REGISTER_SIZE;
+      bytes_reserved = (lengths[i] + DEPRECATED_REGISTER_SIZE - 1) & -DEPRECATED_REGISTER_SIZE;
 
       offset[i] = cum_bytes_reserved;
 
@@ -1768,8 +1890,8 @@ hppa_push_arguments (nargs, args, sp, struct_return, struct_addr)
       if (bytes_reserved > 8)
 	{
 	  /* Round up the offset to a multiple of two slots.  */
-	  int new_offset = ((offset[i] + 2*REGISTER_SIZE-1)
-			    & -(2*REGISTER_SIZE));
+	  int new_offset = ((offset[i] + 2*DEPRECATED_REGISTER_SIZE-1)
+			    & -(2*DEPRECATED_REGISTER_SIZE));
 
 	  /* Note the space we've wasted, if any.  */
 	  bytes_reserved += new_offset - offset[i];
@@ -1829,12 +1951,8 @@ hppa_push_arguments (nargs, args, sp, struct_return, struct_addr)
    arguments into registers as needed by the ABI. */
    
 CORE_ADDR
-hppa_push_arguments (nargs, args, sp, struct_return, struct_addr)
-     int nargs;
-     value_ptr *args;
-     CORE_ADDR sp;
-     int struct_return;
-     CORE_ADDR struct_addr;
+hppa_push_arguments (int nargs, struct value **args, CORE_ADDR sp,
+		     int struct_return, CORE_ADDR struct_addr)
 {
   /* array of arguments' offsets */
   int *offset = (int *) alloca (nargs * sizeof (int));
@@ -1860,14 +1978,15 @@ hppa_push_arguments (nargs, args, sp, struct_return, struct_addr)
 
       /* Align the size of the argument to the word size for this
 	 target.  */
-      bytes_reserved = (lengths[i] + REGISTER_SIZE - 1) & -REGISTER_SIZE;
+      bytes_reserved = (lengths[i] + DEPRECATED_REGISTER_SIZE - 1) & -DEPRECATED_REGISTER_SIZE;
 
-      offset[i] = cum_bytes_reserved + lengths[i];
+      offset[i] = (cum_bytes_reserved
+		   + (lengths[i] > 4 ? bytes_reserved : lengths[i]));
 
       /* If the argument is a double word argument, then it needs to be
 	 double word aligned.  */
-      if ((bytes_reserved == 2 * REGISTER_SIZE)
-	  && (offset[i] % 2 * REGISTER_SIZE))
+      if ((bytes_reserved == 2 * DEPRECATED_REGISTER_SIZE)
+	  && (offset[i] % 2 * DEPRECATED_REGISTER_SIZE))
 	{
 	  int new_offset = 0;
 	  /* BYTES_RESERVED is already aligned to the word, so we put
@@ -1875,13 +1994,13 @@ hppa_push_arguments (nargs, args, sp, struct_return, struct_addr)
 
 	     This will leave one empty word on the stack, and one unused
 	     register as mandated by the ABI.  */
-	  new_offset = ((offset[i] + 2 * REGISTER_SIZE - 1)
-			& -(2 * REGISTER_SIZE));
+	  new_offset = ((offset[i] + 2 * DEPRECATED_REGISTER_SIZE - 1)
+			& -(2 * DEPRECATED_REGISTER_SIZE));
 
-	  if ((new_offset - offset[i]) >= 2 * REGISTER_SIZE)
+	  if ((new_offset - offset[i]) >= 2 * DEPRECATED_REGISTER_SIZE)
 	    {
-	      bytes_reserved += REGISTER_SIZE;
-	      offset[i] += REGISTER_SIZE;
+	      bytes_reserved += DEPRECATED_REGISTER_SIZE;
+	      offset[i] += DEPRECATED_REGISTER_SIZE;
 	    }
 	}
 
@@ -1922,12 +2041,10 @@ hppa_push_arguments (nargs, args, sp, struct_return, struct_addr)
    This function does the same stuff as value_being_returned in values.c, but
    gets the value from the stack rather than from the buffer where all the
    registers were saved when the function called completed. */
-value_ptr
-hppa_value_returned_from_stack (valtype, addr)
-     register struct type *valtype;
-     CORE_ADDR addr;
+struct value *
+hppa_value_returned_from_stack (register struct type *valtype, CORE_ADDR addr)
 {
-  register value_ptr val;
+  register struct value *val;
 
   val = allocate_value (valtype);
   CHECK_TYPEDEF (valtype);
@@ -1958,29 +2075,28 @@ hppa_value_returned_from_stack (valtype, addr)
    man entry for shl_findsym */
 
 CORE_ADDR
-find_stub_with_shl_get (function, handle)
-     struct minimal_symbol *function;
-     CORE_ADDR handle;
+find_stub_with_shl_get (struct minimal_symbol *function, CORE_ADDR handle)
 {
   struct symbol *get_sym, *symbol2;
   struct minimal_symbol *buff_minsym, *msymbol;
   struct type *ftype;
-  value_ptr *args;
-  value_ptr funcval, val;
+  struct value **args;
+  struct value *funcval;
+  struct value *val;
 
   int x, namelen, err_value, tmp = -1;
   CORE_ADDR endo_buff_addr, value_return_addr, errno_return_addr;
   CORE_ADDR stub_addr;
 
 
-  args = (value_ptr *) alloca (sizeof (value_ptr) * 8);		/* 6 for the arguments and one null one??? */
+  args = alloca (sizeof (struct value *) * 8);		/* 6 for the arguments and one null one??? */
   funcval = find_function_in_inferior ("__d_shl_get");
-  get_sym = lookup_symbol ("__d_shl_get", NULL, VAR_NAMESPACE, NULL, NULL);
+  get_sym = lookup_symbol ("__d_shl_get", NULL, VAR_DOMAIN, NULL, NULL);
   buff_minsym = lookup_minimal_symbol ("__buffer", NULL, NULL);
   msymbol = lookup_minimal_symbol ("__shldp", NULL, NULL);
-  symbol2 = lookup_symbol ("__shldp", NULL, VAR_NAMESPACE, NULL, NULL);
+  symbol2 = lookup_symbol ("__shldp", NULL, VAR_DOMAIN, NULL, NULL);
   endo_buff_addr = SYMBOL_VALUE_ADDRESS (buff_minsym);
-  namelen = strlen (SYMBOL_NAME (function));
+  namelen = strlen (DEPRECATED_SYMBOL_NAME (function));
   value_return_addr = endo_buff_addr + namelen;
   ftype = check_typedef (SYMBOL_TYPE (get_sym));
 
@@ -1993,7 +2109,7 @@ find_stub_with_shl_get (function, handle)
 
   /* set up stuff needed by __d_shl_get in buffer in end.o */
 
-  target_write_memory (endo_buff_addr, SYMBOL_NAME (function), namelen);
+  target_write_memory (endo_buff_addr, DEPRECATED_SYMBOL_NAME (function), namelen);
 
   target_write_memory (value_return_addr, (char *) &tmp, 4);
 
@@ -2005,11 +2121,11 @@ find_stub_with_shl_get (function, handle)
   /* now prepare the arguments for the call */
 
   args[0] = value_from_longest (TYPE_FIELD_TYPE (ftype, 0), 12);
-  args[1] = value_from_longest (TYPE_FIELD_TYPE (ftype, 1), SYMBOL_VALUE_ADDRESS (msymbol));
-  args[2] = value_from_longest (TYPE_FIELD_TYPE (ftype, 2), endo_buff_addr);
+  args[1] = value_from_pointer (TYPE_FIELD_TYPE (ftype, 1), SYMBOL_VALUE_ADDRESS (msymbol));
+  args[2] = value_from_pointer (TYPE_FIELD_TYPE (ftype, 2), endo_buff_addr);
   args[3] = value_from_longest (TYPE_FIELD_TYPE (ftype, 3), TYPE_PROCEDURE);
-  args[4] = value_from_longest (TYPE_FIELD_TYPE (ftype, 4), value_return_addr);
-  args[5] = value_from_longest (TYPE_FIELD_TYPE (ftype, 5), errno_return_addr);
+  args[4] = value_from_pointer (TYPE_FIELD_TYPE (ftype, 4), value_return_addr);
+  args[5] = value_from_pointer (TYPE_FIELD_TYPE (ftype, 5), errno_return_addr);
 
   /* now call the function */
 
@@ -2028,7 +2144,7 @@ find_stub_with_shl_get (function, handle)
 
 /* Cover routine for find_stub_with_shl_get to pass to catch_errors */
 static int
-cover_find_stub_with_shl_get (PTR args_untyped)
+cover_find_stub_with_shl_get (void *args_untyped)
 {
   args_for_find_stub *args = args_untyped;
   args->return_val = find_stub_with_shl_get (args->msym, args->solib_handle);
@@ -2039,9 +2155,9 @@ cover_find_stub_with_shl_get (PTR args_untyped)
    into a call sequence of the above form stored at DUMMYNAME.
 
    On the hppa we need to call the stack dummy through $$dyncall.
-   Therefore our version of FIX_CALL_DUMMY takes an extra argument,
-   real_pc, which is the location where gdb should start up the
-   inferior to do the function call. 
+   Therefore our version of DEPRECATED_FIX_CALL_DUMMY takes an extra
+   argument, real_pc, which is the location where gdb should start up
+   the inferior to do the function call.
 
    This has to work across several versions of hpux, bsd, osf1.  It has to
    work regardless of what compiler was used to build the inferior program.
@@ -2059,14 +2175,8 @@ cover_find_stub_with_shl_get (PTR args_untyped)
    Please contact Jeff Law (law@cygnus.com) before changing this code.  */
 
 CORE_ADDR
-hppa_fix_call_dummy (dummy, pc, fun, nargs, args, type, gcc_p)
-     char *dummy;
-     CORE_ADDR pc;
-     CORE_ADDR fun;
-     int nargs;
-     value_ptr *args;
-     struct type *type;
-     int gcc_p;
+hppa_fix_call_dummy (char *dummy, CORE_ADDR pc, CORE_ADDR fun, int nargs,
+		     struct value **args, struct type *type, int gcc_p)
 {
   CORE_ADDR dyncall_addr;
   struct minimal_symbol *msymbol;
@@ -2133,9 +2243,9 @@ hppa_fix_call_dummy (dummy, pc, fun, nargs, args, type, gcc_p)
 	   such that it points to the PC value written immediately above
 	   (ie the call dummy).  */
         resume (1, 0);
-        target_wait (inferior_pid, &w);
+        target_wait (inferior_ptid, &w);
         resume (1, 0);
-        target_wait (inferior_pid, &w);
+        target_wait (inferior_ptid, &w);
 
 	/* Restore the two instructions at the old PC locations.  */
         *((int *) buf) = inst1;
@@ -2203,7 +2313,7 @@ hppa_fix_call_dummy (dummy, pc, fun, nargs, args, type, gcc_p)
          at *(fun+4).  Note the call dummy is *NOT* allowed to
          trash %r19 before calling the target function.  */
       write_register (19, read_memory_integer ((fun & ~0x3) + 4,
-		      REGISTER_SIZE));
+					       DEPRECATED_REGISTER_SIZE));
 
       /* Now get the real address for the function we are calling, it's
          at *fun.  */
@@ -2219,7 +2329,7 @@ hppa_fix_call_dummy (dummy, pc, fun, nargs, args, type, gcc_p)
          stub rather than the export stub or real function for lazy binding
          to work correctly
 
-         /* If we are using the gcc PLT call routine, then we need to
+         If we are using the gcc PLT call routine, then we need to
          get the import stub for the target function.  */
       if (using_gcc_plt_call && som_solib_get_got_by_pc (fun))
 	{
@@ -2237,10 +2347,10 @@ hppa_fix_call_dummy (dummy, pc, fun, nargs, args, type, gcc_p)
 	  {
 	    stub_symbol
 	      = lookup_minimal_symbol_solib_trampoline
-	      (SYMBOL_NAME (funsymbol), NULL, objfile);
+	      (DEPRECATED_SYMBOL_NAME (funsymbol), NULL, objfile);
 
 	    if (!stub_symbol)
-	      stub_symbol = lookup_minimal_symbol (SYMBOL_NAME (funsymbol),
+	      stub_symbol = lookup_minimal_symbol (DEPRECATED_SYMBOL_NAME (funsymbol),
 						   NULL, objfile);
 
 	    /* Found a symbol with the right name.  */
@@ -2341,7 +2451,7 @@ hppa_fix_call_dummy (dummy, pc, fun, nargs, args, type, gcc_p)
 	  new_stub = find_stub_with_shl_get (fmsymbol, solib_handle);
 
 	  if (new_stub == 0)
-	    error ("Can't find an import stub for %s", SYMBOL_NAME (fmsymbol));
+	    error ("Can't find an import stub for %s", DEPRECATED_SYMBOL_NAME (fmsymbol));
 
 	  /* We have to store the address of the stub in __shlib_funcptr.  */
 	  msymbol = lookup_minimal_symbol ("__shlib_funcptr", NULL,
@@ -2427,7 +2537,7 @@ hppa_fix_call_dummy (dummy, pc, fun, nargs, args, type, gcc_p)
   if (flags & 2)
     return pc;
 #ifndef GDB_TARGET_IS_PA_ELF
-  else if (som_solib_get_got_by_pc (target_read_pc (inferior_pid)))
+  else if (som_solib_get_got_by_pc (hppa_target_read_pc (inferior_ptid)))
     return pc;
 #endif
   else
@@ -2435,15 +2545,12 @@ hppa_fix_call_dummy (dummy, pc, fun, nargs, args, type, gcc_p)
 #endif
 }
 
-
-
-
 /* If the pid is in a syscall, then the FP register is not readable.
    We'll return zero in that case, rather than attempting to read it
    and cause a warning. */
+
 CORE_ADDR
-target_read_fp (pid)
-     int pid;
+hppa_read_fp (int pid)
 {
   int flags = read_register (FLAGS_REGNUM);
 
@@ -2453,38 +2560,40 @@ target_read_fp (pid)
     }
 
   /* This is the only site that may directly read_register () the FP
-     register.  All others must use TARGET_READ_FP (). */
-  return read_register (FP_REGNUM);
+     register.  All others must use deprecated_read_fp (). */
+  return read_register (DEPRECATED_FP_REGNUM);
 }
 
+CORE_ADDR
+hppa_target_read_fp (void)
+{
+  return hppa_read_fp (PIDGET (inferior_ptid));
+}
 
 /* Get the PC from %r31 if currently in a syscall.  Also mask out privilege
    bits.  */
 
 CORE_ADDR
-target_read_pc (pid)
-     int pid;
+hppa_target_read_pc (ptid_t ptid)
 {
-  int flags = read_register_pid (FLAGS_REGNUM, pid);
+  int flags = read_register_pid (FLAGS_REGNUM, ptid);
 
   /* The following test does not belong here.  It is OS-specific, and belongs
      in native code.  */
   /* Test SS_INSYSCALL */
   if (flags & 2)
-    return read_register_pid (31, pid) & ~0x3;
+    return read_register_pid (31, ptid) & ~0x3;
 
-  return read_register_pid (PC_REGNUM, pid) & ~0x3;
+  return read_register_pid (PC_REGNUM, ptid) & ~0x3;
 }
 
 /* Write out the PC.  If currently in a syscall, then also write the new
    PC value into %r31.  */
 
 void
-target_write_pc (v, pid)
-     CORE_ADDR v;
-     int pid;
+hppa_target_write_pc (CORE_ADDR v, ptid_t ptid)
 {
-  int flags = read_register_pid (FLAGS_REGNUM, pid);
+  int flags = read_register_pid (FLAGS_REGNUM, ptid);
 
   /* The following test does not belong here.  It is OS-specific, and belongs
      in native code.  */
@@ -2492,18 +2601,17 @@ target_write_pc (v, pid)
      privilege bits set correctly.  */
   /* Test SS_INSYSCALL */
   if (flags & 2)
-    write_register_pid (31, v | 0x3, pid);
+    write_register_pid (31, v | 0x3, ptid);
 
-  write_register_pid (PC_REGNUM, v, pid);
-  write_register_pid (NPC_REGNUM, v + 4, pid);
+  write_register_pid (PC_REGNUM, v, ptid);
+  write_register_pid (NPC_REGNUM, v + 4, ptid);
 }
 
 /* return the alignment of a type in bytes. Structures have the maximum
    alignment required by their fields. */
 
 static int
-hppa_alignof (type)
-     struct type *type;
+hppa_alignof (struct type *type)
 {
   int max_align, align, i;
   CHECK_TYPEDEF (type);
@@ -2537,17 +2645,15 @@ hppa_alignof (type)
 /* Print the register regnum, or all registers if regnum is -1 */
 
 void
-pa_do_registers_info (regnum, fpregs)
-     int regnum;
-     int fpregs;
+pa_do_registers_info (int regnum, int fpregs)
 {
-  char raw_regs[REGISTER_BYTES];
+  char *raw_regs = alloca (DEPRECATED_REGISTER_BYTES);
   int i;
 
   /* Make a copy of gdb's save area (may cause actual
      reads from the target). */
   for (i = 0; i < NUM_REGS; i++)
-    read_relative_register_raw_bytes (i, raw_regs + REGISTER_BYTE (i));
+    frame_register_read (deprecated_selected_frame, i, raw_regs + REGISTER_BYTE (i));
 
   if (regnum == -1)
     pa_print_registers (raw_regs, regnum, fpregs);
@@ -2561,15 +2667,15 @@ pa_do_registers_info (regnum, fpregs)
 
       if (!is_pa_2)
 	{
-	  printf_unfiltered ("%s %x\n", REGISTER_NAME (regnum), reg_val[1]);
+	  printf_unfiltered ("%s %lx\n", REGISTER_NAME (regnum), reg_val[1]);
 	}
       else
 	{
 	  /* Fancy % formats to prevent leading zeros. */
 	  if (reg_val[0] == 0)
-	    printf_unfiltered ("%s %x\n", REGISTER_NAME (regnum), reg_val[1]);
+	    printf_unfiltered ("%s %lx\n", REGISTER_NAME (regnum), reg_val[1]);
 	  else
-	    printf_unfiltered ("%s %x%8.8x\n", REGISTER_NAME (regnum),
+	    printf_unfiltered ("%s %lx%8.8lx\n", REGISTER_NAME (regnum),
 			       reg_val[0], reg_val[1]);
 	}
     }
@@ -2582,19 +2688,16 @@ pa_do_registers_info (regnum, fpregs)
 
 /********** new function ********************/
 void
-pa_do_strcat_registers_info (regnum, fpregs, stream, precision)
-     int regnum;
-     int fpregs;
-     struct ui_file *stream;
-     enum precision_type precision;
+pa_do_strcat_registers_info (int regnum, int fpregs, struct ui_file *stream,
+			     enum precision_type precision)
 {
-  char raw_regs[REGISTER_BYTES];
+  char *raw_regs = alloca (DEPRECATED_REGISTER_BYTES);
   int i;
 
   /* Make a copy of gdb's save area (may cause actual
      reads from the target). */
   for (i = 0; i < NUM_REGS; i++)
-    read_relative_register_raw_bytes (i, raw_regs + REGISTER_BYTE (i));
+    frame_register_read (deprecated_selected_frame, i, raw_regs + REGISTER_BYTE (i));
 
   if (regnum == -1)
     pa_strcat_registers (raw_regs, regnum, fpregs, stream);
@@ -2609,16 +2712,16 @@ pa_do_strcat_registers_info (regnum, fpregs, stream, precision)
 
       if (!is_pa_2)
 	{
-	  fprintf_unfiltered (stream, "%s %x", REGISTER_NAME (regnum), reg_val[1]);
+	  fprintf_unfiltered (stream, "%s %lx", REGISTER_NAME (regnum), reg_val[1]);
 	}
       else
 	{
 	  /* Fancy % formats to prevent leading zeros. */
 	  if (reg_val[0] == 0)
-	    fprintf_unfiltered (stream, "%s %x", REGISTER_NAME (regnum),
+	    fprintf_unfiltered (stream, "%s %lx", REGISTER_NAME (regnum),
 				reg_val[1]);
 	  else
-	    fprintf_unfiltered (stream, "%s %x%8.8x", REGISTER_NAME (regnum),
+	    fprintf_unfiltered (stream, "%s %lx%8.8lx", REGISTER_NAME (regnum),
 				reg_val[0], reg_val[1]);
 	}
     }
@@ -2635,10 +2738,7 @@ pa_do_strcat_registers_info (regnum, fpregs, stream, precision)
    Note that reg_val is really expected to be an array of longs,
    with two elements. */
 static void
-pa_register_look_aside (raw_regs, regnum, raw_val)
-     char *raw_regs;
-     int regnum;
-     long *raw_val;
+pa_register_look_aside (char *raw_regs, int regnum, long *raw_val)
 {
   static int know_which = 0;	/* False */
 
@@ -2648,7 +2748,7 @@ pa_register_look_aside (raw_regs, regnum, raw_val)
   int start;
 
 
-  char buf[MAX_REGISTER_RAW_SIZE];
+  char buf[MAX_REGISTER_SIZE];
   long long reg_val;
 
   if (!know_which)
@@ -2715,7 +2815,7 @@ pa_register_look_aside (raw_regs, regnum, raw_val)
   for (i = start; i < 2; i++)
     {
       errno = 0;
-      raw_val[i] = call_ptrace (PT_RUREGS, inferior_pid,
+      raw_val[i] = call_ptrace (PT_RUREGS, PIDGET (inferior_ptid),
 				(PTRACE_ARG3_TYPE) regaddr, 0);
       if (errno != 0)
 	{
@@ -2741,10 +2841,7 @@ error_exit:
 /* "Info all-reg" command */
 
 static void
-pa_print_registers (raw_regs, regnum, fpregs)
-     char *raw_regs;
-     int regnum;
-     int fpregs;
+pa_print_registers (char *raw_regs, int regnum, int fpregs)
 {
   int i, j;
   /* Alas, we are compiled so that "long long" is 32 bits */
@@ -2771,17 +2868,17 @@ pa_print_registers (raw_regs, regnum, fpregs)
 	      /* Being big-endian, on this machine the low bits
 	         (the ones we want to look at) are in the second longword. */
 	      long_val = extract_signed_integer (&raw_val[1], 4);
-	      printf_filtered ("%10.10s: %8x   ",
+	      printf_filtered ("%10.10s: %8lx   ",
 			       REGISTER_NAME (regnum), long_val);
 	    }
 	  else
 	    {
 	      /* raw_val = extract_signed_integer(&raw_val, 8); */
 	      if (raw_val[0] == 0)
-		printf_filtered ("%10.10s:         %8x   ",
+		printf_filtered ("%10.10s:         %8lx   ",
 				 REGISTER_NAME (regnum), raw_val[1]);
 	      else
-		printf_filtered ("%10.10s: %8x%8.8x   ",
+		printf_filtered ("%10.10s: %8lx%8.8lx   ",
 				 REGISTER_NAME (regnum),
 				 raw_val[0], raw_val[1]);
 	    }
@@ -2796,11 +2893,8 @@ pa_print_registers (raw_regs, regnum, fpregs)
 
 /************* new function ******************/
 static void
-pa_strcat_registers (raw_regs, regnum, fpregs, stream)
-     char *raw_regs;
-     int regnum;
-     int fpregs;
-     struct ui_file *stream;
+pa_strcat_registers (char *raw_regs, int regnum, int fpregs,
+		     struct ui_file *stream)
 {
   int i, j;
   long raw_val[2];		/* Alas, we are compiled so that "long long" is 32 bits */
@@ -2825,17 +2919,19 @@ pa_strcat_registers (raw_regs, regnum, fpregs, stream)
 	      /* Being big-endian, on this machine the low bits
 	         (the ones we want to look at) are in the second longword. */
 	      long_val = extract_signed_integer (&raw_val[1], 4);
-	      fprintf_filtered (stream, "%8.8s: %8x  ", REGISTER_NAME (i + (j * 18)), long_val);
+	      fprintf_filtered (stream, "%8.8s: %8lx  ",
+				REGISTER_NAME (i + (j * 18)), long_val);
 	    }
 	  else
 	    {
 	      /* raw_val = extract_signed_integer(&raw_val, 8); */
 	      if (raw_val[0] == 0)
-		fprintf_filtered (stream, "%8.8s:         %8x  ", REGISTER_NAME (i + (j * 18)),
-				  raw_val[1]);
+		fprintf_filtered (stream, "%8.8s:         %8lx  ",
+				  REGISTER_NAME (i + (j * 18)), raw_val[1]);
 	      else
-		fprintf_filtered (stream, "%8.8s: %8x%8.8x  ", REGISTER_NAME (i + (j * 18)),
-				  raw_val[0], raw_val[1]);
+		fprintf_filtered (stream, "%8.8s: %8lx%8.8lx  ",
+				  REGISTER_NAME (i + (j * 18)), raw_val[0],
+				  raw_val[1]);
 	    }
 	}
       fprintf_unfiltered (stream, "\n");
@@ -2847,14 +2943,13 @@ pa_strcat_registers (raw_regs, regnum, fpregs, stream)
 }
 
 static void
-pa_print_fp_reg (i)
-     int i;
+pa_print_fp_reg (int i)
 {
-  char raw_buffer[MAX_REGISTER_RAW_SIZE];
-  char virtual_buffer[MAX_REGISTER_VIRTUAL_SIZE];
+  char raw_buffer[MAX_REGISTER_SIZE];
+  char virtual_buffer[MAX_REGISTER_SIZE];
 
   /* Get 32bits of data.  */
-  read_relative_register_raw_bytes (i, raw_buffer);
+  frame_register_read (deprecated_selected_frame, i, raw_buffer);
 
   /* Put it in the buffer.  No conversions are ever necessary.  */
   memcpy (virtual_buffer, raw_buffer, REGISTER_RAW_SIZE (i));
@@ -2872,7 +2967,7 @@ pa_print_fp_reg (i)
   if ((i % 2) == 0)
     {
       /* Get the data in raw format for the 2nd half.  */
-      read_relative_register_raw_bytes (i + 1, raw_buffer);
+      frame_register_read (deprecated_selected_frame, i + 1, raw_buffer);
 
       /* Copy it into the appropriate part of the virtual buffer.  */
       memcpy (virtual_buffer + REGISTER_RAW_SIZE (i), raw_buffer,
@@ -2891,19 +2986,16 @@ pa_print_fp_reg (i)
 
 /*************** new function ***********************/
 static void
-pa_strcat_fp_reg (i, stream, precision)
-     int i;
-     struct ui_file *stream;
-     enum precision_type precision;
+pa_strcat_fp_reg (int i, struct ui_file *stream, enum precision_type precision)
 {
-  char raw_buffer[MAX_REGISTER_RAW_SIZE];
-  char virtual_buffer[MAX_REGISTER_VIRTUAL_SIZE];
+  char raw_buffer[MAX_REGISTER_SIZE];
+  char virtual_buffer[MAX_REGISTER_SIZE];
 
   fputs_filtered (REGISTER_NAME (i), stream);
   print_spaces_filtered (8 - strlen (REGISTER_NAME (i)), stream);
 
   /* Get 32bits of data.  */
-  read_relative_register_raw_bytes (i, raw_buffer);
+  frame_register_read (deprecated_selected_frame, i, raw_buffer);
 
   /* Put it in the buffer.  No conversions are ever necessary.  */
   memcpy (virtual_buffer, raw_buffer, REGISTER_RAW_SIZE (i));
@@ -2911,10 +3003,10 @@ pa_strcat_fp_reg (i, stream, precision)
   if (precision == double_precision && (i % 2) == 0)
     {
 
-      char raw_buf[MAX_REGISTER_RAW_SIZE];
+      char raw_buf[MAX_REGISTER_SIZE];
 
       /* Get the data in raw format for the 2nd half.  */
-      read_relative_register_raw_bytes (i + 1, raw_buf);
+      frame_register_read (deprecated_selected_frame, i + 1, raw_buf);
 
       /* Copy it into the appropriate part of the virtual buffer.  */
       memcpy (virtual_buffer + REGISTER_RAW_SIZE (i), raw_buf, REGISTER_RAW_SIZE (i));
@@ -2937,9 +3029,7 @@ pa_strcat_fp_reg (i, stream, precision)
    just shared library trampolines (import, export).  */
 
 int
-in_solib_call_trampoline (pc, name)
-     CORE_ADDR pc;
-     char *name;
+hppa_in_solib_call_trampoline (CORE_ADDR pc, char *name)
 {
   struct minimal_symbol *minsym;
   struct unwind_table_entry *u;
@@ -2981,7 +3071,7 @@ in_solib_call_trampoline (pc, name)
        instructions long. */
     insn = read_memory_integer (pc, 4);
 
-    /* Find out where we we think we are within the stub.  */
+    /* Find out where we think we are within the stub.  */
     if ((insn & 0xffffc00e) == 0x53610000)
       addr = pc;
     else if ((insn & 0xffffffff) == 0xe820d000)
@@ -3037,7 +3127,7 @@ in_solib_call_trampoline (pc, name)
     return 1;
 
   minsym = lookup_minimal_symbol_by_pc (pc);
-  if (minsym && strcmp (SYMBOL_NAME (minsym), ".stub") == 0)
+  if (minsym && strcmp (DEPRECATED_SYMBOL_NAME (minsym), ".stub") == 0)
     return 1;
 
   /* Get the unwind descriptor corresponding to PC, return zero
@@ -3099,9 +3189,7 @@ in_solib_call_trampoline (pc, name)
    just shared library trampolines (import, export).  */
 
 int
-in_solib_return_trampoline (pc, name)
-     CORE_ADDR pc;
-     char *name;
+hppa_in_solib_return_trampoline (CORE_ADDR pc, char *name)
 {
   struct unwind_table_entry *u;
 
@@ -3174,9 +3262,7 @@ in_solib_return_trampoline (pc, name)
    used in dynamic executables.  */
 
 CORE_ADDR
-skip_trampoline_code (pc, name)
-     CORE_ADDR pc;
-     char *name;
+hppa_skip_trampoline_code (CORE_ADDR pc)
 {
   long orig_pc = pc;
   long prev_inst, curr_inst, loc;
@@ -3284,7 +3370,7 @@ skip_trampoline_code (pc, name)
 	  ALL_MSYMBOLS (objfile, msymbol)
 	  {
 	    if (MSYMBOL_TYPE (msymbol) == mst_text
-		&& STREQ (SYMBOL_NAME (msymbol), SYMBOL_NAME (msym)))
+		&& STREQ (DEPRECATED_SYMBOL_NAME (msymbol), DEPRECATED_SYMBOL_NAME (msym)))
 	      {
 		function_found = 1;
 		break;
@@ -3375,15 +3461,15 @@ skip_trampoline_code (pc, name)
 	  stubsym = lookup_minimal_symbol_by_pc (loc);
 	  if (stubsym == NULL)
 	    {
-	      warning ("Unable to find symbol for 0x%x", loc);
+	      warning ("Unable to find symbol for 0x%lx", loc);
 	      return orig_pc == pc ? 0 : pc & ~0x3;
 	    }
 
-	  libsym = lookup_minimal_symbol (SYMBOL_NAME (stubsym), NULL, NULL);
+	  libsym = lookup_minimal_symbol (DEPRECATED_SYMBOL_NAME (stubsym), NULL, NULL);
 	  if (libsym == NULL)
 	    {
 	      warning ("Unable to find library symbol for %s\n",
-		       SYMBOL_NAME (stubsym));
+		       DEPRECATED_SYMBOL_NAME (stubsym));
 	      return orig_pc == pc ? 0 : pc & ~0x3;
 	    }
 
@@ -3451,8 +3537,7 @@ skip_trampoline_code (pc, name)
    This only handles instructions commonly found in prologues.  */
 
 static int
-prologue_inst_adjust_sp (inst)
-     unsigned long inst;
+prologue_inst_adjust_sp (unsigned long inst)
 {
   /* This must persist across calls.  */
   static int save_high21;
@@ -3491,8 +3576,7 @@ prologue_inst_adjust_sp (inst)
 /* Return nonzero if INST is a branch of some kind, else return zero.  */
 
 static int
-is_branch (inst)
-     unsigned long inst;
+is_branch (unsigned long inst)
 {
   switch (inst >> 26)
     {
@@ -3525,8 +3609,7 @@ is_branch (inst)
    zero it INST does not save a GR.  */
 
 static int
-inst_saves_gr (inst)
-     unsigned long inst;
+inst_saves_gr (unsigned long inst)
 {
   /* Does it look like a stw?  */
   if ((inst >> 26) == 0x1a || (inst >> 26) == 0x1b
@@ -3565,8 +3648,7 @@ inst_saves_gr (inst)
    FIXME: What about argument stores with the HP compiler in ANSI mode? */
 
 static int
-inst_saves_fr (inst)
-     unsigned long inst;
+inst_saves_fr (unsigned long inst)
 {
   /* is this an FSTD ? */
   if ((inst & 0xfc00dfc0) == 0x2c001200)
@@ -3589,8 +3671,7 @@ inst_saves_fr (inst)
 
 
 CORE_ADDR
-skip_prologue_hard_way (pc)
-     CORE_ADDR pc;
+skip_prologue_hard_way (CORE_ADDR pc)
 {
   char buf[4];
   CORE_ADDR orig_pc = pc;
@@ -3627,7 +3708,7 @@ restart:
   for (i = 3; i < u->Entry_GR + 3; i++)
     {
       /* Frame pointer gets saved into a special location.  */
-      if (u->Save_SP && i == FP_REGNUM)
+      if (u->Save_SP && i == DEPRECATED_FP_REGNUM)
 	continue;
 
       save_gr |= (1 << i);
@@ -3822,8 +3903,7 @@ restart:
    we can determine it from the debug symbols.  Else return zero.  */
 
 static CORE_ADDR
-after_prologue (pc)
-     CORE_ADDR pc;
+after_prologue (CORE_ADDR pc)
 {
   struct symtab_and_line sal;
   CORE_ADDR func_addr, func_end;
@@ -3864,8 +3944,7 @@ after_prologue (pc)
    stuff some day.  */
 
 CORE_ADDR
-hppa_skip_prologue (pc)
-     CORE_ADDR pc;
+hppa_skip_prologue (CORE_ADDR pc)
 {
   unsigned long inst;
   int offset;
@@ -3890,16 +3969,15 @@ hppa_skip_prologue (pc)
     return (skip_prologue_hard_way (pc));
 }
 
-/* Put here the code to store, into a struct frame_saved_regs,
-   the addresses of the saved registers of frame described by FRAME_INFO.
-   This includes special registers such as pc and fp saved in special
-   ways in the stack frame.  sp is even more special:
-   the address we return for it IS the sp for the next frame.  */
+/* Put here the code to store, into the SAVED_REGS, the addresses of
+   the saved registers of frame described by FRAME_INFO.  This
+   includes special registers such as pc and fp saved in special ways
+   in the stack frame.  sp is even more special: the address we return
+   for it IS the sp for the next frame.  */
 
 void
-hppa_frame_find_saved_regs (frame_info, frame_saved_regs)
-     struct frame_info *frame_info;
-     struct frame_saved_regs *frame_saved_regs;
+hppa_frame_find_saved_regs (struct frame_info *frame_info,
+			    CORE_ADDR frame_saved_regs[])
 {
   CORE_ADDR pc;
   struct unwind_table_entry *u;
@@ -3910,49 +3988,50 @@ hppa_frame_find_saved_regs (frame_info, frame_saved_regs)
   int final_iteration;
 
   /* Zero out everything.  */
-  memset (frame_saved_regs, '\0', sizeof (struct frame_saved_regs));
+  memset (frame_saved_regs, '\0', SIZEOF_FRAME_SAVED_REGS);
 
   /* Call dummy frames always look the same, so there's no need to
      examine the dummy code to determine locations of saved registers;
      instead, let find_dummy_frame_regs fill in the correct offsets
      for the saved registers.  */
-  if ((frame_info->pc >= frame_info->frame
-       && frame_info->pc <= (frame_info->frame
-			     /* A call dummy is sized in words, but it is
-				actually a series of instructions.  Account
-				for that scaling factor.  */
-			     + ((REGISTER_SIZE / INSTRUCTION_SIZE)
-				* CALL_DUMMY_LENGTH)
-			     /* Similarly we have to account for 64bit
-				wide register saves.  */
-			     + (32 * REGISTER_SIZE)
-			     /* We always consider FP regs 8 bytes long.  */
-			     + (NUM_REGS - FP0_REGNUM) * 8
-			     /* Similarly we have to account for 64bit
-				wide register saves.  */
-			     + (6 * REGISTER_SIZE))))
+  if ((get_frame_pc (frame_info) >= get_frame_base (frame_info)
+       && (get_frame_pc (frame_info)
+	   <= (get_frame_base (frame_info)
+	       /* A call dummy is sized in words, but it is actually a
+		  series of instructions.  Account for that scaling
+		  factor.  */
+	       + ((DEPRECATED_REGISTER_SIZE / INSTRUCTION_SIZE)
+		  * DEPRECATED_CALL_DUMMY_LENGTH)
+	       /* Similarly we have to account for 64bit wide register
+		  saves.  */
+	       + (32 * DEPRECATED_REGISTER_SIZE)
+	       /* We always consider FP regs 8 bytes long.  */
+	       + (NUM_REGS - FP0_REGNUM) * 8
+	       /* Similarly we have to account for 64bit wide register
+		  saves.  */
+	       + (6 * DEPRECATED_REGISTER_SIZE)))))
     find_dummy_frame_regs (frame_info, frame_saved_regs);
 
   /* Interrupt handlers are special too.  They lay out the register
      state in the exact same order as the register numbers in GDB.  */
-  if (pc_in_interrupt_handler (frame_info->pc))
+  if (pc_in_interrupt_handler (get_frame_pc (frame_info)))
     {
       for (i = 0; i < NUM_REGS; i++)
 	{
 	  /* SP is a little special.  */
 	  if (i == SP_REGNUM)
-	    frame_saved_regs->regs[SP_REGNUM]
-	      = read_memory_integer (frame_info->frame + SP_REGNUM * 4,
+	    frame_saved_regs[SP_REGNUM]
+	      = read_memory_integer (get_frame_base (frame_info) + SP_REGNUM * 4,
 				     TARGET_PTR_BIT / 8);
 	  else
-	    frame_saved_regs->regs[i] = frame_info->frame + i * 4;
+	    frame_saved_regs[i] = get_frame_base (frame_info) + i * 4;
 	}
       return;
     }
 
 #ifdef FRAME_FIND_SAVED_REGS_IN_SIGTRAMP
   /* Handle signal handler callers.  */
-  if (frame_info->signal_handler_caller)
+  if ((get_frame_type (frame_info) == SIGTRAMP_FRAME))
     {
       FRAME_FIND_SAVED_REGS_IN_SIGTRAMP (frame_info, frame_saved_regs);
       return;
@@ -3961,7 +4040,7 @@ hppa_frame_find_saved_regs (frame_info, frame_saved_regs)
 
   /* Get the starting address of the function referred to by the PC
      saved in frame.  */
-  pc = get_pc_function_start (frame_info->pc);
+  pc = get_frame_func (frame_info);
 
   /* Yow! */
   u = find_unwind_entry (pc);
@@ -3980,7 +4059,7 @@ hppa_frame_find_saved_regs (frame_info, frame_saved_regs)
   for (i = 3; i < u->Entry_GR + 3; i++)
     {
       /* Frame pointer gets saved into a special location.  */
-      if (u->Save_SP && i == FP_REGNUM)
+      if (u->Save_SP && i == DEPRECATED_FP_REGNUM)
 	continue;
 
       save_gr |= (1 << i);
@@ -3994,7 +4073,7 @@ hppa_frame_find_saved_regs (frame_info, frame_saved_regs)
   /* The frame always represents the value of %sp at entry to the
      current function (and is thus equivalent to the "saved" stack
      pointer.  */
-  frame_saved_regs->regs[SP_REGNUM] = frame_info->frame;
+  frame_saved_regs[SP_REGNUM] = get_frame_base (frame_info);
 
   /* Loop until we find everything of interest or hit a branch.
 
@@ -4012,7 +4091,7 @@ hppa_frame_find_saved_regs (frame_info, frame_saved_regs)
      GCC code.  */
   final_iteration = 0;
   while ((save_gr || save_fr || save_rp || save_sp || stack_remaining > 0)
-	 && pc <= frame_info->pc)
+	 && pc <= get_frame_pc (frame_info))
     {
       status = target_read_memory (pc, buf, 4);
       inst = extract_unsigned_integer (buf, 4);
@@ -4029,12 +4108,12 @@ hppa_frame_find_saved_regs (frame_info, frame_saved_regs)
       if (inst == 0x6bc23fd9) /* stw rp,-0x14(sr0,sp) */
 	{
 	  save_rp = 0;
-	  frame_saved_regs->regs[RP_REGNUM] = frame_info->frame - 20;
+	  frame_saved_regs[RP_REGNUM] = get_frame_base (frame_info) - 20;
 	}
       else if (inst == 0x0fc212c1) /* std rp,-0x10(sr0,sp) */
 	{
 	  save_rp = 0;
-	  frame_saved_regs->regs[RP_REGNUM] = frame_info->frame - 16;
+	  frame_saved_regs[RP_REGNUM] = get_frame_base (frame_info) - 16;
 	}
 
       /* Note if we saved SP into the stack.  This also happens to indicate
@@ -4042,24 +4121,24 @@ hppa_frame_find_saved_regs (frame_info, frame_saved_regs)
       if (   (inst & 0xffffc000) == 0x6fc10000  /* stw,ma r1,N(sr0,sp) */
           || (inst & 0xffffc00c) == 0x73c10008) /* std,ma r1,N(sr0,sp) */
 	{
-	  frame_saved_regs->regs[FP_REGNUM] = frame_info->frame;
+	  frame_saved_regs[DEPRECATED_FP_REGNUM] = get_frame_base (frame_info);
 	  save_sp = 0;
 	}
 
       /* Account for general and floating-point register saves.  */
       reg = inst_saves_gr (inst);
       if (reg >= 3 && reg <= 18
-	  && (!u->Save_SP || reg != FP_REGNUM))
+	  && (!u->Save_SP || reg != DEPRECATED_FP_REGNUM))
 	{
 	  save_gr &= ~(1 << reg);
 
 	  /* stwm with a positive displacement is a *post modify*.  */
 	  if ((inst >> 26) == 0x1b
 	      && extract_14 (inst) >= 0)
-	    frame_saved_regs->regs[reg] = frame_info->frame;
+	    frame_saved_regs[reg] = get_frame_base (frame_info);
 	  /* A std has explicit post_modify forms.  */
 	  else if ((inst & 0xfc00000c0) == 0x70000008)
-	    frame_saved_regs->regs[reg] = frame_info->frame;
+	    frame_saved_regs[reg] = get_frame_base (frame_info);
 	  else
 	    {
 	      CORE_ADDR offset;
@@ -4073,11 +4152,11 @@ hppa_frame_find_saved_regs (frame_info, frame_saved_regs)
 
 	      /* Handle code with and without frame pointers.  */
 	      if (u->Save_SP)
-		frame_saved_regs->regs[reg]
-		  = frame_info->frame + offset;
+		frame_saved_regs[reg]
+		  = get_frame_base (frame_info) + offset;
 	      else
-		frame_saved_regs->regs[reg]
-		  = (frame_info->frame + (u->Total_frame_size << 3)
+		frame_saved_regs[reg]
+		  = (get_frame_base (frame_info) + (u->Total_frame_size << 3)
 		     + offset);
 	    }
 	}
@@ -4109,18 +4188,18 @@ hppa_frame_find_saved_regs (frame_info, frame_saved_regs)
 	      /* 1st HP CC FP register store.  After this instruction
 	         we've set enough state that the GCC and HPCC code are
 	         both handled in the same manner.  */
-	      frame_saved_regs->regs[reg + FP4_REGNUM + 4] = frame_info->frame;
+	      frame_saved_regs[reg + FP4_REGNUM + 4] = get_frame_base (frame_info);
 	      fp_loc = 8;
 	    }
 	  else
 	    {
-	      frame_saved_regs->regs[reg + FP0_REGNUM + 4]
-		= frame_info->frame + fp_loc;
+	      frame_saved_regs[reg + FP0_REGNUM + 4]
+		= get_frame_base (frame_info) + fp_loc;
 	      fp_loc += 8;
 	    }
 	}
 
-      /* Quit if we hit any kind of branch the previous iteration.
+      /* Quit if we hit any kind of branch the previous iteration. */
       if (final_iteration)
 	break;
 
@@ -4134,6 +4213,17 @@ hppa_frame_find_saved_regs (frame_info, frame_saved_regs)
     }
 }
 
+/* XXX - deprecated.  This is a compatibility function for targets
+   that do not yet implement DEPRECATED_FRAME_INIT_SAVED_REGS.  */
+/* Find the addresses in which registers are saved in FRAME.  */
+
+void
+hppa_frame_init_saved_regs (struct frame_info *frame)
+{
+  if (get_frame_saved_regs (frame) == NULL)
+    frame_saved_regs_zalloc (frame);
+  hppa_frame_find_saved_regs (frame, get_frame_saved_regs (frame));
+}
 
 /* Exception handling support for the HP-UX ANSI C++ compiler.
    The compiler (aCC) provides a callback for exception events;
@@ -4186,7 +4276,7 @@ static struct symtab_and_line *break_callback_sal = 0;
    0 => success
    1 => failure  */
 int
-setup_d_pid_in_inferior ()
+setup_d_pid_in_inferior (void)
 {
   CORE_ADDR anaddr;
   struct minimal_symbol *msymbol;
@@ -4202,7 +4292,7 @@ setup_d_pid_in_inferior ()
     }
 
   anaddr = SYMBOL_VALUE_ADDRESS (msymbol);
-  store_unsigned_integer (buf, 4, inferior_pid);	/* FIXME 32x64? */
+  store_unsigned_integer (buf, 4, PIDGET (inferior_ptid)); /* FIXME 32x64? */
   if (target_write_memory (anaddr, buf, 4))	/* FIXME 32x64? */
     {
       warning ("Unable to write __d_pid");
@@ -4220,7 +4310,7 @@ setup_d_pid_in_inferior ()
    1 => success          */
 
 static int
-initialize_hp_cxx_exception_support ()
+initialize_hp_cxx_exception_support (void)
 {
   struct symtabs_and_lines sals;
   struct cleanup *old_chain;
@@ -4334,7 +4424,7 @@ initialize_hp_cxx_exception_support ()
       args.return_val = 0;
 
       recurse++;
-      catch_errors (cover_find_stub_with_shl_get, (PTR) &args, message,
+      catch_errors (cover_find_stub_with_shl_get, &args, message,
 		    RETURN_MASK_ALL);
       eh_notify_callback_addr = args.return_val;
       recurse--;
@@ -4344,7 +4434,7 @@ initialize_hp_cxx_exception_support ()
       if (!eh_notify_callback_addr)
 	{
 	  /* We can get here either if there is no plabel in the export list
-	     for the main image, or if something strange happened (??) */
+	     for the main image, or if something strange happened (?) */
 	  warning ("Couldn't find a plabel (indirect function label) for the exception callback.");
 	  warning ("GDB will not be able to intercept exception events.");
 	  return 0;
@@ -4373,7 +4463,7 @@ initialize_hp_cxx_exception_support ()
 
   /* Next look for the catch enable flag provided in end.o */
   sym = lookup_symbol (HP_ACC_EH_catch_catch, (struct block *) NULL,
-		       VAR_NAMESPACE, 0, (struct symtab **) NULL);
+		       VAR_DOMAIN, 0, (struct symtab **) NULL);
   if (sym)			/* sometimes present in debug info */
     {
       eh_catch_catch_addr = SYMBOL_VALUE_ADDRESS (sym);
@@ -4399,7 +4489,7 @@ initialize_hp_cxx_exception_support ()
 
   /* Next look for the catch enable flag provided end.o */
   sym = lookup_symbol (HP_ACC_EH_catch_catch, (struct block *) NULL,
-		       VAR_NAMESPACE, 0, (struct symtab **) NULL);
+		       VAR_DOMAIN, 0, (struct symtab **) NULL);
   if (sym)			/* sometimes present in debug info */
     {
       eh_catch_throw_addr = SYMBOL_VALUE_ADDRESS (sym);
@@ -4441,9 +4531,7 @@ initialize_hp_cxx_exception_support ()
    address was found. */
 
 struct symtab_and_line *
-child_enable_exception_callback (kind, enable)
-     enum exception_event_kind kind;
-     int enable;
+child_enable_exception_callback (enum exception_event_kind kind, int enable)
 {
   char buf[4];
 
@@ -4474,7 +4562,7 @@ child_enable_exception_callback (kind, enable)
   if (enable)
     {
       /* Ensure that __d_pid is set up correctly -- end.c code checks this. :-( */
-      if (inferior_pid > 0)
+      if (PIDGET (inferior_ptid) > 0)
 	{
 	  if (setup_d_pid_in_inferior ())
 	    return (struct symtab_and_line *) -1;
@@ -4513,7 +4601,7 @@ child_enable_exception_callback (kind, enable)
     {
       break_callback_sal = (struct symtab_and_line *) xmalloc (sizeof (struct symtab_and_line));
     }
-  INIT_SAL (break_callback_sal);
+  init_sal (break_callback_sal);
   break_callback_sal->symtab = NULL;
   break_callback_sal->pc = eh_break_addr;
   break_callback_sal->line = 0;
@@ -4533,7 +4621,7 @@ static struct symtab_and_line null_symtab_and_line =
    and where it will be caught.  More information may be reported
    in the future */
 struct exception_event_record *
-child_get_current_exception_event ()
+child_get_current_exception_event (void)
 {
   CORE_ADDR event_kind;
   CORE_ADDR throw_addr;
@@ -4552,7 +4640,7 @@ child_get_current_exception_event ()
   if (level != 0)
     return (struct exception_event_record *) NULL;
 
-  select_frame (fi, -1);
+  select_frame (fi);
 
   /* Read in the arguments */
   /* __d_eh_notify_callback() is called with 3 arguments:
@@ -4578,11 +4666,11 @@ child_get_current_exception_event ()
   if (level != 0)
     return (struct exception_event_record *) NULL;
 
-  select_frame (fi, -1);
-  throw_addr = fi->pc;
+  select_frame (fi);
+  throw_addr = get_frame_pc (fi);
 
   /* Go back to original (top) frame */
-  select_frame (curr_frame, -1);
+  select_frame (curr_frame);
 
   current_ex_event.kind = (enum exception_event_kind) event_kind;
   current_ex_event.throw_sal = find_pc_line (throw_addr, 1);
@@ -4591,10 +4679,18 @@ child_get_current_exception_event ()
   return &current_ex_event;
 }
 
+/* Instead of this nasty cast, add a method pvoid() that prints out a
+   host VOID data type (remember %p isn't portable).  */
+
+static CORE_ADDR
+hppa_pointer_to_address_hack (void *ptr)
+{
+  gdb_assert (sizeof (ptr) == TYPE_LENGTH (builtin_type_void_data_ptr));
+  return POINTER_TO_ADDRESS (builtin_type_void_data_ptr, &ptr);
+}
+
 static void
-unwind_command (exp, from_tty)
-     char *exp;
-     int from_tty;
+unwind_command (char *exp, int from_tty)
 {
   CORE_ADDR address;
   struct unwind_table_entry *u;
@@ -4614,7 +4710,8 @@ unwind_command (exp, from_tty)
       return;
     }
 
-  printf_unfiltered ("unwind_table_entry (0x%x):\n", u);
+  printf_unfiltered ("unwind_table_entry (0x%s):\n",
+		     paddr_nz (hppa_pointer_to_address_hack (u)));
 
   printf_unfiltered ("\tregion_start = ");
   print_address (u->region_start, gdb_stdout);
@@ -4622,11 +4719,7 @@ unwind_command (exp, from_tty)
   printf_unfiltered ("\n\tregion_end = ");
   print_address (u->region_end, gdb_stdout);
 
-#ifdef __STDC__
 #define pif(FLD) if (u->FLD) printf_unfiltered (" "#FLD);
-#else
-#define pif(FLD) if (u->FLD) printf_unfiltered (" FLD");
-#endif
 
   printf_unfiltered ("\n\tflags =");
   pif (Cannot_unwind);
@@ -4651,11 +4744,7 @@ unwind_command (exp, from_tty)
 
   putchar_unfiltered ('\n');
 
-#ifdef __STDC__
 #define pin(FLD) printf_unfiltered ("\t"#FLD" = 0x%x\n", u->FLD);
-#else
-#define pin(FLD) printf_unfiltered ("\tFLD = 0x%x\n", u->FLD);
-#endif
 
   pin (Region_description);
   pin (Entry_FR);
@@ -4663,88 +4752,8 @@ unwind_command (exp, from_tty)
   pin (Total_frame_size);
 }
 
-#ifdef PREPARE_TO_PROCEED
-
-/* If the user has switched threads, and there is a breakpoint
-   at the old thread's pc location, then switch to that thread
-   and return TRUE, else return FALSE and don't do a thread
-   switch (or rather, don't seem to have done a thread switch).
-
-   Ptrace-based gdb will always return FALSE to the thread-switch
-   query, and thus also to PREPARE_TO_PROCEED.
-
-   The important thing is whether there is a BPT instruction,
-   not how many user breakpoints there are.  So we have to worry
-   about things like these:
-
-   o  Non-bp stop -- NO
-
-   o  User hits bp, no switch -- NO
-
-   o  User hits bp, switches threads -- YES
-
-   o  User hits bp, deletes bp, switches threads -- NO
-
-   o  User hits bp, deletes one of two or more bps
-   at that PC, user switches threads -- YES
-
-   o  Plus, since we're buffering events, the user may have hit a
-   breakpoint, deleted the breakpoint and then gotten another
-   hit on that same breakpoint on another thread which
-   actually hit before the delete. (FIXME in breakpoint.c
-   so that "dead" breakpoints are ignored?) -- NO
-
-   For these reasons, we have to violate information hiding and
-   call "breakpoint_here_p".  If core gdb thinks there is a bpt
-   here, that's what counts, as core gdb is the one which is
-   putting the BPT instruction in and taking it out. */
-int
-hppa_prepare_to_proceed ()
-{
-  pid_t old_thread;
-  pid_t current_thread;
-
-  old_thread = hppa_switched_threads (inferior_pid);
-  if (old_thread != 0)
-    {
-      /* Switched over from "old_thread".  Try to do
-         as little work as possible, 'cause mostly
-         we're going to switch back. */
-      CORE_ADDR new_pc;
-      CORE_ADDR old_pc = read_pc ();
-
-      /* Yuk, shouldn't use global to specify current
-         thread.  But that's how gdb does it. */
-      current_thread = inferior_pid;
-      inferior_pid = old_thread;
-
-      new_pc = read_pc ();
-      if (new_pc != old_pc	/* If at same pc, no need */
-	  && breakpoint_here_p (new_pc))
-	{
-	  /* User hasn't deleted the BP.
-	     Return TRUE, finishing switch to "old_thread". */
-	  flush_cached_frames ();
-	  registers_changed ();
-#if 0
-	  printf ("---> PREPARE_TO_PROCEED (was %d, now %d)!\n",
-		  current_thread, inferior_pid);
-#endif
-
-	  return 1;
-	}
-
-      /* Otherwise switch back to the user-chosen thread. */
-      inferior_pid = current_thread;
-      new_pc = read_pc ();	/* Re-prime register cache */
-    }
-
-  return 0;
-}
-#endif /* PREPARE_TO_PROCEED */
-
 void
-hppa_skip_permanent_breakpoint ()
+hppa_skip_permanent_breakpoint (void)
 {
   /* To step over a breakpoint instruction on the PA takes some
      fiddling with the instruction address queue.
@@ -4767,12 +4776,337 @@ hppa_skip_permanent_breakpoint ()
   /* We can leave the tail's space the same, since there's no jump.  */
 }
 
+/* Copy the function value from VALBUF into the proper location
+   for a function return.
+
+   Called only in the context of the "return" command.  */
+
 void
-_initialize_hppa_tdep ()
+hppa_store_return_value (struct type *type, char *valbuf)
 {
-  tm_print_insn = print_insn_hppa;
+  /* For software floating point, the return value goes into the
+     integer registers.  But we do not have any flag to key this on,
+     so we always store the value into the integer registers.
+
+     If its a float value, then we also store it into the floating
+     point registers.  */
+  deprecated_write_register_bytes (REGISTER_BYTE (28)
+				   + (TYPE_LENGTH (type) > 4
+				      ? (8 - TYPE_LENGTH (type))
+				      : (4 - TYPE_LENGTH (type))),
+				   valbuf, TYPE_LENGTH (type));
+  if (TYPE_CODE (type) == TYPE_CODE_FLT)
+    deprecated_write_register_bytes (REGISTER_BYTE (FP4_REGNUM),
+				     valbuf, TYPE_LENGTH (type));
+}
+
+/* Copy the function's return value into VALBUF.
+
+   This function is called only in the context of "target function calls",
+   ie. when the debugger forces a function to be called in the child, and
+   when the debugger forces a fucntion to return prematurely via the
+   "return" command.  */
+
+void
+hppa_extract_return_value (struct type *type, char *regbuf, char *valbuf)
+{
+  if (TYPE_CODE (type) == TYPE_CODE_FLT)
+    memcpy (valbuf,
+	    (char *)regbuf + REGISTER_BYTE (FP4_REGNUM),
+	    TYPE_LENGTH (type));
+  else
+    memcpy (valbuf,
+	    ((char *)regbuf
+	     + REGISTER_BYTE (28)
+	     + (TYPE_LENGTH (type) > 4
+		? (8 - TYPE_LENGTH (type))
+		: (4 - TYPE_LENGTH (type)))),
+	    TYPE_LENGTH (type));
+}
+
+int
+hppa_reg_struct_has_addr (int gcc_p, struct type *type)
+{
+  /* On the PA, any pass-by-value structure > 8 bytes is actually passed
+     via a pointer regardless of its type or the compiler used.  */
+  return (TYPE_LENGTH (type) > 8);
+}
+
+int
+hppa_inner_than (CORE_ADDR lhs, CORE_ADDR rhs)
+{
+  /* Stack grows upward */
+  return (lhs > rhs);
+}
+
+CORE_ADDR
+hppa_stack_align (CORE_ADDR sp)
+{
+  /* elz: adjust the quantity to the next highest value which is
+     64-bit aligned.  This is used in valops.c, when the sp is adjusted.
+     On hppa the sp must always be kept 64-bit aligned */
+  return ((sp % 8) ? (sp + 7) & -8 : sp);
+}
+
+int
+hppa_pc_requires_run_before_use (CORE_ADDR pc)
+{
+  /* Sometimes we may pluck out a minimal symbol that has a negative address.
+  
+     An example of this occurs when an a.out is linked against a foo.sl.
+     The foo.sl defines a global bar(), and the a.out declares a signature
+     for bar().  However, the a.out doesn't directly call bar(), but passes
+     its address in another call.
+  
+     If you have this scenario and attempt to "break bar" before running,
+     gdb will find a minimal symbol for bar() in the a.out.  But that
+     symbol's address will be negative.  What this appears to denote is
+     an index backwards from the base of the procedure linkage table (PLT)
+     into the data linkage table (DLT), the end of which is contiguous
+     with the start of the PLT.  This is clearly not a valid address for
+     us to set a breakpoint on.
+  
+     Note that one must be careful in how one checks for a negative address.
+     0xc0000000 is a legitimate address of something in a shared text
+     segment, for example.  Since I don't know what the possible range
+     is of these "really, truly negative" addresses that come from the
+     minimal symbols, I'm resorting to the gross hack of checking the
+     top byte of the address for all 1's.  Sigh.  */
+
+  return (!target_has_stack && (pc & 0xFF000000));
+}
+
+int
+hppa_instruction_nullified (void)
+{
+  /* brobecker 2002/11/07: Couldn't we use a ULONGEST here? It would
+     avoid the type cast.  I'm leaving it as is for now as I'm doing
+     semi-mechanical multiarching-related changes.  */
+  const int ipsw = (int) read_register (IPSW_REGNUM);
+  const int flags = (int) read_register (FLAGS_REGNUM);
+
+  return ((ipsw & 0x00200000) && !(flags & 0x2));
+}
+
+int
+hppa_register_raw_size (int reg_nr)
+{
+  /* All registers have the same size.  */
+  return DEPRECATED_REGISTER_SIZE;
+}
+
+/* Index within the register vector of the first byte of the space i
+   used for register REG_NR.  */
+
+int
+hppa_register_byte (int reg_nr)
+{
+  return reg_nr * 4;
+}
+
+/* Return the GDB type object for the "standard" data type of data
+   in register N.  */
+
+struct type *
+hppa_register_virtual_type (int reg_nr)
+{
+   if (reg_nr < FP4_REGNUM)
+     return builtin_type_int;
+   else
+     return builtin_type_float;
+}
+
+/* Store the address of the place in which to copy the structure the
+   subroutine will return.  This is called from call_function.  */
+
+void
+hppa_store_struct_return (CORE_ADDR addr, CORE_ADDR sp)
+{
+  write_register (28, addr);
+}
+
+CORE_ADDR
+hppa_extract_struct_value_address (char *regbuf)
+{
+  /* Extract from an array REGBUF containing the (raw) register state
+     the address in which a function should return its structure value,
+     as a CORE_ADDR (or an expression that can be used as one).  */
+  /* FIXME: brobecker 2002-12-26.
+     The current implementation is historical, but we should eventually
+     implement it in a more robust manner as it relies on the fact that
+     the address size is equal to the size of an int* _on the host_...
+     One possible implementation that crossed my mind is to use
+     extract_address.  */
+  return (*(int *)(regbuf + REGISTER_BYTE (28)));
+}
+
+/* Return True if REGNUM is not a register available to the user
+   through ptrace().  */
+
+int
+hppa_cannot_store_register (int regnum)
+{
+  return (regnum == 0
+          || regnum == PCSQ_HEAD_REGNUM
+          || (regnum >= PCSQ_TAIL_REGNUM && regnum < IPSW_REGNUM)
+          || (regnum > IPSW_REGNUM && regnum < FP4_REGNUM));
+
+}
+
+CORE_ADDR
+hppa_smash_text_address (CORE_ADDR addr)
+{
+  /* The low two bits of the PC on the PA contain the privilege level.
+     Some genius implementing a (non-GCC) compiler apparently decided
+     this means that "addresses" in a text section therefore include a
+     privilege level, and thus symbol tables should contain these bits.
+     This seems like a bonehead thing to do--anyway, it seems to work
+     for our purposes to just ignore those bits.  */
+
+  return (addr &= ~0x3);
+}
+
+/* Get the ith function argument for the current function.  */
+CORE_ADDR
+hppa_fetch_pointer_argument (struct frame_info *frame, int argi, 
+			     struct type *type)
+{
+  CORE_ADDR addr;
+  frame_read_register (frame, R0_REGNUM + 26 - argi, &addr);
+  return addr;
+}
+
+static struct gdbarch *
+hppa_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
+{
+  struct gdbarch *gdbarch;
+  
+  /* Try to determine the ABI of the object we are loading.  */
+  if (info.abfd != NULL && info.osabi == GDB_OSABI_UNKNOWN)
+    {
+      /* If it's a SOM file, assume it's HP/UX SOM.  */
+      if (bfd_get_flavour (info.abfd) == bfd_target_som_flavour)
+	info.osabi = GDB_OSABI_HPUX_SOM;
+    }
+
+  /* find a candidate among the list of pre-declared architectures.  */
+  arches = gdbarch_list_lookup_by_info (arches, &info);
+  if (arches != NULL)
+    return (arches->gdbarch);
+
+  /* If none found, then allocate and initialize one.  */
+  gdbarch = gdbarch_alloc (&info, NULL);
+
+  /* Hook in ABI-specific overrides, if they have been registered.  */
+  gdbarch_init_osabi (info, gdbarch);
+
+  set_gdbarch_reg_struct_has_addr (gdbarch, hppa_reg_struct_has_addr);
+  set_gdbarch_function_start_offset (gdbarch, 0);
+  set_gdbarch_skip_prologue (gdbarch, hppa_skip_prologue);
+  set_gdbarch_skip_trampoline_code (gdbarch, hppa_skip_trampoline_code);
+  set_gdbarch_in_solib_call_trampoline (gdbarch, hppa_in_solib_call_trampoline);
+  set_gdbarch_in_solib_return_trampoline (gdbarch,
+                                          hppa_in_solib_return_trampoline);
+  set_gdbarch_deprecated_saved_pc_after_call (gdbarch, hppa_saved_pc_after_call);
+  set_gdbarch_inner_than (gdbarch, hppa_inner_than);
+  set_gdbarch_stack_align (gdbarch, hppa_stack_align);
+  set_gdbarch_decr_pc_after_break (gdbarch, 0);
+  set_gdbarch_deprecated_register_size (gdbarch, 4);
+  set_gdbarch_num_regs (gdbarch, hppa_num_regs);
+  set_gdbarch_deprecated_fp_regnum (gdbarch, 3);
+  set_gdbarch_sp_regnum (gdbarch, 30);
+  set_gdbarch_fp0_regnum (gdbarch, 64);
+  set_gdbarch_pc_regnum (gdbarch, PCOQ_HEAD_REGNUM);
+  set_gdbarch_npc_regnum (gdbarch, PCOQ_TAIL_REGNUM);
+  set_gdbarch_deprecated_register_raw_size (gdbarch, hppa_register_raw_size);
+  set_gdbarch_deprecated_register_bytes (gdbarch, hppa_num_regs * 4);
+  set_gdbarch_deprecated_register_byte (gdbarch, hppa_register_byte);
+  set_gdbarch_deprecated_register_virtual_size (gdbarch, hppa_register_raw_size);
+  set_gdbarch_deprecated_max_register_raw_size (gdbarch, 4);
+  set_gdbarch_deprecated_max_register_virtual_size (gdbarch, 8);
+  set_gdbarch_deprecated_register_virtual_type (gdbarch, hppa_register_virtual_type);
+  set_gdbarch_register_name (gdbarch, hppa_register_name);
+  set_gdbarch_deprecated_store_struct_return (gdbarch, hppa_store_struct_return);
+  set_gdbarch_deprecated_extract_return_value (gdbarch,
+                                               hppa_extract_return_value);
+  set_gdbarch_use_struct_convention (gdbarch, hppa_use_struct_convention);
+  set_gdbarch_deprecated_store_return_value (gdbarch, hppa_store_return_value);
+  set_gdbarch_deprecated_extract_struct_value_address
+    (gdbarch, hppa_extract_struct_value_address);
+  set_gdbarch_cannot_store_register (gdbarch, hppa_cannot_store_register);
+  set_gdbarch_deprecated_init_extra_frame_info (gdbarch, hppa_init_extra_frame_info);
+  set_gdbarch_deprecated_frame_chain (gdbarch, hppa_frame_chain);
+  set_gdbarch_deprecated_frame_chain_valid (gdbarch, hppa_frame_chain_valid);
+  set_gdbarch_frameless_function_invocation
+    (gdbarch, hppa_frameless_function_invocation);
+  set_gdbarch_deprecated_frame_saved_pc (gdbarch, hppa_frame_saved_pc);
+  set_gdbarch_frame_args_skip (gdbarch, 0);
+  set_gdbarch_deprecated_push_dummy_frame (gdbarch, hppa_push_dummy_frame);
+  set_gdbarch_deprecated_pop_frame (gdbarch, hppa_pop_frame);
+  set_gdbarch_deprecated_call_dummy_length (gdbarch, INSTRUCTION_SIZE * 28);
+  /* set_gdbarch_deprecated_fix_call_dummy (gdbarch, hppa_fix_call_dummy); */
+  set_gdbarch_deprecated_push_arguments (gdbarch, hppa_push_arguments);
+  set_gdbarch_smash_text_address (gdbarch, hppa_smash_text_address);
+  set_gdbarch_believe_pcc_promotion (gdbarch, 1);
+  set_gdbarch_read_pc (gdbarch, hppa_target_read_pc);
+  set_gdbarch_write_pc (gdbarch, hppa_target_write_pc);
+  set_gdbarch_deprecated_target_read_fp (gdbarch, hppa_target_read_fp);
+
+  /* Helper for function argument information.  */
+  set_gdbarch_fetch_pointer_argument (gdbarch, hppa_fetch_pointer_argument);
+
+  return gdbarch;
+}
+
+static void
+hppa_dump_tdep (struct gdbarch *current_gdbarch, struct ui_file *file)
+{
+   /* Nothing to print for the moment.  */
+}
+
+void
+_initialize_hppa_tdep (void)
+{
+  struct cmd_list_element *c;
+  void break_at_finish_command (char *arg, int from_tty);
+  void tbreak_at_finish_command (char *arg, int from_tty);
+  void break_at_finish_at_depth_command (char *arg, int from_tty);
+
+  gdbarch_register (bfd_arch_hppa, hppa_gdbarch_init, hppa_dump_tdep);
+  deprecated_tm_print_insn = print_insn_hppa;
 
   add_cmd ("unwind", class_maintenance, unwind_command,
 	   "Print unwind table entry at given address.",
 	   &maintenanceprintlist);
+
+  deprecate_cmd (add_com ("xbreak", class_breakpoint, 
+			  break_at_finish_command,
+			  concat ("Set breakpoint at procedure exit. \n\
+Argument may be function name, or \"*\" and an address.\n\
+If function is specified, break at end of code for that function.\n\
+If an address is specified, break at the end of the function that contains \n\
+that exact address.\n",
+		   "With no arg, uses current execution address of selected stack frame.\n\
+This is useful for breaking on return to a stack frame.\n\
+\n\
+Multiple breakpoints at one place are permitted, and useful if conditional.\n\
+\n\
+Do \"help breakpoints\" for info on other commands dealing with breakpoints.", NULL)), NULL);
+  deprecate_cmd (add_com_alias ("xb", "xbreak", class_breakpoint, 1), NULL);
+  deprecate_cmd (add_com_alias ("xbr", "xbreak", class_breakpoint, 1), NULL);
+  deprecate_cmd (add_com_alias ("xbre", "xbreak", class_breakpoint, 1), NULL);
+  deprecate_cmd (add_com_alias ("xbrea", "xbreak", class_breakpoint, 1), NULL);
+
+  deprecate_cmd (c = add_com ("txbreak", class_breakpoint, 
+			      tbreak_at_finish_command,
+"Set temporary breakpoint at procedure exit.  Either there should\n\
+be no argument or the argument must be a depth.\n"), NULL);
+  set_cmd_completer (c, location_completer);
+  
+  if (xdb_commands)
+    deprecate_cmd (add_com ("bx", class_breakpoint, 
+			    break_at_finish_at_depth_command,
+"Set breakpoint at procedure exit.  Either there should\n\
+be no argument or the argument must be a depth.\n"), NULL);
 }
+
