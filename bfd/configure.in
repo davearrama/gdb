@@ -323,7 +323,8 @@ changequote([,])dnl
 	;;
   rs6000-*-lynx*)	COREFILE=lynx-core.lo ;;
 changequote(,)dnl
-  rs6000-*-aix4.[3-9]* | powerpc-*-aix4.[3-9]*)
+  rs6000-*-aix4.[4-9]* | powerpc-*-aix4.[4-9]* | \
+  rs6000-*-aix4.3.[3-9]* | powerpc-*-aix4.3.[3-9]*)
 changequote([,])dnl
         COREFILE=rs6000-core.lo
 	COREFLAG="$COREFLAG -DAIX_CORE_DUMPX_CORE"
@@ -424,10 +425,11 @@ case "${host}" in
     fi
     ;;
   *)
-changequote(,)dnl
-    x=`sed -n -e 's/^[ 	]*PICFLAG[ 	]*=[ 	]*//p' < ../libiberty/Makefile | tail -1`
-changequote([,])dnl
-    if test -n "$x"; then
+    PICFLAG=
+    changequote(,)dnl
+    eval `grep "^[ 	]*PICFLAG[ 	]*=" ../libiberty/Makefile | sed -e "s/[ 	]*//g"`
+    changequote([,])dnl
+    if test -n "$PICFLAG"; then
       WIN32LIBADD="-L../libiberty/pic -liberty"
     fi
   ;;
