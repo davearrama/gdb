@@ -30,6 +30,7 @@ typedef char *VoidStar;
 #endif
 
 typedef unsigned long ARMword;	/* must be 32 bits wide */
+typedef unsigned long long ARMdword;	/* Must be at least 64 bits wide.  */
 typedef struct ARMul_State ARMul_State;
 
 typedef unsigned ARMul_CPInits (ARMul_State * state);
@@ -56,9 +57,13 @@ struct ARMul_State
   unsigned ErrorCode;		/* type of illegal instruction */
   ARMword Reg[16];		/* the current register file */
   ARMword RegBank[7][16];	/* all the registers */
+  /* 40 bit accumulator.  We always keep this 64 bits wide,
+     and move only 40 bits out of it in an MRA insn.  */
+  ARMdword Accumulator;
   ARMword Cpsr;			/* the current psr */
   ARMword Spsr[7];		/* the exception psr's */
   ARMword NFlag, ZFlag, CFlag, VFlag, IFFlags;	/* dummy flags for speed */
+  ARMword SFlag;
 #ifdef MODET
   ARMword TFlag;		/* Thumb state */
 #endif
@@ -97,6 +102,9 @@ struct ARMul_State
   ARMul_CPWrites *CPWrite[16];	/* Write CP register */
   unsigned char *CPData[16];	/* Coprocessor data */
   unsigned char const *CPRegWords[16];	/* map of coprocessor register sizes */
+  unsigned long LastTime;	/* Value of last call to ARMul_Time() */
+  ARMword CP14R0_CCD;		/* used to count 64 clock cycles with CP14 R0 bit
+				   3 set */
 
   unsigned EventSet;		/* the number of events in the queue */
   unsigned long Now;		/* time to the nearest cycle */
@@ -123,7 +131,13 @@ struct ARMul_State
 
   const struct Dbg_HostosInterface *hostif;
 
-  int verbose;			/* non-zero means print various messages like the banner */
+  unsigned is_v4;		/* Are we emulating a v4 architecture (or higher) ?  */
+  unsigned is_v5;		/* Are we emulating a v5 architecture ?  */
+  unsigned is_v5e;		/* Are we emulating a v5e architecture ?  */
+  unsigned is_XScale;		/* Are we emulating an XScale architecture ?  */
+  unsigned is_iWMMXt;		/* Are we emulating an iWMMXt co-processor ?  */
+  unsigned is_ep9312;		/* Are we emulating a Cirrus Maverick co-processor ?  */
+  unsigned verbose;		/* Print various messages like the banner */
 };
 
 #define ResetPin NresetSig
@@ -137,7 +151,7 @@ struct ARMul_State
 #define LateAbortPin lateabtSig
 
 /***************************************************************************\
-*                        Types of ARM we know about                         *
+*                        Properties of ARM we know about                    *
 \***************************************************************************/
 
 /* The bitflags */
@@ -146,24 +160,12 @@ struct ARMul_State
 #define ARM_Debug_Prop   0x10
 #define ARM_Isync_Prop   ARM_Debug_Prop
 #define ARM_Lock_Prop    0x20
-
-/* ARM2 family */
-#define ARM2    (ARM_Fix26_Prop)
-#define ARM2as  ARM2
-#define ARM61   ARM2
-#define ARM3    ARM2
-
-#ifdef ARM60			/* previous definition in armopts.h */
-#undef ARM60
-#endif
-
-/* ARM6 family */
-#define ARM6    (ARM_Lock_Prop)
-#define ARM60   ARM6
-#define ARM600  ARM6
-#define ARM610  ARM6
-#define ARM620  ARM6
-
+#define ARM_v4_Prop      0x40
+#define ARM_v5_Prop      0x80
+#define ARM_v5e_Prop     0x100
+#define ARM_XScale_Prop  0x200
+#define ARM_ep9312_Prop  0x400
+#define ARM_iWMMXt_Prop  0x800
 
 /***************************************************************************\
 *                   Macros to extract instruction fields                    *
@@ -200,16 +202,17 @@ struct ARMul_State
 *                          Mode and Bank Constants                          *
 \***************************************************************************/
 
-#define USER26MODE 0L
-#define FIQ26MODE 1L
-#define IRQ26MODE 2L
-#define SVC26MODE 3L
-#define USER32MODE 16L
-#define FIQ32MODE 17L
-#define IRQ32MODE 18L
-#define SVC32MODE 19L
+#define USER26MODE   0L
+#define FIQ26MODE    1L
+#define IRQ26MODE    2L
+#define SVC26MODE    3L
+#define USER32MODE  16L
+#define FIQ32MODE   17L
+#define IRQ32MODE   18L
+#define SVC32MODE   19L
 #define ABORT32MODE 23L
 #define UNDEF32MODE 27L
+#define SYSTEMMODE  31L
 
 #define ARM32BITMODE (state->Mode > 3)
 #define ARM26BITMODE (state->Mode <= 3)
@@ -225,6 +228,10 @@ struct ARMul_State
 #define ABORTBANK 4
 #define UNDEFBANK 5
 #define DUMMYBANK 6
+#define SYSTEMBANK USERBANK
+
+#define BANK_CAN_ACCESS_SPSR(bank)  \
+  ((bank) != USERBANK && (bank) != SYSTEMBANK && (bank) != DUMMYBANK)
 
 /***************************************************************************\
 *                  Definitons of things in the emulator                     *
@@ -317,9 +324,12 @@ extern void ARMul_Ccycles (ARMul_State * state, unsigned number,
 
 extern ARMword ARMul_ReadWord (ARMul_State * state, ARMword address);
 extern ARMword ARMul_ReadByte (ARMul_State * state, ARMword address);
+extern ARMword ARMul_SafeReadByte (ARMul_State * state, ARMword address);
 extern void ARMul_WriteWord (ARMul_State * state, ARMword address,
 			     ARMword data);
 extern void ARMul_WriteByte (ARMul_State * state, ARMword address,
+			     ARMword data);
+extern void ARMul_SafeWriteByte (ARMul_State * state, ARMword address,
 			     ARMword data);
 
 extern ARMword ARMul_MemAccess (ARMul_State * state, ARMword, ARMword,
@@ -339,6 +349,32 @@ extern ARMword ARMul_MemAccess (ARMul_State * state, ARMword, ARMword,
 #define ARMul_CANT 1
 #define ARMul_INC 3
 
+#define ARMul_CP13_R0_FIQ	0x1
+#define ARMul_CP13_R0_IRQ	0x2
+#define ARMul_CP13_R8_PMUS	0x1
+
+#define ARMul_CP14_R0_ENABLE	0x0001
+#define ARMul_CP14_R0_CLKRST	0x0004
+#define ARMul_CP14_R0_CCD	0x0008
+#define ARMul_CP14_R0_INTEN0	0x0010
+#define ARMul_CP14_R0_INTEN1	0x0020
+#define ARMul_CP14_R0_INTEN2	0x0040
+#define ARMul_CP14_R0_FLAG0	0x0100
+#define ARMul_CP14_R0_FLAG1	0x0200
+#define ARMul_CP14_R0_FLAG2	0x0400
+#define ARMul_CP14_R10_MOE_IB	0x0004
+#define ARMul_CP14_R10_MOE_DB	0x0008
+#define ARMul_CP14_R10_MOE_BT	0x000c
+#define ARMul_CP15_R1_ENDIAN	0x0080
+#define ARMul_CP15_R1_ALIGN	0x0002
+#define ARMul_CP15_R5_X		0x0400
+#define ARMul_CP15_R5_ST_ALIGN	0x0001
+#define ARMul_CP15_R5_IMPRE	0x0406
+#define ARMul_CP15_R5_MMU_EXCPT	0x0400
+#define ARMul_CP15_DBCON_M	0x0100
+#define ARMul_CP15_DBCON_E1	0x000c
+#define ARMul_CP15_DBCON_E0	0x0003
+
 extern unsigned ARMul_CoProInit (ARMul_State * state);
 extern void ARMul_CoProExit (ARMul_State * state);
 extern void ARMul_CoProAttach (ARMul_State * state, unsigned number,
@@ -348,6 +384,10 @@ extern void ARMul_CoProAttach (ARMul_State * state, unsigned number,
 			       ARMul_CDPs * cdp,
 			       ARMul_CPReads * read, ARMul_CPWrites * write);
 extern void ARMul_CoProDetach (ARMul_State * state, unsigned number);
+extern void XScale_check_memacc (ARMul_State * state, ARMword * address,
+				 int store);
+extern void XScale_set_fsr_far (ARMul_State * state, ARMword fsr, ARMword far);
+extern int XScale_debug_moe (ARMul_State * state, int moe);
 
 /***************************************************************************\
 *               Definitons of things in the host environment                *
@@ -372,3 +412,9 @@ pascal void SpinCursor (short increment);	/* copied from CursorCtl.h */
 # define HOURGLASS           SpinCursor( 1 )
 # define HOURGLASS_RATE      1023	/* 2^n - 1 */
 #endif
+
+extern void ARMul_UndefInstr      (ARMul_State *, ARMword);
+extern void ARMul_FixCPSR         (ARMul_State *, ARMword, ARMword);
+extern void ARMul_FixSPSR         (ARMul_State *, ARMword, ARMword);
+extern void ARMul_ConsolePrint    (ARMul_State *, const char *, ...);
+extern void ARMul_SelectProcessor (ARMul_State *, unsigned);

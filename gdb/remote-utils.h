@@ -1,6 +1,6 @@
 /* Generic support for remote debugging interfaces.
 
-   Copyright 1993 Free Software Foundation, Inc.
+   Copyright 1993, 1994, 2000, 2001 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -22,9 +22,10 @@
 #ifndef REMOTE_UTILS_H
 #define REMOTE_UTILS_H
 
-#include "serial.h"
+struct target_ops;
+
 #include "target.h"
-#include "dcache.h"
+struct serial;
 
 /* Stuff that should be shared (and handled consistently) among the various
    remote targets.  */
@@ -36,7 +37,7 @@ struct _sr_settings
     int retries;
 
     char *device;
-    serial_t desc;
+    struct serial *desc;
 
   };
 
@@ -54,7 +55,7 @@ extern struct _sr_settings sr_settings;
 #define sr_get_device()			(sr_settings.device)
 #define sr_set_device(newval) \
 { \
-    if (sr_settings.device) free(sr_settings.device); \
+    if (sr_settings.device) xfree (sr_settings.device); \
     sr_settings.device = (newval); \
 }
 
@@ -73,21 +74,13 @@ extern struct _sr_settings sr_settings;
 
 struct gr_settings
   {
-    /* This is our data cache. */
-    DCACHE *dcache;
     char *prompt;
     struct target_ops *ops;
-    int (*clear_all_breakpoints) PARAMS ((void));
-    memxferfunc readfunc;
-    memxferfunc writefunc;
-    void (*checkin) PARAMS ((void));
+    int (*clear_all_breakpoints) (void);
+    void (*checkin) (void);
   };
 
 extern struct gr_settings *gr_settings;
-
-/* get and set dcache. */
-#define gr_get_dcache()			(gr_settings->dcache)
-#define gr_set_dcache(newval)		(gr_settings->dcache = (newval))
 
 /* get and set prompt. */
 #define gr_get_prompt()			(gr_settings->prompt)
@@ -117,29 +110,26 @@ extern struct gr_settings *gr_settings;
 
 #define gr_expect_prompt()	sr_expect(gr_get_prompt())
 
-int gr_fetch_word PARAMS ((CORE_ADDR addr));
-int gr_multi_scan PARAMS ((char *list[], int passthrough));
-int sr_get_hex_digit PARAMS ((int ignore_space));
-int sr_pollchar PARAMS ((void));
-int sr_readchar PARAMS ((void));
-int sr_timed_read PARAMS ((char *buf, int n));
-long sr_get_hex_word PARAMS ((void));
-void gr_close PARAMS ((int quitting));
-void gr_create_inferior PARAMS ((char *execfile, char *args, char **env));
-void gr_detach PARAMS ((char *args, int from_tty));
-void gr_files_info PARAMS ((struct target_ops * ops));
-void gr_generic_checkin PARAMS ((void));
-void gr_kill PARAMS ((void));
-void gr_mourn PARAMS ((void));
-void gr_prepare_to_store PARAMS ((void));
-void gr_store_word PARAMS ((CORE_ADDR addr, int word));
-void sr_expect PARAMS ((char *string));
-void sr_get_hex_byte PARAMS ((char *byt));
-void sr_scan_args PARAMS ((char *proto, char *args));
-void sr_write PARAMS ((char *a, int l));
-void sr_write_cr PARAMS ((char *s));
+int gr_multi_scan (char *list[], int passthrough);
+int sr_get_hex_digit (int ignore_space);
+int sr_pollchar (void);
+int sr_readchar (void);
+int sr_timed_read (char *buf, int n);
+long sr_get_hex_word (void);
+void gr_close (int quitting);
+void gr_create_inferior (char *execfile, char *args, char **env);
+void gr_detach (char *args, int from_tty);
+void gr_files_info (struct target_ops *ops);
+void gr_generic_checkin (void);
+void gr_kill (void);
+void gr_mourn (void);
+void gr_prepare_to_store (void);
+void sr_expect (char *string);
+void sr_get_hex_byte (char *byt);
+void sr_scan_args (char *proto, char *args);
+void sr_write (char *a, int l);
+void sr_write_cr (char *s);
 
-void gr_open PARAMS ((char *args, int from_tty,
-		      struct gr_settings * gr_settings));
-void gr_load_image PARAMS ((char *, int from_tty));
+void gr_open (char *args, int from_tty, struct gr_settings *gr_settings);
+void gr_load_image (char *, int from_tty);
 #endif /* REMOTE_UTILS_H */

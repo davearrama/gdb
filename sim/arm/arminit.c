@@ -17,6 +17,7 @@
 
 #include "armdefs.h"
 #include "armemu.h"
+#include "dbg_rdi.h"
 
 /***************************************************************************\
 *                 Definitions for the emulator architecture                 *
@@ -85,7 +86,9 @@ ARMul_NewState (void)
     }
   for (i = 0; i < 7; i++)
     state->Spsr[i] = 0;
-  state->Mode = 0;
+
+  /* state->Mode = USER26MODE;  */
+  state->Mode = USER32MODE;
 
   state->CallDebug = FALSE;
   state->Debug = FALSE;
@@ -104,6 +107,9 @@ ARMul_NewState (void)
   state->OSptr = NULL;
   state->CommandLine = NULL;
 
+  state->CP14R0_CCD = -1;
+  state->LastTime = 0;
+
   state->EventSet = 0;
   state->Now = 0;
   state->EventPtr = (struct EventNode **) malloc ((unsigned) EVENTLISTSIZE *
@@ -112,29 +118,31 @@ ARMul_NewState (void)
   for (i = 0; i < EVENTLISTSIZE; i++)
     *(state->EventPtr + i) = NULL;
 
-#ifdef ARM61
-  state->prog32Sig = LOW;
-  state->data32Sig = LOW;
-#else
   state->prog32Sig = HIGH;
   state->data32Sig = HIGH;
-#endif
 
   state->lateabtSig = LOW;
   state->bigendSig = LOW;
 
+  state->is_v4 = LOW;
+  state->is_v5 = LOW;
+  state->is_v5e = LOW;
+  state->is_XScale = LOW;
+  state->is_iWMMXt = LOW;
+
   ARMul_Reset (state);
-  return (state);
+
+  return state;
 }
 
 /***************************************************************************\
-*       Call this routine to set ARMulator to model a certain processor     *
+  Call this routine to set ARMulator to model certain processor properities
 \***************************************************************************/
 
 void
-ARMul_SelectProcessor (ARMul_State * state, unsigned processor)
+ARMul_SelectProcessor (ARMul_State * state, unsigned properties)
 {
-  if (processor & ARM_Fix26_Prop)
+  if (properties & ARM_Fix26_Prop)
     {
       state->prog32Sig = LOW;
       state->data32Sig = LOW;
@@ -146,6 +154,17 @@ ARMul_SelectProcessor (ARMul_State * state, unsigned processor)
     }
 
   state->lateabtSig = LOW;
+
+  state->is_v4 = (properties & (ARM_v4_Prop | ARM_v5_Prop)) ? HIGH : LOW;
+  state->is_v5 = (properties & ARM_v5_Prop) ? HIGH : LOW;
+  state->is_v5e = (properties & ARM_v5e_Prop) ? HIGH : LOW;
+  state->is_XScale = (properties & ARM_XScale_Prop) ? HIGH : LOW;
+  state->is_iWMMXt = (properties & ARM_iWMMXt_Prop) ? HIGH : LOW;
+  state->is_ep9312 = (properties & ARM_ep9312_Prop) ? HIGH : LOW;
+
+  /* Only initialse the coprocessor support once we
+     know what kind of chip we are dealing with.  */
+  ARMul_CoProInit (state);
 }
 
 /***************************************************************************\
@@ -156,18 +175,23 @@ void
 ARMul_Reset (ARMul_State * state)
 {
   state->NextInstr = 0;
+
   if (state->prog32Sig)
     {
       state->Reg[15] = 0;
       state->Cpsr = INTBITS | SVC32MODE;
+      state->Mode = SVC32MODE;
     }
   else
     {
       state->Reg[15] = R15INTBITS | SVC26MODE;
       state->Cpsr = INTBITS | SVC26MODE;
+      state->Mode = SVC26MODE;
     }
+
   ARMul_CPSRAltered (state);
   state->Bank = SVCBANK;
+
   FLUSHPIPE;
 
   state->EndCondition = 0;
@@ -247,6 +271,9 @@ void
 ARMul_Abort (ARMul_State * state, ARMword vector)
 {
   ARMword temp;
+  int isize = INSN_SIZE;
+  int esize = (TFLAG ? 0 : 4);
+  int e2size = (TFLAG ? -4 : 0);
 
   state->Aborted = FALSE;
 
@@ -264,57 +291,59 @@ ARMul_Abort (ARMul_State * state, ARMword vector)
   switch (vector)
     {
     case ARMul_ResetV:		/* RESET */
-      state->Spsr[SVCBANK] = CPSR;
-      SETABORT (INTBITS, state->prog32Sig ? SVC32MODE : SVC26MODE);
-      ARMul_CPSRAltered (state);
-      state->Reg[14] = temp;
+      SETABORT (INTBITS, state->prog32Sig ? SVC32MODE : SVC26MODE, 0);
       break;
     case ARMul_UndefinedInstrV:	/* Undefined Instruction */
-      state->Spsr[state->prog32Sig ? UNDEFBANK : SVCBANK] = CPSR;
-      SETABORT (IBIT, state->prog32Sig ? UNDEF32MODE : SVC26MODE);
-      ARMul_CPSRAltered (state);
-      state->Reg[14] = temp - 4;
+      SETABORT (IBIT, state->prog32Sig ? UNDEF32MODE : SVC26MODE, isize);
       break;
     case ARMul_SWIV:		/* Software Interrupt */
-      state->Spsr[SVCBANK] = CPSR;
-      SETABORT (IBIT, state->prog32Sig ? SVC32MODE : SVC26MODE);
-      ARMul_CPSRAltered (state);
-      state->Reg[14] = temp - 4;
+      SETABORT (IBIT, state->prog32Sig ? SVC32MODE : SVC26MODE, isize);
       break;
     case ARMul_PrefetchAbortV:	/* Prefetch Abort */
       state->AbortAddr = 1;
-      state->Spsr[state->prog32Sig ? ABORTBANK : SVCBANK] = CPSR;
-      SETABORT (IBIT, state->prog32Sig ? ABORT32MODE : SVC26MODE);
-      ARMul_CPSRAltered (state);
-      state->Reg[14] = temp - 4;
+      SETABORT (IBIT, state->prog32Sig ? ABORT32MODE : SVC26MODE, esize);
       break;
     case ARMul_DataAbortV:	/* Data Abort */
-      state->Spsr[state->prog32Sig ? ABORTBANK : SVCBANK] = CPSR;
-      SETABORT (IBIT, state->prog32Sig ? ABORT32MODE : SVC26MODE);
-      ARMul_CPSRAltered (state);
-      state->Reg[14] = temp - 4;	/* the PC must have been incremented */
+      SETABORT (IBIT, state->prog32Sig ? ABORT32MODE : SVC26MODE, e2size);
       break;
     case ARMul_AddrExceptnV:	/* Address Exception */
-      state->Spsr[SVCBANK] = CPSR;
-      SETABORT (IBIT, SVC26MODE);
-      ARMul_CPSRAltered (state);
-      state->Reg[14] = temp - 4;
+      SETABORT (IBIT, SVC26MODE, isize);
       break;
     case ARMul_IRQV:		/* IRQ */
-      state->Spsr[IRQBANK] = CPSR;
-      SETABORT (IBIT, state->prog32Sig ? IRQ32MODE : IRQ26MODE);
-      ARMul_CPSRAltered (state);
-      state->Reg[14] = temp - 4;
+      if (   ! state->is_XScale
+	  || ! state->CPRead[13] (state, 0, & temp)
+	  || (temp & ARMul_CP13_R0_IRQ))
+        SETABORT (IBIT, state->prog32Sig ? IRQ32MODE : IRQ26MODE, esize);
       break;
     case ARMul_FIQV:		/* FIQ */
-      state->Spsr[FIQBANK] = CPSR;
-      SETABORT (INTBITS, state->prog32Sig ? FIQ32MODE : FIQ26MODE);
-      ARMul_CPSRAltered (state);
-      state->Reg[14] = temp - 4;
+      if (   ! state->is_XScale
+	  || ! state->CPRead[13] (state, 0, & temp)
+	  || (temp & ARMul_CP13_R0_FIQ))
+        SETABORT (INTBITS, state->prog32Sig ? FIQ32MODE : FIQ26MODE, esize);
       break;
     }
   if (ARMul_MODE32BIT)
     ARMul_SetR15 (state, vector);
   else
     ARMul_SetR15 (state, R15CCINTMODE | vector);
+
+  if (ARMul_ReadWord (state, ARMul_GetPC (state)) == 0)
+    {
+      /* No vector has been installed.  Rather than simulating whatever
+	 random bits might happen to be at address 0x20 onwards we elect
+	 to stop.  */
+      switch (vector)
+	{
+	case ARMul_ResetV: state->EndCondition = RDIError_Reset; break;
+	case ARMul_UndefinedInstrV: state->EndCondition = RDIError_UndefinedInstruction; break;
+	case ARMul_SWIV: state->EndCondition = RDIError_SoftwareInterrupt; break;
+	case ARMul_PrefetchAbortV: state->EndCondition = RDIError_PrefetchAbort; break;
+	case ARMul_DataAbortV: state->EndCondition = RDIError_DataAbort; break;
+	case ARMul_AddrExceptnV: state->EndCondition = RDIError_AddressException; break;
+	case ARMul_IRQV: state->EndCondition = RDIError_IRQ; break;
+	case ARMul_FIQV: state->EndCondition = RDIError_FIQ; break;
+	default: break;
+	}
+      state->Emulate = FALSE;
+    }
 }
