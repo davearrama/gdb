@@ -1,5 +1,7 @@
 /* Simulator Floating-point support.
-   Copyright (C) 1997-1998 Free Software Foundation, Inc.
+
+   Copyright 1997, 1998, 2002, 2003 Free Software Foundation, Inc.
+
    Contributed by Cygnus Support.
 
 This file is part of GDB, the GNU debugger.
@@ -42,7 +44,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
    For unpacked structures (passed by value and reference), the code
    quality of GCC-2.7 (on x86) for each alternative was compared.
-   Needless to say the results, while better then for a packed 64 bit
+   Needless to say the results, while better than for a packed 64 bit
    object, were still poor (GCC had only limited support for the
    optimization of references to structure members).  Regardless, the
    struct-by-ref alternative achieved better results when compiled
@@ -164,9 +166,9 @@ typedef enum
    When converting from the sim_fpu internal type to 32/64 bit packed
    format, the operation may result in a loss of precision. The
    configuration macro WITH_FPU_CONVERSION controls this.  By default,
-   silent round to nearest is performed.  Alternativly, round up,
+   silent round to nearest is performed.  Alternatively, round up,
    round down and round to zero can be performed.  In a simulator
-   emulating exact FPU behavour, sim_fpu_round_{32,64} should be
+   emulating exact FPU behavior, sim_fpu_round_{32,64} should be
    called before packing the sim_fpu value.  */
 
 INLINE_SIM_FPU (void) sim_fpu_32to (sim_fpu *f, unsigned32 s);
@@ -189,7 +191,7 @@ INLINE_SIM_FPU (void) sim_fpu_to64 (unsigned64 *d, const sim_fpu *f);
 
 INLINE_SIM_FPU (void) sim_fpu_fractionto (sim_fpu *f, int sign, int normal_exp, unsigned64 fraction, int precision);
 
-/* Reverse operaton.  If S is a non-zero number, discards the implied
+/* Reverse operation.  If S is a non-zero number, discards the implied
    leading one and returns PRECISION fraction bits.  No rounding is
    performed. */
 INLINE_SIM_FPU (unsigned64) sim_fpu_tofraction (const sim_fpu *s, int precision);
@@ -210,7 +212,7 @@ INLINE_SIM_FPU (int) sim_fpu_round_64 (sim_fpu *f,
 
 
 
-/* Arrithmetic operators.
+/* Arithmetic operators.
 
    FIXME: In the future, additional arguments ROUNDING and BITSIZE may
    be added. */
@@ -283,7 +285,7 @@ INLINE_SIM_FPU (int) sim_fpu_to232u (unsigned64 *h, unsigned64 *l, const sim_fpu
 
 /* Conversion of internal sim_fpu type to host double format.
 
-   For debuging/tracing only.  A SNaN is never returned. */
+   For debugging/tracing only.  A SNaN is never returned. */
 
 /* INLINE_SIM_FPU (float) sim_fpu_2f (const sim_fpu *f); */
 INLINE_SIM_FPU (double) sim_fpu_2d (const sim_fpu *d);
@@ -316,12 +318,14 @@ INLINE_SIM_FPU (int) sim_fpu_is_denorm (const sim_fpu *s); /* !zero */
 
 INLINE_SIM_FPU (int) sim_fpu_sign (const sim_fpu *s);
 INLINE_SIM_FPU (int) sim_fpu_exp (const sim_fpu *s);
+INLINE_SIM_FPU (unsigned64) sim_fpu_fraction (const sim_fpu *s);
+INLINE_SIM_FPU (unsigned64) sim_fpu_guard (const sim_fpu *s, int is_double);
 
 
 
 /* Specific comparison operators
 
-   For NaNs et.al., the comparison operators will set IS to zero and
+   For NaNs et al., the comparison operators will set IS to zero and
    return a nonzero result. */
 
 INLINE_SIM_FPU (int) sim_fpu_lt (int *is, const sim_fpu *l, const sim_fpu *r);
@@ -354,7 +358,7 @@ INLINE_SIM_FPU (int) sim_fpu_is_gt (const sim_fpu *l, const sim_fpu *r);
 #ifndef SIM_FPU_IS_SNAN
 enum {
   SIM_FPU_IS_SNAN = 1, /* Noisy not-a-number */
-  SIM_FPU_IS_QNAN = 2, /* Quite not-a-number */
+  SIM_FPU_IS_QNAN = 2, /* Quiet not-a-number */
   SIM_FPU_IS_NINF = 3, /* -infinity */
   SIM_FPU_IS_PINF = 4, /* +infinity */
   SIM_FPU_IS_NNUMBER = 5, /* -number - [ -MAX .. -MIN ] */
@@ -371,7 +375,7 @@ INLINE_SIM_FPU (int) sim_fpu_cmp (const sim_fpu *l, const sim_fpu *r);
 
 
 
-/* A constant of useful numbers */
+/* A number of useful constants.  */
 
 extern const sim_fpu sim_fpu_zero;
 extern const sim_fpu sim_fpu_one;
@@ -402,9 +406,16 @@ extern const sim_fpu sim_fpu_max64;
 
 typedef void sim_fpu_print_func (void *, char *, ...);
 
+/* Print a sim_fpu with full precision.  */
 INLINE_SIM_FPU (void) sim_fpu_print_fpu (const sim_fpu *f,
 					 sim_fpu_print_func *print,
 					 void *arg);
+
+/* Print a sim_fpu with `n' trailing digits.  */
+INLINE_SIM_FPU (void) sim_fpu_printn_fpu (const sim_fpu *f,
+					  sim_fpu_print_func *print,
+					  int digits,
+					  void *arg);
 
 INLINE_SIM_FPU (void) sim_fpu_print_status (int status,
 					    sim_fpu_print_func *print,
