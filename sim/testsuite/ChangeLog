@@ -1,3 +1,24 @@
+2002-06-16  Andrew Cagney  <ac131313@redhat.com>
+
+	* configure: Regenerated to track ../common/aclocal.m4 changes.
+
+2001-07-31  Ben Elliston  <bje@redhat.com>
+
+	* lib/sim-defs.exp (run_sim_test): Include a description such as
+	"assembling" or "linking" that identifies the phase a test fails
+	in, for easier analysis of failures.
+
+2000-11-01  Dave Brolley  <brolley@cygnus.com>
+
+	* lib/sim-defs.exp (run_sm_test): Correct comment. "output" and
+	"xerror" options do not use a list of machines. Clear options from
+	previous test case. Use "$cpu_option"  to identify the machine to the
+	assembler, if specified.
+
+Tue May 23 21:39:23 2000  Andrew Cagney  <cagney@b1.cygnus.com>
+
+	* configure: Regenerated to track ../common/aclocal.m4 changes.
+
 1999-09-15  Doug Evans  <devans@casey.cygnus.com>
 
 	* sim/arm/b.cgs: New testcase.
@@ -254,13 +275,11 @@ Wed Feb 25 11:01:17 1998  Doug Evans  <devans@canuck.cygnus.com>
 
 	* Makefile.in (RUNTEST): Fix path to runtest.
 
-	
 Fri Feb 20 11:00:02 1998  Nick Clifton  <nickc@cygnus.com>
 
 	* sim/m32r/unlock.cgs: Fixed test.
 	* sim/m32r/mvfc.cgs: Fixed test.
 	* sim/m32r/remu.cgs: Fixed test.
-
 	* sim/m32r/bnc24.cgs: Test long BNC instruction.
 	* sim/m32r/bnc8.cgs: Test short BNC instruction.
 	* sim/m32r/ld-plus.cgs: Test LD instruction.
@@ -278,6 +297,7 @@ Fri Feb 20 11:00:02 1998  Nick Clifton  <nickc@cygnus.com>
 	* sim/m32r/neg.cgs: Test NEG instruction.
 	* sim/m32r/not.cgs: Test NOT instruction.
 	* sim/m32r/unlock.cgs: Test UNLOCK instruction.
+
 Thu Feb 19 11:15:45 1998  Nick Clifton  <nickc@cygnus.com>
 
 	* sim/m32r/testutils.inc (mvaddr_h_gr): new macro to load an
@@ -324,6 +344,7 @@ Thu Feb 19 11:15:45 1998  Nick Clifton  <nickc@cygnus.com>
 	* sim/m32r/srli.cgs: Test SRLI instruction.
 	* sim/m32r/xor3.cgs: Test XOR3 instruction.
 	* sim/m32r/xor.cgs: Test XOR instruction.
+
 Tue Feb 17 12:46:05 1998  Doug Evans  <devans@seba.cygnus.com>
 
 	* config/default.exp: New file.
