@@ -376,7 +376,7 @@ frame_pc_unwind (struct frame_info *this_frame)
 	     implementation is no more than:
 	   
 	     frame_unwind_register (this_frame, ISA_PC_REGNUM, buf);
-	     return extract_unsigned_integer (buf, size of ISA_PC_REGNUM);
+	     return extract_address (buf, size of ISA_PC_REGNUM);
 
 	     Note: this method is very heavily dependent on a correct
 	     register-unwind implementation, it pays to fix that
@@ -1112,8 +1112,8 @@ deprecated_generic_get_saved_register (char *raw_buffer, int *optimized,
 		   fly, constructs either a raw or pseudo register
 		   from the raw register cache.  */
 		regcache_raw_read
-		  (deprecated_find_dummy_frame_regcache (get_frame_pc (frame),
-							 get_frame_base (frame)),
+		  (generic_find_dummy_frame (get_frame_pc (frame),
+					     get_frame_base (frame)),
 		   regnum, raw_buffer);
 	      return;
 	    }
@@ -1171,7 +1171,7 @@ frame_type_from_pc (CORE_ADDR pc)
     return DUMMY_FRAME;
   else
     {
-      char *name;
+      const char *name;
       find_pc_partial_function (pc, &name, NULL, NULL);
       if (PC_IN_SIGTRAMP (pc, name))
 	return SIGTRAMP_FRAME;
@@ -1679,7 +1679,7 @@ legacy_get_prev_frame (struct frame_info *this_frame)
 	 be set and then the entire initialization can be skipped.
 	 Unforunatly, its the INIT code that sets the PC (Hmm, catch
 	 22).  */
-      char *name;
+      const char *name;
       find_pc_partial_function (get_frame_pc (prev), &name, NULL, NULL);
       if (PC_IN_SIGTRAMP (get_frame_pc (prev), name))
 	prev->type = SIGTRAMP_FRAME;
@@ -2217,37 +2217,6 @@ deprecated_frame_xmalloc_with_cleanup (long sizeof_saved_regs,
       make_cleanup (xfree, frame->extra_info);
     }
   return frame;
-}
-
-/* Memory access methods.  */
-
-void
-get_frame_memory (struct frame_info *this_frame, CORE_ADDR addr, void *buf,
-		  int len)
-{
-  read_memory (addr, buf, len);
-}
-
-LONGEST
-get_frame_memory_signed (struct frame_info *this_frame, CORE_ADDR addr,
-			 int len)
-{
-  return read_memory_integer (addr, len);
-}
-
-ULONGEST
-get_frame_memory_unsigned (struct frame_info *this_frame, CORE_ADDR addr,
-			   int len)
-{
-  return read_memory_unsigned_integer (addr, len);
-}
-
-/* Architecture method.  */
-
-struct gdbarch *
-get_frame_arch (struct frame_info *this_frame)
-{
-  return current_gdbarch;
 }
 
 int

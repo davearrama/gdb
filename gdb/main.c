@@ -168,10 +168,6 @@ captured_main (void *data)
   /* This needs to happen before the first use of malloc.  */
   init_malloc (NULL);
 
-#ifdef HAVE_SBRK
-  lim_at_start = (char *) sbrk (0);
-#endif
-
 #if defined (ALIGN_STACK_ON_STARTUP)
   i = (int) &count & 0x3;
   if (i != 0)
@@ -223,7 +219,7 @@ captured_main (void *data)
     gdb_sysroot = TARGET_SYSTEM_ROOT;
 #else
 #if defined (TARGET_SYSTEM_ROOT)
-  gdb_sysroot = TARGET_SYSTEM_ROOT;
+  gdb_sysroot = xstrdup (TARGET_SYSTEM_ROOT);
 #else
   gdb_sysroot = "";
 #endif

@@ -120,13 +120,12 @@ init_legacy_regcache_descr (struct gdbarch *gdbarch,
     }
 
   /* Compute the real size of the register buffer.  Start out by
-     trusting DEPRECATED_REGISTER_BYTES, but then adjust it upwards
-     should that be found to not be sufficient.  */
-  /* FIXME: cagney/2002-11-05: Instead of using the macro
-     DEPRECATED_REGISTER_BYTES, this code should, as is done in
-     init_regcache_descr(), compute the total number of register bytes
-     using the accumulated offsets.  */
-  descr->sizeof_cooked_registers = DEPRECATED_REGISTER_BYTES; /* OK */
+     trusting REGISTER_BYTES, but then adjust it upwards should that
+     be found to not be sufficient.  */
+  /* FIXME: cagney/2002-11-05: Instead of using REGISTER_BYTES, this
+     code should, as is done in init_regcache_descr(), compute the
+     total number of register bytes using the accumulated offsets.  */
+  descr->sizeof_cooked_registers = REGISTER_BYTES; /* OK use.  */
   for (i = 0; i < descr->nr_cooked_registers; i++)
     {
       long regend;
@@ -244,7 +243,7 @@ init_regcache_descr (struct gdbarch *gdbarch)
       gdb_assert (descr->sizeof_register[i] == REGISTER_VIRTUAL_SIZE (i));
 #endif
     }
-  /* gdb_assert (descr->sizeof_raw_registers == DEPRECATED_REGISTER_BYTES (i));  */
+  /* gdb_assert (descr->sizeof_raw_registers == REGISTER_BYTES (i));  */
 
   return descr;
 }
@@ -498,6 +497,12 @@ char *
 deprecated_grub_regcache_for_registers (struct regcache *regcache)
 {
   return regcache->registers;
+}
+
+char *
+deprecated_grub_regcache_for_register_valid (struct regcache *regcache)
+{
+  return regcache->register_valid_p;
 }
 
 /* Global structure containing the current regcache.  */
@@ -1405,7 +1410,7 @@ deprecated_read_fp (void)
 
 /* ARGSUSED */
 static void
-reg_flush_command (char *command, int from_tty)
+reg_flush_command (const char *command, int from_tty)
 {
   /* Force-flush the register cache.  */
   registers_changed ();
@@ -1419,7 +1424,7 @@ build_regcache (void)
   current_regcache = regcache_xmalloc (current_gdbarch);
   current_regcache->readonly_p = 0;
   deprecated_registers = deprecated_grub_regcache_for_registers (current_regcache);
-  deprecated_register_valid = current_regcache->register_valid_p;
+  deprecated_register_valid = deprecated_grub_regcache_for_register_valid (current_regcache);
 }
 
 static void
@@ -1654,7 +1659,7 @@ regcache_dump (struct regcache *regcache, struct ui_file *file,
 }
 
 static void
-regcache_print (char *args, enum regcache_dump_what what_to_dump)
+regcache_print (const char *args, enum regcache_dump_what what_to_dump)
 {
   if (args == NULL)
     regcache_dump (current_regcache, gdb_stdout, what_to_dump);
@@ -1669,25 +1674,25 @@ regcache_print (char *args, enum regcache_dump_what what_to_dump)
 }
 
 static void
-maintenance_print_registers (char *args, int from_tty)
+maintenance_print_registers (const char *args, int from_tty)
 {
   regcache_print (args, regcache_dump_none);
 }
 
 static void
-maintenance_print_raw_registers (char *args, int from_tty)
+maintenance_print_raw_registers (const char *args, int from_tty)
 {
   regcache_print (args, regcache_dump_raw);
 }
 
 static void
-maintenance_print_cooked_registers (char *args, int from_tty)
+maintenance_print_cooked_registers (const char *args, int from_tty)
 {
   regcache_print (args, regcache_dump_cooked);
 }
 
 static void
-maintenance_print_register_groups (char *args, int from_tty)
+maintenance_print_register_groups (const char *args, int from_tty)
 {
   regcache_print (args, regcache_dump_groups);
 }

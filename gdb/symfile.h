@@ -74,7 +74,7 @@ struct section_addr_info
   struct other_sections
   {
     CORE_ADDR addr;
-    char *name;
+    const char *name;
     int sectindex;
   } other[MAX_SECTIONS];
 };
@@ -149,12 +149,12 @@ extern void extend_psymbol_list (struct psymbol_allocation_list *,
 /* #include "demangle.h" */
 
 extern void
-add_psymbol_to_list (char *, int, domain_enum, enum address_class,
+add_psymbol_to_list (char *, int, namespace_enum, enum address_class,
 		     struct psymbol_allocation_list *, long, CORE_ADDR,
 		     enum language, struct objfile *);
 
 extern void
-add_psymbol_with_dem_name_to_list (char *, int, char *, int, domain_enum,
+add_psymbol_with_dem_name_to_list (char *, int, char *, int, namespace_enum,
 				   enum address_class,
 				   struct psymbol_allocation_list *,
 				   long, CORE_ADDR,
@@ -182,7 +182,7 @@ extern void syms_from_objfile (struct objfile *,
 
 extern void new_symfile_objfile (struct objfile *, int, int);
 
-extern struct objfile *symbol_file_add (char *, int,
+extern struct objfile *symbol_file_add (const char *, int,
 					struct section_addr_info *, int, int);
 
 /* Build (allocate and populate) a section_addr_info struct from
@@ -256,7 +256,7 @@ extern void discard_psymtab (struct partial_symtab *);
 
 extern void find_lowest_section (bfd *, asection *, void *);
 
-extern bfd *symfile_bfd_open (char *);
+extern bfd *symfile_bfd_open (const char *);
 
 extern int get_section_index (struct objfile *, char *);
 
@@ -296,7 +296,7 @@ extern CORE_ADDR overlay_unmapped_address (CORE_ADDR, asection *);
 extern CORE_ADDR symbol_overlayed_address (CORE_ADDR, asection *);
 
 /* Load symbols from a file. */
-extern void symbol_file_add_main (char *args, int from_tty);
+extern void symbol_file_add_main (const char *args, int from_tty);
 
 /* Clear GDB symbol tables. */
 extern void symbol_file_clear (int from_tty);

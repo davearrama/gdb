@@ -28,7 +28,6 @@ struct frame_unwind;
 struct frame_base;
 struct block;
 struct gdbarch;
-struct ui_file;
 
 /* A legacy unwinder to prop up architectures using the old style
    saved regs array.  */
@@ -343,31 +342,6 @@ extern CORE_ADDR frame_pc_unwind (struct frame_info *frame);
    of the caller.  */
 extern void frame_pop (struct frame_info *frame);
 
-/* Return memory from the specified frame.  A frame knows its thread /
-   LWP and hence can find its way down to a target.  The assumption
-   here is that the current and previous frame share a common address
-   space.
-
-   If the memory read fails, these methods throw an error.
-
-   NOTE: cagney/2003-06-03: Should there be unwind versions of these
-   methods?  That isn't clear.  Can code, for instance, assume that
-   this and the previous frame's memory or architecture are identical?
-   If architecture / memory changes are always separated by special
-   adaptor frames this should be ok.  */
-
-extern void get_frame_memory (struct frame_info *this_frame, CORE_ADDR addr,
-			      void *buf, int len);
-extern LONGEST get_frame_memory_signed (struct frame_info *this_frame,
-					CORE_ADDR memaddr, int len);
-extern ULONGEST get_frame_memory_unsigned (struct frame_info *this_frame,
-					   CORE_ADDR memaddr, int len);
-
-/* Return this frame's architecture.  */
-
-extern struct gdbarch *get_frame_arch (struct frame_info *this_frame);
-
-
 /* Values for the source flag to be used in print_frame_info_base(). */
 enum print_what
   { 
@@ -521,13 +495,13 @@ extern int frame_register_read (struct frame_info *frame, int regnum,
 				void *buf);
 
 /* From stack.c.  */
-extern void args_info (char *, int);
+extern void args_info (const char *, int);
 
-extern void locals_info (char *, int);
+extern void locals_info (const char *, int);
 
 extern void (*selected_frame_level_changed_hook) (int);
 
-extern void return_command (char *, int);
+extern void return_command (const char *, int);
 
 
 /* NOTE: cagney/2002-11-27:

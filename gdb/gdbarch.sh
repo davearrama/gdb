@@ -473,7 +473,7 @@ f:2:SDB_REG_TO_REGNUM:int:sdb_reg_to_regnum:int sdb_regnr:sdb_regnr:::no_op_reg_
 f:2:DWARF2_REG_TO_REGNUM:int:dwarf2_reg_to_regnum:int dwarf2_regnr:dwarf2_regnr:::no_op_reg_to_regnum::0
 f:2:REGISTER_NAME:const char *:register_name:int regnr:regnr:::legacy_register_name::0
 v::DEPRECATED_REGISTER_SIZE:int:deprecated_register_size
-v::DEPRECATED_REGISTER_BYTES:int:deprecated_register_bytes
+v::REGISTER_BYTES:int:register_bytes
 # NOTE: cagney/2002-05-02: This function with predicate has a valid
 # (callable) initial value.  As a consequence, even when the predicate
 # is false, the corresponding function works.  This simplifies the
@@ -568,7 +568,7 @@ F:2:INTEGER_TO_ADDRESS:CORE_ADDR:integer_to_address:struct type *type, void *buf
 f:2:RETURN_VALUE_ON_STACK:int:return_value_on_stack:struct type *type:type:::generic_return_value_on_stack_not::0
 # Replaced by PUSH_DUMMY_CALL
 F:2:DEPRECATED_PUSH_ARGUMENTS:CORE_ADDR:deprecated_push_arguments:int nargs, struct value **args, CORE_ADDR sp, int struct_return, CORE_ADDR struct_addr:nargs, args, sp, struct_return, struct_addr
-M::PUSH_DUMMY_CALL:CORE_ADDR:push_dummy_call:CORE_ADDR func_addr, struct regcache *regcache, CORE_ADDR bp_addr, int nargs, struct value **args, CORE_ADDR sp, int struct_return, CORE_ADDR struct_addr:func_addr, regcache, bp_addr, nargs, args, sp, struct_return, struct_addr
+M::PUSH_DUMMY_CALL:CORE_ADDR:push_dummy_call:struct regcache *regcache, CORE_ADDR dummy_addr, int nargs, struct value **args, CORE_ADDR sp, int struct_return, CORE_ADDR struct_addr:regcache, dummy_addr, nargs, args, sp, struct_return, struct_addr
 F:2:DEPRECATED_PUSH_DUMMY_FRAME:void:deprecated_push_dummy_frame:void:-:::0
 # NOTE: This can be handled directly in push_dummy_call.
 F:2:DEPRECATED_PUSH_RETURN_ADDRESS:CORE_ADDR:deprecated_push_return_address:CORE_ADDR pc, CORE_ADDR sp:pc, sp:::0
@@ -591,7 +591,7 @@ F:2:DEPRECATED_INIT_EXTRA_FRAME_INFO:void:deprecated_init_extra_frame_info:int f
 f:2:SKIP_PROLOGUE:CORE_ADDR:skip_prologue:CORE_ADDR ip:ip::0:0
 f:2:PROLOGUE_FRAMELESS_P:int:prologue_frameless_p:CORE_ADDR ip:ip::0:generic_prologue_frameless_p::0
 f:2:INNER_THAN:int:inner_than:CORE_ADDR lhs, CORE_ADDR rhs:lhs, rhs::0:0
-f::BREAKPOINT_FROM_PC:const unsigned char *:breakpoint_from_pc:CORE_ADDR *pcptr, int *lenptr:pcptr, lenptr:::0:
+f:2:BREAKPOINT_FROM_PC:const unsigned char *:breakpoint_from_pc:CORE_ADDR *pcptr, int *lenptr:pcptr, lenptr:::legacy_breakpoint_from_pc::0
 f:2:MEMORY_INSERT_BREAKPOINT:int:memory_insert_breakpoint:CORE_ADDR addr, char *contents_cache:addr, contents_cache::0:default_memory_insert_breakpoint::0
 f:2:MEMORY_REMOVE_BREAKPOINT:int:memory_remove_breakpoint:CORE_ADDR addr, char *contents_cache:addr, contents_cache::0:default_memory_remove_breakpoint::0
 v:2:DECR_PC_AFTER_BREAK:CORE_ADDR:decr_pc_after_break::::0:-1
@@ -658,10 +658,10 @@ f:2:SKIP_TRAMPOLINE_CODE:CORE_ADDR:skip_trampoline_code:CORE_ADDR pc:pc:::generi
 # For SVR4 shared libraries, each call goes through a small piece of
 # trampoline code in the ".plt" section.  IN_SOLIB_CALL_TRAMPOLINE evaluates
 # to nonzero if we are currently stopped in one of these.
-f:2:IN_SOLIB_CALL_TRAMPOLINE:int:in_solib_call_trampoline:CORE_ADDR pc, char *name:pc, name:::generic_in_solib_call_trampoline::0
+f:2:IN_SOLIB_CALL_TRAMPOLINE:int:in_solib_call_trampoline:CORE_ADDR pc, const char *name:pc, name:::generic_in_solib_call_trampoline::0
 
 # Some systems also have trampoline code for returning from shared libs.
-f:2:IN_SOLIB_RETURN_TRAMPOLINE:int:in_solib_return_trampoline:CORE_ADDR pc, char *name:pc, name:::generic_in_solib_return_trampoline::0
+f:2:IN_SOLIB_RETURN_TRAMPOLINE:int:in_solib_return_trampoline:CORE_ADDR pc, char *const name:pc, name:::generic_in_solib_return_trampoline::0
 
 # Sigtramp is a routine that the kernel calls (which then calls the
 # signal handler).  On most machines it is a library routine that is
@@ -683,7 +683,7 @@ f:2:IN_SOLIB_RETURN_TRAMPOLINE:int:in_solib_return_trampoline:CORE_ADDR pc, char
 # FIXME: cagney/2002-04-21: PC_IN_SIGTRAMP is something of a mess.
 # Some code also depends on SIGTRAMP_START and SIGTRAMP_END but other
 # does not.
-f:2:PC_IN_SIGTRAMP:int:pc_in_sigtramp:CORE_ADDR pc, char *name:pc, name:::legacy_pc_in_sigtramp::0
+f:2:PC_IN_SIGTRAMP:int:pc_in_sigtramp:CORE_ADDR pc, const char *name:pc, name:::legacy_pc_in_sigtramp::0
 F:2:SIGTRAMP_START:CORE_ADDR:sigtramp_start:CORE_ADDR pc:pc
 F:2:SIGTRAMP_END:CORE_ADDR:sigtramp_end:CORE_ADDR pc:pc
 # A target might have problems with watchpoints as soon as the stack
@@ -716,8 +716,6 @@ M:2:ADDRESS_CLASS_TYPE_FLAGS_TO_NAME:const char *:address_class_type_flags_to_na
 M:2:ADDRESS_CLASS_NAME_TO_TYPE_FLAGS:int:address_class_name_to_type_flags:const char *name, int *type_flags_ptr:name, type_flags_ptr
 # Is a register in a group
 m:::int:register_reggroup_p:int regnum, struct reggroup *reggroup:regnum, reggroup:::default_register_reggroup_p::0
-# Fetch the pointer to the ith function argument.  
-F::FETCH_POINTER_ARGUMENT:CORE_ADDR:fetch_pointer_argument:struct frame_info *frame, int argi, struct type *type:frame, argi, type:::::::::
 EOF
 }
 
@@ -855,8 +853,10 @@ do
 	printf "#if (GDB_MULTI_ARCH ${gt_level}) && defined (${macro})\n"
 	printf "#error \"Non multi-arch definition of ${macro}\"\n"
 	printf "#endif\n"
-	printf "#if !defined (${macro})\n"
+	printf "#if GDB_MULTI_ARCH\n"
+	printf "#if (GDB_MULTI_ARCH ${gt_level}) || !defined (${macro})\n"
 	printf "#define ${macro} (gdbarch_${function} (current_gdbarch))\n"
+	printf "#endif\n"
 	printf "#endif\n"
     fi
 done
@@ -924,9 +924,18 @@ do
 	printf "#if (GDB_MULTI_ARCH ${gt_level}) && defined (${macro})\n"
 	printf "#error \"Non multi-arch definition of ${macro}\"\n"
 	printf "#endif\n"
-	printf "#if !defined (${macro})\n"
-	printf "#define ${macro} (gdbarch_${function} (current_gdbarch))\n"
-	printf "#endif\n"
+	if test "${level}" = ""
+	then
+	    printf "#if !defined (${macro})\n"
+	    printf "#define ${macro} (gdbarch_${function} (current_gdbarch))\n"
+	    printf "#endif\n"
+	else
+	    printf "#if GDB_MULTI_ARCH\n"
+	    printf "#if (GDB_MULTI_ARCH ${gt_level}) || !defined (${macro})\n"
+	    printf "#define ${macro} (gdbarch_${function} (current_gdbarch))\n"
+	    printf "#endif\n"
+	    printf "#endif\n"
+	fi
     fi
     if class_is_function_p
     then
@@ -973,16 +982,8 @@ do
 	    printf "#if (GDB_MULTI_ARCH ${gt_level}) && defined (${macro})\n"
 	    printf "#error \"Non multi-arch definition of ${macro}\"\n"
 	    printf "#endif\n"
-	    if [ "x${actual}" = "x" ]
-	    then
-		d="#define ${macro}() (gdbarch_${function} (current_gdbarch))"
-	    elif [ "x${actual}" = "x-" ]
-	    then
-		d="#define ${macro} (gdbarch_${function} (current_gdbarch))"
-	    else
-		d="#define ${macro}(${actual}) (gdbarch_${function} (current_gdbarch, ${actual}))"
-	    fi
-	    printf "#if !defined (${macro})\n"
+	    printf "#if GDB_MULTI_ARCH\n"
+	    printf "#if (GDB_MULTI_ARCH ${gt_level}) || !defined (${macro})\n"
 	    if [ "x${actual}" = "x" ]
 	    then
 		printf "#define ${macro}() (gdbarch_${function} (current_gdbarch))\n"
@@ -992,6 +993,7 @@ do
 	    else
 		printf "#define ${macro}(${actual}) (gdbarch_${function} (current_gdbarch, ${actual}))\n"
 	    fi
+	    printf "#endif\n"
 	    printf "#endif\n"
 	fi
     fi

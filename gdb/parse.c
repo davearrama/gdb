@@ -472,7 +472,7 @@ write_dollar_variable (struct stoken str)
 	 symbol table lookup performance is awful, to put it mildly. */
 
       sym = lookup_symbol (copy_name (str), (struct block *) NULL,
-			   VAR_DOMAIN, (int *) NULL, (struct symtab **) NULL);
+			   VAR_NAMESPACE, (int *) NULL, (struct symtab **) NULL);
       if (sym)
 	{
 	  write_exp_elt_opcode (OP_VAR_VALUE);
@@ -563,7 +563,7 @@ parse_nested_classes_for_hpacc (char *name, int len, char **token,
      consider *prefixes* of the string; there is no need to look up
      "B::C" separately as a symbol in the previous example. */
 
-  register char *p;
+  const char *p;
   char *start, *end;
   char *prefix = NULL;
   char *tmp;
@@ -572,7 +572,7 @@ parse_nested_classes_for_hpacc (char *name, int len, char **token,
   struct type *t;
   int prefix_len = 0;
   int done = 0;
-  char *q;
+  const char *q;
 
   /* Check for HP-compiled executable -- in other cases
      return NULL, and caller must default to standard GDB
@@ -647,17 +647,17 @@ parse_nested_classes_for_hpacc (char *name, int len, char **token,
       if (!done)
 	{
 	  /* More tokens to process, so this must be a class/namespace */
-	  sym_class = lookup_symbol (prefix, 0, STRUCT_DOMAIN,
+	  sym_class = lookup_symbol (prefix, 0, STRUCT_NAMESPACE,
 				     0, (struct symtab **) NULL);
 	}
       else
 	{
 	  /* No more tokens, so try as a variable first */
-	  sym_var = lookup_symbol (prefix, 0, VAR_DOMAIN,
+	  sym_var = lookup_symbol (prefix, 0, VAR_NAMESPACE,
 				   0, (struct symtab **) NULL);
 	  /* If failed, try as class/namespace */
 	  if (!sym_var)
-	    sym_class = lookup_symbol (prefix, 0, STRUCT_DOMAIN,
+	    sym_class = lookup_symbol (prefix, 0, STRUCT_NAMESPACE,
 				       0, (struct symtab **) NULL);
 	}
 
@@ -691,8 +691,8 @@ parse_nested_classes_for_hpacc (char *name, int len, char **token,
   return sym_var ? sym_var : sym_class;		/* found */
 }
 
-char *
-find_template_name_end (char *p)
+const char *
+find_template_name_end (const char *p)
 {
   int depth = 1;
   int just_seen_right = 0;
@@ -1103,11 +1103,11 @@ prefixify_subexp (register struct expression *inexpr,
    If COMMA is nonzero, stop if a comma is reached.  */
 
 struct expression *
-parse_exp_1 (char **stringptr, struct block *block, int comma)
+parse_exp_1 (const char **stringptr, struct block *block, int comma)
 {
   struct cleanup *old_chain;
 
-  lexptr = *stringptr;
+  const char *lexptr = *stringptr;
   prev_lexptr = NULL;
 
   paren_depth = 0;
@@ -1172,7 +1172,7 @@ parse_exp_1 (char **stringptr, struct block *block, int comma)
    to use up all of the contents of STRING.  */
 
 struct expression *
-parse_expression (char *string)
+parse_expression (const char *string)
 {
   register struct expression *exp;
   exp = parse_exp_1 (&string, 0, 0);

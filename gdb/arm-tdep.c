@@ -443,7 +443,7 @@ arm_skip_prologue (CORE_ADDR pc)
       struct symbol *sym;
 
       /* Found a function.  */
-      sym = lookup_symbol (func_name, NULL, VAR_DOMAIN, NULL, NULL);
+      sym = lookup_symbol (func_name, NULL, VAR_NAMESPACE, NULL, NULL);
       if (sym && SYMBOL_LANGUAGE (sym) != language_asm)
         {
 	  /* Don't use this trick for assembly source files.  */
@@ -1405,20 +1405,19 @@ pop_stack_item (struct stack_item *si)
    we should probably support some of them based on the selected ABI.  */
 
 static CORE_ADDR
-arm_push_dummy_call (struct gdbarch *gdbarch, CORE_ADDR func_addr,
-		     struct regcache *regcache, CORE_ADDR bp_addr, int nargs,
-		     struct value **args, CORE_ADDR sp, int struct_return,
-		     CORE_ADDR struct_addr)
+arm_push_dummy_call (struct gdbarch *gdbarch, struct regcache *regcache,
+		     CORE_ADDR dummy_addr, int nargs, struct value **args,
+		     CORE_ADDR sp, int struct_return, CORE_ADDR struct_addr)
 {
   int argnum;
   int argreg;
   int nstack;
   struct stack_item *si = NULL;
 
-  /* Set the return address.  For the ARM, the return breakpoint is
-     always at BP_ADDR.  */
+  /* Set the return address.  For the ARM, the return breakpoint is always
+     at DUMMY_ADDR.  */
   /* XXX Fix for Thumb.  */
-  regcache_cooked_write_unsigned (regcache, ARM_LR_REGNUM, bp_addr);
+  regcache_cooked_write_unsigned (regcache, ARM_LR_REGNUM, dummy_addr);
 
   /* Walk through the list of args and determine how large a temporary
      stack is required.  Need to take care here as structs may be
@@ -1465,7 +1464,7 @@ arm_push_dummy_call (struct gdbarch *gdbarch, CORE_ADDR func_addr,
 	  && target_type != NULL
 	  && TYPE_CODE_FUNC == TYPE_CODE (target_type))
 	{
-	  CORE_ADDR regval = extract_unsigned_integer (val, len);
+	  CORE_ADDR regval = extract_address (val, len);
 	  if (arm_pc_is_thumb (regval))
 	    {
 	      val = alloca (len);
@@ -1484,7 +1483,7 @@ arm_push_dummy_call (struct gdbarch *gdbarch, CORE_ADDR func_addr,
 	    {
 	      /* The argument is being passed in a general purpose
 		 register.  */
-	      CORE_ADDR regval = extract_unsigned_integer (val, partial_len);
+	      CORE_ADDR regval = extract_address (val, partial_len);
 	      if (arm_debug)
 		fprintf_unfiltered (gdb_stdlog, "arg %d in %s = 0x%s\n",
 				    argnum, REGISTER_NAME (argreg),
@@ -2494,7 +2493,7 @@ arm_get_longjmp_target (CORE_ADDR *pc)
 			  INT_REGISTER_RAW_SIZE))
     return 0;
 
-  *pc = extract_unsigned_integer (buf, INT_REGISTER_RAW_SIZE);
+  *pc = extract_address (buf, INT_REGISTER_RAW_SIZE);
   return 1;
 }
 
@@ -2977,10 +2976,10 @@ arm_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_sp_regnum (gdbarch, ARM_SP_REGNUM);
   set_gdbarch_pc_regnum (gdbarch, ARM_PC_REGNUM);
   set_gdbarch_register_byte (gdbarch, arm_register_byte);
-  set_gdbarch_deprecated_register_bytes (gdbarch,
-					 (NUM_GREGS * INT_REGISTER_RAW_SIZE
-					  + NUM_FREGS * FP_REGISTER_RAW_SIZE
-					  + NUM_SREGS * STATUS_REGISTER_SIZE));
+  set_gdbarch_register_bytes (gdbarch,
+			      (NUM_GREGS * INT_REGISTER_RAW_SIZE
+			       + NUM_FREGS * FP_REGISTER_RAW_SIZE
+			       + NUM_SREGS * STATUS_REGISTER_SIZE));
   set_gdbarch_num_regs (gdbarch, NUM_GREGS + NUM_FREGS + NUM_SREGS);
   set_gdbarch_register_raw_size (gdbarch, arm_register_raw_size);
   set_gdbarch_register_virtual_size (gdbarch, arm_register_virtual_size);

@@ -1,6 +1,6 @@
 /* YACC parser for C expressions, for GDB.
    Copyright 1986, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997,
-   1998, 1999, 2000, 2003
+   1998, 1999, 2000
    Free Software Foundation, Inc.
 
 This file is part of GDB.
@@ -567,7 +567,7 @@ block	:	BLOCKNAME
 block	:	block COLONCOLON name
 			{ struct symbol *tem
 			    = lookup_symbol (copy_name ($3), $1,
-					     VAR_DOMAIN, (int *) NULL,
+					     VAR_NAMESPACE, (int *) NULL,
 					     (struct symtab **) NULL);
 			  if (!tem || SYMBOL_CLASS (tem) != LOC_BLOCK)
 			    error ("No function \"%s\" in specified context.",
@@ -578,7 +578,7 @@ block	:	block COLONCOLON name
 variable:	block COLONCOLON name
 			{ struct symbol *sym;
 			  sym = lookup_symbol (copy_name ($3), $1,
-					       VAR_DOMAIN, (int *) NULL,
+					       VAR_NAMESPACE, (int *) NULL,
 					       (struct symtab **) NULL);
 			  if (sym == 0)
 			    error ("No symbol \"%s\" in specified context.",
@@ -637,7 +637,7 @@ variable:	qualified_name
 
 			  sym =
 			    lookup_symbol (name, (const struct block *) NULL,
-					   VAR_DOMAIN, (int *) NULL,
+					   VAR_NAMESPACE, (int *) NULL,
 					   (struct symtab **) NULL);
 			  if (sym)
 			    {
@@ -831,8 +831,6 @@ typebase  /* Implements (approximately): (type-qualifier)* type-specifier */
 			{ $$ = builtin_type_long_long; }
 	|	SIGNED_KEYWORD LONG LONG
 			{ $$ = builtin_type_long_long; }
-	|	SIGNED_KEYWORD LONG LONG INT_KEYWORD
-			{ $$ = builtin_type_long_long; }
 	|	UNSIGNED LONG LONG
 			{ $$ = builtin_type_unsigned_long_long; }
 	|	UNSIGNED LONG LONG INT_KEYWORD
@@ -841,6 +839,10 @@ typebase  /* Implements (approximately): (type-qualifier)* type-specifier */
 			{ $$ = builtin_type_unsigned_long_long; }
 	|	LONG LONG UNSIGNED INT_KEYWORD
 			{ $$ = builtin_type_unsigned_long_long; }
+	|	SIGNED_KEYWORD LONG LONG
+			{ $$ = lookup_signed_typename ("long long"); }
+	|	SIGNED_KEYWORD LONG LONG INT_KEYWORD
+			{ $$ = lookup_signed_typename ("long long"); }
 	|	SHORT INT_KEYWORD
 			{ $$ = builtin_type_short; }
 	|	SHORT SIGNED_KEYWORD INT_KEYWORD
@@ -1541,7 +1543,7 @@ yylex ()
                   characters; for comparison expressions, e.g. "a < b > c",
                   there must be spaces before the '<', etc. */
                
-               char * p = find_template_name_end (tokstart + namelen);
+               const char *p = find_template_name_end (tokstart + namelen);
                if (p)
                  namelen = p - tokstart;
                break;
@@ -1659,7 +1661,7 @@ yylex ()
     int hextype;
 
     sym = lookup_symbol (tmp, expression_context_block,
-			 VAR_DOMAIN,
+			 VAR_NAMESPACE,
 			 current_language->la_language == language_cplus
 			 ? &is_a_field_of_this : (int *) NULL,
 			 (struct symtab **) NULL);
@@ -1747,7 +1749,7 @@ yylex ()
 		      memcpy (tmp1, namestart, p - namestart);
 		      tmp1[p - namestart] = '\0';
 		      cur_sym = lookup_symbol (ncopy, expression_context_block,
-					       VAR_DOMAIN, (int *) NULL,
+					       VAR_NAMESPACE, (int *) NULL,
 					       (struct symtab **) NULL);
 		      if (cur_sym)
 			{

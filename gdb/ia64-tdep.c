@@ -543,9 +543,9 @@ fetch_instruction (CORE_ADDR addr, instruction_type *it, long long *instr)
    using the pattern seen below. */
 
 #if 0
-#define IA64_BREAKPOINT 0x00002000040LL
+#define BREAKPOINT 0x00002000040LL
 #endif
-#define IA64_BREAKPOINT 0x00003333300LL
+#define BREAKPOINT 0x00003333300LL
 
 static int
 ia64_memory_insert_breakpoint (CORE_ADDR addr, char *contents_cache)
@@ -573,7 +573,7 @@ ia64_memory_insert_breakpoint (CORE_ADDR addr, char *contents_cache)
 
   instr = slotN_contents (bundle, slotnum);
   memcpy(contents_cache, &instr, sizeof(instr));
-  replace_slotN_contents (bundle, IA64_BREAKPOINT, slotnum);
+  replace_slotN_contents (bundle, BREAKPOINT, slotnum);
   if (val == 0)
     target_write_memory (addr, bundle, BUNDLE_LEN);
 
@@ -737,7 +737,7 @@ ia64_frame_saved_pc (struct frame_info *frame)
 
 /* Limit the number of skipped non-prologue instructions since examining
    of the prologue is expensive.  */
-static int max_skip_non_prologue_insns = 40;
+static int max_skip_non_prologue_insns = 10;
 
 /* Given PC representing the starting address of a function, and
    LIM_PC which is the (sloppy) limit to which to scan when looking
@@ -825,13 +825,10 @@ examine_prologue (CORE_ADDR pc, CORE_ADDR lim_pc, struct frame_info *frame)
   CORE_ADDR spill_addr = 0;
   char instores[8];
   char infpstores[8];
-  char reg_contents[256];
   int trust_limit;
-  int frameless = 0;
 
   memset (instores, 0, sizeof instores);
   memset (infpstores, 0, sizeof infpstores);
-  memset (reg_contents, 0, sizeof reg_contents);
 
   if (frame && !get_frame_saved_regs (frame))
     {
@@ -846,14 +843,13 @@ examine_prologue (CORE_ADDR pc, CORE_ADDR lim_pc, struct frame_info *frame)
     return get_frame_extra_info (frame)->after_prologue;
 
   lim_pc = refine_prologue_limit (pc, lim_pc, &trust_limit);
-  next_pc = fetch_instruction (pc, &it, &instr);
 
-  /* We want to check if we have a recognizable function start before we
-     look ahead for a prologue.  */
+  /* Must start with an alloc instruction */
+  next_pc = fetch_instruction (pc, &it, &instr);
   if (pc < lim_pc && next_pc 
       && it == M && ((instr & 0x1ee0000003fLL) == 0x02c00000000LL))
     {
-      /* alloc - start of a regular function.  */
+      /* alloc */
       int sor = (int) ((instr & 0x00078000000LL) >> 27);
       int sol = (int) ((instr & 0x00007f00000LL) >> 20);
       int sof = (int) ((instr & 0x000000fe000LL) >> 13);
@@ -868,35 +864,9 @@ examine_prologue (CORE_ADDR pc, CORE_ADDR lim_pc, struct frame_info *frame)
     }
   else
     {
-      /* Look for a leaf routine.  */
-      if (pc < lim_pc && next_pc
-	  && (it == I || it == M) 
-          && ((instr & 0x1ee00000000LL) == 0x10800000000LL))
-	{
-	  /* adds rN = imm14, rM   (or mov rN, rM  when imm14 is 0) */
-	  int imm = (int) ((((instr & 0x01000000000LL) ? -1 : 0) << 13) 
-	                   | ((instr & 0x001f8000000LL) >> 20)
-		           | ((instr & 0x000000fe000LL) >> 13));
-	  int rM = (int) ((instr & 0x00007f00000LL) >> 20);
-	  int rN = (int) ((instr & 0x00000001fc0LL) >> 6);
-	  int qp = (int) (instr & 0x0000000003fLL);
-	  if (qp == 0 && rN == 2 && imm == 0 && rM == 12 && fp_reg == 0)
-	    {
-	      /* mov r2, r12 - beginning of leaf routine */
-	      fp_reg = rN;
-	      frameless = 1;
-	      last_prologue_pc = next_pc;
-	    }
-	} 
-
-      /* If we don't recognize a regular function or leaf routine, we are
-	 done.  */
-      if (!fp_reg)
-	{
-	  pc = lim_pc;	
-	  if (trust_limit)
-	    last_prologue_pc = lim_pc;
-	}
+      pc = lim_pc;	/* Frameless: We're done early.  */
+      if (trust_limit)
+	last_prologue_pc = lim_pc;
     }
 
   /* Loop, looking for prologue instructions, keeping track of
@@ -912,8 +882,6 @@ examine_prologue (CORE_ADDR pc, CORE_ADDR lim_pc, struct frame_info *frame)
 	{
 	  /* Exit loop upon hitting a non-nop branch instruction 
 	     or a predicated instruction. */
-	  if (trust_limit)
-	    lim_pc = pc;
 	  break;
 	}
       else if (it == I && ((instr & 0x1eff8000000LL) == 0x00188000000LL))
@@ -972,20 +940,6 @@ examine_prologue (CORE_ADDR pc, CORE_ADDR lim_pc, struct frame_info *frame)
 			  + imm;
 	      spill_reg   = rN;
 	      last_prologue_pc = next_pc;
-	    }
-	  else if (qp == 0 && rM >= 32 && rM < 40 && !instores[rM] && 
-		   rN < 256 && imm == 0)
-	    {
-	      /* mov rN, rM where rM is an input register */
-	      reg_contents[rN] = rM;
-	      last_prologue_pc = next_pc;
-	    }
-	  else if (frameless && qp == 0 && rN == fp_reg && imm == 0 && 
-		   rM == 2)
-	    {
-	      /* mov r12, r2 */
-	      last_prologue_pc = next_pc;
-	      break;
 	    }
 	}
       else if (it == M 
@@ -1052,7 +1006,6 @@ examine_prologue (CORE_ADDR pc, CORE_ADDR lim_pc, struct frame_info *frame)
 	  int rN = (int) ((instr & 0x00007f00000LL) >> 20);
 	  int rM = (int) ((instr & 0x000000fe000LL) >> 13);
 	  int qp = (int) (instr & 0x0000000003fLL);
-	  int indirect = rM < 256 ? reg_contents[rM] : 0;
 	  if (qp == 0 && rN == spill_reg && spill_addr != 0
 	      && (rM == unat_save_reg || rM == pr_save_reg))
 	    {
@@ -1087,13 +1040,6 @@ examine_prologue (CORE_ADDR pc, CORE_ADDR lim_pc, struct frame_info *frame)
 	      instores[rM-32] = 1;
 	      last_prologue_pc = next_pc;
 	    }
-	  else if (qp == 0 && 32 <= indirect && indirect < 40 && 
-		   !instores[indirect-32])
-	    {
-	      /* Allow an indirect store of an input register.  */
-	      instores[indirect-32] = 1;
-	      last_prologue_pc = next_pc;
-	    }
 	}
       else if (it == M && ((instr & 0x1ff08000000LL) == 0x08c00000000LL))
 	{
@@ -1108,17 +1054,9 @@ examine_prologue (CORE_ADDR pc, CORE_ADDR lim_pc, struct frame_info *frame)
 	     register is permitted. */
 	  int rM = (int) ((instr & 0x000000fe000LL) >> 13);
 	  int qp = (int) (instr & 0x0000000003fLL);
-	  int indirect = rM < 256 ? reg_contents[rM] : 0;
 	  if (qp == 0 && 32 <= rM && rM < 40 && !instores[rM-32])
 	    {
 	      instores[rM-32] = 1;
-	      last_prologue_pc = next_pc;
-	    }
-	  else if (qp == 0 && 32 <= indirect && indirect < 40 && 
-		   !instores[indirect-32])
-	    {
-	      /* Allow an indirect store of an input register.  */
-	      instores[indirect-32] = 1;
 	      last_prologue_pc = next_pc;
 	    }
 	}
@@ -1208,10 +1146,6 @@ examine_prologue (CORE_ADDR pc, CORE_ADDR lim_pc, struct frame_info *frame)
       get_frame_extra_info (frame)->mem_stack_frame_size = mem_stack_frame_size;
       get_frame_extra_info (frame)->fp_reg = fp_reg;
     }
-
-  /* Try and trust the lim_pc value whenever possible.  */
-  if (trust_limit && lim_pc >= last_prologue_pc)
-    return lim_pc;
 
   return last_prologue_pc;
 }
@@ -1747,7 +1681,7 @@ generic_elf_find_global_pointer (CORE_ADDR faddr)
 		  status = target_read_memory (addr + 8, buf, sizeof (buf));
 		  if (status != 0)
 		    break;
-		  global_pointer = extract_unsigned_integer (buf, sizeof (buf));
+		  global_pointer = extract_address (buf, sizeof (buf));
 
 		  /* The payoff... */
 		  return global_pointer;
@@ -1929,7 +1863,7 @@ ia64_push_arguments (int nargs, struct value **args, CORE_ADDR sp,
 	  char val_buf[8];
 
 	  store_unsigned_integer (val_buf, 8,
-				  find_func_descr (extract_unsigned_integer (VALUE_CONTENTS (arg), 8),
+				  find_func_descr (extract_address (VALUE_CONTENTS (arg), 8),
 						   &funcdescaddr));
 	  if (slotnum < rseslots)
 	    write_memory (rse_address_add (bsp, slotnum), val_buf, 8);
@@ -2242,7 +2176,7 @@ ia64_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   set_gdbarch_register_name (gdbarch, ia64_register_name);
   set_gdbarch_deprecated_register_size (gdbarch, 8);
-  set_gdbarch_deprecated_register_bytes (gdbarch, ia64_num_regs * 8 + 128*8);
+  set_gdbarch_register_bytes (gdbarch, ia64_num_regs * 8 + 128*8);
   set_gdbarch_register_byte (gdbarch, ia64_register_byte);
   set_gdbarch_register_raw_size (gdbarch, ia64_register_raw_size);
   set_gdbarch_deprecated_max_register_raw_size (gdbarch, 16);

@@ -70,6 +70,7 @@ fetch_core_registers (char *core_reg_sect, unsigned core_reg_size, int which,
   for (regno = 0; regno < ALPHA_ZERO_REGNUM; regno++)
     supply_register (regno, regs + (regmap[regno] * 8));
   supply_register (ALPHA_ZERO_REGNUM, NULL);
+  supply_register (DEPRECATED_FP_REGNUM, NULL);
   supply_register (PC_REGNUM, regs + (28 * 8));
 
   /* Floating point registers.  */
@@ -177,7 +178,7 @@ alphanbsd_sigtramp_offset (CORE_ADDR pc)
 }
 
 static int
-alphanbsd_pc_in_sigtramp (CORE_ADDR pc, char *func_name)
+alphanbsd_pc_in_sigtramp (CORE_ADDR pc, const char *func_name)
 {
   return (nbsd_pc_in_sigtramp (pc, func_name)
 	  || alphanbsd_sigtramp_offset (pc) >= 0);

@@ -232,32 +232,15 @@ i386nbsd_sigtramp_offset (CORE_ADDR pc)
 }
 
 static int
-i386nbsd_pc_in_sigtramp (CORE_ADDR pc, char *name)
+i386nbsd_pc_in_sigtramp (CORE_ADDR pc, const char *name)
 {
   return (nbsd_pc_in_sigtramp (pc, name)
 	  || i386nbsd_sigtramp_offset (pc) >= 0);
 }
 
 /* From <machine/signal.h>.  */
-int i386nbsd_sc_reg_offset[I386_NUM_GREGS] =
-{
-  10 * 4,			/* %eax */
-  9 * 4,			/* %ecx */
-  8 * 4,			/* %edx */
-  7 * 4,			/* %ebx */
-  14 * 4,			/* %esp */
-  6 * 4,			/* %ebp */
-  5 * 4,			/* %esi */
-  4 * 4,			/* %edi */
-  11 * 4,			/* %eip */
-  13 * 4,			/* %eflags */
-  12 * 4,			/* %cs */
-  15 * 4,			/* %ss */
-  3 * 4,			/* %ds */
-  2 * 4,			/* %es */
-  1 * 4,			/* %fs */
-  0 * 4				/* %gs */
-};
+int i386nbsd_sc_pc_offset = 44;
+int i386nbsd_sc_sp_offset = 56;
 
 static void 
 i386nbsd_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
@@ -280,8 +263,8 @@ i386nbsd_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 
   /* NetBSD has a `struct sigcontext' that's different from the
      origional 4.3 BSD.  */
-  tdep->sc_reg_offset = i386nbsd_sc_reg_offset;
-  tdep->sc_num_regs = I386_NUM_GREGS;
+  tdep->sc_pc_offset = i386nbsd_sc_pc_offset;
+  tdep->sc_sp_offset = i386nbsd_sc_sp_offset;
 }
 
 /* NetBSD ELF.  */

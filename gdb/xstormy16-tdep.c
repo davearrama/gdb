@@ -228,8 +228,8 @@ xstormy16_extract_return_value (struct type *type, char *regbuf, char *valbuf)
       /* Aggregates and return values > 12 bytes are returned in memory,
          pointed to by R2. */
       return_buffer =
-	extract_unsigned_integer (regbuf + REGISTER_BYTE (E_PTR_RET_REGNUM),
-				  REGISTER_RAW_SIZE (E_PTR_RET_REGNUM));
+	extract_address (regbuf + REGISTER_BYTE (E_PTR_RET_REGNUM),
+			 REGISTER_RAW_SIZE (E_PTR_RET_REGNUM));
 
       read_memory (return_buffer, valbuf, TYPE_LENGTH (type));
     }
@@ -410,8 +410,9 @@ xstormy16_store_return_value (struct type *type, char *valbuf)
 static CORE_ADDR
 xstormy16_extract_struct_value_address (char *regbuf)
 {
-  return extract_unsigned_integer (regbuf + xstormy16_register_byte (E_PTR_RET_REGNUM),
-				   xstormy16_reg_size);
+  return extract_address (regbuf +
+			  xstormy16_register_byte (E_PTR_RET_REGNUM),
+			  xstormy16_reg_size);
 }
 
 /* Function: xstormy16_use_struct_convention 
@@ -647,7 +648,7 @@ xstormy16_skip_prologue (CORE_ADDR pc)
         return plg_end;
 
       /* Found a function.  */
-      sym = lookup_symbol (func_name, NULL, VAR_DOMAIN, NULL, NULL);
+      sym = lookup_symbol (func_name, NULL, VAR_NAMESPACE, NULL, NULL);
       /* Don't use line number debug info for assembly source files. */
       if (sym && SYMBOL_LANGUAGE (sym) != language_asm)
 	{
@@ -961,7 +962,7 @@ static CORE_ADDR
 xstormy16_pointer_to_address (struct type *type, const void *buf)
 {
   enum type_code target = TYPE_CODE (TYPE_TARGET_TYPE (type));
-  CORE_ADDR addr = extract_unsigned_integer (buf, TYPE_LENGTH (type));
+  CORE_ADDR addr = extract_address (buf, TYPE_LENGTH (type));
 
   if (target == TYPE_CODE_FUNC || target == TYPE_CODE_METHOD)
     {
@@ -1038,7 +1039,7 @@ xstormy16_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_pc_regnum (gdbarch, E_PC_REGNUM);
   set_gdbarch_register_name (gdbarch, xstormy16_register_name);
   set_gdbarch_deprecated_register_size (gdbarch, xstormy16_reg_size);
-  set_gdbarch_deprecated_register_bytes (gdbarch, E_ALL_REGS_SIZE);
+  set_gdbarch_register_bytes (gdbarch, E_ALL_REGS_SIZE);
   set_gdbarch_register_byte (gdbarch, xstormy16_register_byte);
   set_gdbarch_register_raw_size (gdbarch, xstormy16_register_raw_size);
   set_gdbarch_deprecated_max_register_raw_size (gdbarch, xstormy16_pc_size);

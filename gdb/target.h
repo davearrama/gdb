@@ -173,7 +173,7 @@ extern char *target_signal_to_string (enum target_signal);
 extern char *target_signal_to_name (enum target_signal);
 
 /* Given a name (SIGHUP, etc.), return its signal.  */
-enum target_signal target_signal_from_name (char *);
+enum target_signal target_signal_from_name (const char *);
 
 
 /* If certain kinds of activity happen, target_wait should perform
@@ -193,11 +193,11 @@ struct target_ops
     char *to_doc;		/* Documentation.  Does not include trailing
 				   newline, and starts with a one-line descrip-
 				   tion (probably similar to to_longname).  */
-    void (*to_open) (char *, int);
+    void (*to_open) (const char *, int);
     void (*to_close) (int);
-    void (*to_attach) (char *, int);
+    void (*to_attach) (const char *, int);
     void (*to_post_attach) (int);
-    void (*to_detach) (char *, int);
+    void (*to_detach) (const char *, int);
     void (*to_resume) (ptid_t, int, enum target_signal);
     ptid_t (*to_wait) (ptid_t, struct target_waitstatus *);
     void (*to_post_wait) (ptid_t, int);
@@ -268,9 +268,9 @@ struct target_ops
     void (*to_terminal_ours_for_output) (void);
     void (*to_terminal_ours) (void);
     void (*to_terminal_save_ours) (void);
-    void (*to_terminal_info) (char *, int);
+    void (*to_terminal_info) (const char *, int);
     void (*to_kill) (void);
-    void (*to_load) (char *, int);
+    void (*to_load) (const char *, int);
     int (*to_lookup_symbol) (char *, CORE_ADDR *);
     void (*to_create_inferior) (char *, char *, char **);
     void (*to_post_startup_inferior) (ptid_t);
@@ -293,7 +293,7 @@ struct target_ops
     char *(*to_extra_thread_info) (struct thread_info *);
     void (*to_stop) (void);
     int (*to_query) (int /*char */ , char *, char *, int *);
-    void (*to_rcmd) (char *command, struct ui_file *output);
+    void (*to_rcmd) (const char *command, struct ui_file *output);
     struct symtab_and_line *(*to_enable_exception_callback) (enum
 							     exception_event_kind,
 							     int);
@@ -412,7 +412,7 @@ extern struct target_stack_item *target_stack;
    typed by the user (e.g. a signal to send the process).  FROM_TTY
    says whether to be verbose or not.  */
 
-extern void target_detach (char *, int);
+extern void target_detach (const char *, int);
 
 /* Resume execution of the target process PTID.  STEP says whether to
    single-step or to run free; SIGGNAL is the signal to be given to
@@ -552,11 +552,11 @@ extern void print_section_info (struct target_ops *, bfd *);
 #define	target_files_info()	\
      (*current_target.to_files_info) (&current_target)
 
-/* Insert a breakpoint at address ADDR in the target machine.  SAVE is
-   a pointer to memory allocated for saving the target contents.  It
-   is guaranteed by the caller to be long enough to save the number of
-   breakpoint bytes indicated by BREAKPOINT_FROM_PC.  Result is 0 for
-   success, or an errno value.  */
+/* Insert a breakpoint at address ADDR in the target machine.
+   SAVE is a pointer to memory allocated for saving the
+   target contents.  It is guaranteed by the caller to be long enough
+   to save "sizeof BREAKPOINT" bytes.  Result is 0 for success, or
+   an errno value.  */
 
 #define	target_insert_breakpoint(addr, save)	\
      (*current_target.to_insert_breakpoint) (addr, save)
@@ -622,7 +622,7 @@ extern void print_section_info (struct target_ops *, bfd *);
    to not only bring new code into the target process, but also to
    update GDB's symbol tables to match.  */
 
-extern void target_load (char *arg, int from_tty);
+extern void target_load (const char *arg, int from_tty);
 
 /* Look up a symbol in the target's symbol table.  NAME is the symbol
    name.  ADDRP is a CORE_ADDR * pointing to where the value of the
@@ -945,6 +945,12 @@ extern void (*target_new_objfile_hook) (struct objfile *);
 #define target_get_thread_local_address_p() \
     (target_get_thread_local_address != NULL)
 
+/* Hook to call target-dependent code after reading in a new symbol table.  */
+
+#ifndef TARGET_SYMFILE_POSTREAD
+#define TARGET_SYMFILE_POSTREAD(OBJFILE)
+#endif
+
 /* Hook to call target dependent code just after inferior target process has
    started.  */
 
@@ -1120,6 +1126,9 @@ extern int default_memory_remove_breakpoint (CORE_ADDR, char *);
 
 extern int default_memory_insert_breakpoint (CORE_ADDR, char *);
 
+extern const unsigned char *memory_breakpoint_from_pc (CORE_ADDR *pcptr,
+						       int *lenptr);
+
 
 /* From target.c */
 
@@ -1127,7 +1136,7 @@ extern void initialize_targets (void);
 
 extern void noprocess (void);
 
-extern void find_default_attach (char *, int);
+extern void find_default_attach (const char *, int);
 
 extern void find_default_create_inferior (char *, char *, char **);
 

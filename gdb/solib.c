@@ -91,7 +91,6 @@ static char *solib_search_path = NULL;
    * If path is absolute, look in SOLIB_ABSOLUTE_PREFIX.
    * If path is absolute or relative, look for it literally (unmodified).
    * Look in SOLIB_SEARCH_PATH.
-   * If available, use target defined search function.
    * Look in inferior's $PATH.
    * Look in inferior's $LD_LIBRARY_PATH.
 
@@ -538,7 +537,8 @@ update_solib_list (int from_tty, struct target_ops *target)
    FROM_TTY and TARGET are as described for update_solib_list, above.  */
 
 void
-solib_add (char *pattern, int from_tty, struct target_ops *target, int readsyms)
+solib_add (const char *pattern, int from_tty, struct target_ops *target,
+	   int readsyms)
 {
   struct so_list *gdb;
 
@@ -619,7 +619,7 @@ solib_add (char *pattern, int from_tty, struct target_ops *target, int readsyms)
  */
 
 static void
-info_sharedlibrary_command (char *ignore, int from_tty)
+info_sharedlibrary_command (const char *ignore, int from_tty)
 {
   register struct so_list *so = NULL;	/* link map state variable */
   int header_done = 0;
@@ -825,7 +825,7 @@ in_solib_dynsym_resolve_code (CORE_ADDR pc)
  */
 
 static void
-sharedlibrary_command (char *args, int from_tty)
+sharedlibrary_command (const char *args, int from_tty)
 {
   dont_repeat ();
   solib_add (args, from_tty, (struct target_ops *) 0, 1);
@@ -844,14 +844,14 @@ sharedlibrary_command (char *args, int from_tty)
    are not discarded.  Also called from remote.c.  */
 
 void
-no_shared_libraries (char *ignored, int from_tty)
+no_shared_libraries (const char *ignored, int from_tty)
 {
   objfile_purge_solibs ();
   do_clear_solib (NULL);
 }
 
 static void
-reload_shared_libraries (char *ignored, int from_tty)
+reload_shared_libraries (const char *ignored, int from_tty)
 {
   no_shared_libraries (NULL, from_tty);
   solib_add (NULL, from_tty, NULL, auto_solib_add);

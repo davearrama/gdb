@@ -492,8 +492,10 @@ command_handler (char *command)
   if (display_space)
     {
 #ifdef HAVE_SBRK
+      extern char **environ;
       char *lim = (char *) sbrk (0);
-      space_at_cmd_start = lim - lim_at_start;
+
+      space_at_cmd_start = (long) (lim - (char *) &environ);
 #endif
     }
 
@@ -536,8 +538,9 @@ command_handler (char *command)
       if (display_space)
 	{
 #ifdef HAVE_SBRK
+	  extern char **environ;
 	  char *lim = (char *) sbrk (0);
-	  long space_now = lim - lim_at_start;
+	  long space_now = lim - (char *) &environ;
 	  long space_diff = space_now - space_at_cmd_start;
 
 	  printf_unfiltered ("Space used: %ld (%c%ld for this command)\n",
@@ -574,8 +577,9 @@ command_line_handler_continuation (struct continuation_arg *arg)
   if (display_space)
     {
 #ifdef HAVE_SBRK
+      extern char **environ;
       char *lim = (char *) sbrk (0);
-      long space_now = lim - lim_at_start;
+      long space_now = lim - (char *) &environ;
       long space_diff = space_now - space_at_cmd_start;
 
       printf_unfiltered ("Space used: %ld (%c%ld for this command)\n",
@@ -1086,7 +1090,8 @@ handle_sigwinch (int sig)
 /* Called by do_setshow_command.  */
 /* ARGSUSED */
 void
-set_async_editing_command (char *args, int from_tty, struct cmd_list_element *c)
+set_async_editing_command (const char *args, int from_tty,
+			   struct cmd_list_element *c)
 {
   change_line_handler ();
 }
@@ -1094,7 +1099,8 @@ set_async_editing_command (char *args, int from_tty, struct cmd_list_element *c)
 /* Called by do_setshow_command.  */
 /* ARGSUSED */
 void
-set_async_annotation_level (char *args, int from_tty, struct cmd_list_element *c)
+set_async_annotation_level (const char *args, int from_tty,
+			    struct cmd_list_element *c)
 {
   change_annotation_level ();
 }
@@ -1102,7 +1108,7 @@ set_async_annotation_level (char *args, int from_tty, struct cmd_list_element *c
 /* Called by do_setshow_command.  */
 /* ARGSUSED */
 void
-set_async_prompt (char *args, int from_tty, struct cmd_list_element *c)
+set_async_prompt (const char *args, int from_tty, struct cmd_list_element *c)
 {
   PROMPT (0) = savestring (new_async_prompt, strlen (new_async_prompt));
 }

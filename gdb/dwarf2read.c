@@ -1503,7 +1503,7 @@ add_partial_symbol (struct partial_die_info *pdi, struct objfile *objfile,
 	  /*prim_record_minimal_symbol (pdi->name, pdi->lowpc + baseaddr,
 	     mst_text, objfile); */
 	  add_psymbol_to_list (pdi->name, strlen (pdi->name),
-			       VAR_DOMAIN, LOC_BLOCK,
+			       VAR_NAMESPACE, LOC_BLOCK,
 			       &objfile->global_psymbols,
 			    0, pdi->lowpc + baseaddr, cu_language, objfile);
 	}
@@ -1512,7 +1512,7 @@ add_partial_symbol (struct partial_die_info *pdi, struct objfile *objfile,
 	  /*prim_record_minimal_symbol (pdi->name, pdi->lowpc + baseaddr,
 	     mst_file_text, objfile); */
 	  add_psymbol_to_list (pdi->name, strlen (pdi->name),
-			       VAR_DOMAIN, LOC_BLOCK,
+			       VAR_NAMESPACE, LOC_BLOCK,
 			       &objfile->static_psymbols,
 			    0, pdi->lowpc + baseaddr, cu_language, objfile);
 	}
@@ -1537,7 +1537,7 @@ add_partial_symbol (struct partial_die_info *pdi, struct objfile *objfile,
 	    addr = decode_locdesc (pdi->locdesc, objfile, cu_header);
 	  if (pdi->locdesc || pdi->has_type)
 	    add_psymbol_to_list (pdi->name, strlen (pdi->name),
-				 VAR_DOMAIN, LOC_STATIC,
+				 VAR_NAMESPACE, LOC_STATIC,
 				 &objfile->global_psymbols,
 				 0, addr + baseaddr, cu_language, objfile);
 	}
@@ -1550,7 +1550,7 @@ add_partial_symbol (struct partial_die_info *pdi, struct objfile *objfile,
 	  /*prim_record_minimal_symbol (pdi->name, addr + baseaddr,
 	     mst_file_data, objfile); */
 	  add_psymbol_to_list (pdi->name, strlen (pdi->name),
-			       VAR_DOMAIN, LOC_STATIC,
+			       VAR_NAMESPACE, LOC_STATIC,
 			       &objfile->static_psymbols,
 			       0, addr + baseaddr, cu_language, objfile);
 	}
@@ -1558,7 +1558,7 @@ add_partial_symbol (struct partial_die_info *pdi, struct objfile *objfile,
     case DW_TAG_typedef:
     case DW_TAG_base_type:
       add_psymbol_to_list (pdi->name, strlen (pdi->name),
-			   VAR_DOMAIN, LOC_TYPEDEF,
+			   VAR_NAMESPACE, LOC_TYPEDEF,
 			   &objfile->static_psymbols,
 			   0, (CORE_ADDR) 0, cu_language, objfile);
       break;
@@ -1571,7 +1571,7 @@ add_partial_symbol (struct partial_die_info *pdi, struct objfile *objfile,
       if (pdi->has_children == 0)
 	return;
       add_psymbol_to_list (pdi->name, strlen (pdi->name),
-			   STRUCT_DOMAIN, LOC_TYPEDEF,
+			   STRUCT_NAMESPACE, LOC_TYPEDEF,
 			   &objfile->static_psymbols,
 			   0, (CORE_ADDR) 0, cu_language, objfile);
 
@@ -1579,14 +1579,14 @@ add_partial_symbol (struct partial_die_info *pdi, struct objfile *objfile,
 	{
 	  /* For C++, these implicitly act as typedefs as well. */
 	  add_psymbol_to_list (pdi->name, strlen (pdi->name),
-			       VAR_DOMAIN, LOC_TYPEDEF,
+			       VAR_NAMESPACE, LOC_TYPEDEF,
 			       &objfile->static_psymbols,
 			       0, (CORE_ADDR) 0, cu_language, objfile);
 	}
       break;
     case DW_TAG_enumerator:
       add_psymbol_to_list (pdi->name, strlen (pdi->name),
-			   VAR_DOMAIN, LOC_CONST,
+			   VAR_NAMESPACE, LOC_CONST,
 			   &objfile->static_psymbols,
 			   0, (CORE_ADDR) 0, cu_language, objfile);
       break;
@@ -1768,8 +1768,6 @@ process_die (struct die_info *die, struct objfile *objfile,
          of a function and make GDB `next' properly over inlined functions.  */
       break;
     case DW_TAG_lexical_block:
-    case DW_TAG_try_block:
-    case DW_TAG_catch_block:
       read_lexical_block_scope (die, objfile, cu_header);
       break;
     case DW_TAG_class_type:
@@ -5124,7 +5122,7 @@ new_symbol (struct die_info *die, struct type *type, struct objfile *objfile,
 
       /* Default assumptions.
          Use the passed type or decode it from the die.  */
-      SYMBOL_DOMAIN (sym) = VAR_DOMAIN;
+      SYMBOL_NAMESPACE (sym) = VAR_NAMESPACE;
       SYMBOL_CLASS (sym) = LOC_STATIC;
       if (type != NULL)
 	SYMBOL_TYPE (sym) = type;
@@ -5254,7 +5252,7 @@ new_symbol (struct die_info *die, struct type *type, struct objfile *objfile,
 	case DW_TAG_union_type:
 	case DW_TAG_enumeration_type:
 	  SYMBOL_CLASS (sym) = LOC_TYPEDEF;
-	  SYMBOL_DOMAIN (sym) = STRUCT_DOMAIN;
+	  SYMBOL_NAMESPACE (sym) = STRUCT_NAMESPACE;
 	  add_symbol_to_list (sym, list_in_scope);
 
 	  /* The semantics of C++ state that "struct foo { ... }" also
@@ -5266,7 +5264,7 @@ new_symbol (struct die_info *die, struct type *type, struct objfile *objfile,
 	      obstack_alloc (&objfile->symbol_obstack,
 			     sizeof (struct symbol));
 	      *typedef_sym = *sym;
-	      SYMBOL_DOMAIN (typedef_sym) = VAR_DOMAIN;
+	      SYMBOL_NAMESPACE (typedef_sym) = VAR_NAMESPACE;
 	      if (TYPE_NAME (SYMBOL_TYPE (sym)) == 0)
 		TYPE_NAME (SYMBOL_TYPE (sym)) =
 		  obsavestring (DEPRECATED_SYMBOL_NAME (sym),
@@ -5278,7 +5276,7 @@ new_symbol (struct die_info *die, struct type *type, struct objfile *objfile,
 	case DW_TAG_typedef:
 	case DW_TAG_base_type:
 	  SYMBOL_CLASS (sym) = LOC_TYPEDEF;
-	  SYMBOL_DOMAIN (sym) = VAR_DOMAIN;
+	  SYMBOL_NAMESPACE (sym) = VAR_NAMESPACE;
 	  add_symbol_to_list (sym, list_in_scope);
 	  break;
 	case DW_TAG_enumerator:

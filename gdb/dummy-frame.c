@@ -111,7 +111,7 @@ find_dummy_frame (CORE_ADDR pc, CORE_ADDR fp)
 }
 
 struct regcache *
-deprecated_find_dummy_frame_regcache (CORE_ADDR pc, CORE_ADDR fp)
+generic_find_dummy_frame (CORE_ADDR pc, CORE_ADDR fp)
 {
   struct dummy_frame *dummy = find_dummy_frame (pc, fp);
   if (dummy != NULL)
@@ -123,7 +123,7 @@ deprecated_find_dummy_frame_regcache (CORE_ADDR pc, CORE_ADDR fp)
 char *
 deprecated_generic_find_dummy_frame (CORE_ADDR pc, CORE_ADDR fp)
 {
-  struct regcache *regcache = deprecated_find_dummy_frame_regcache (pc, fp);
+  struct regcache *regcache = generic_find_dummy_frame (pc, fp);
   if (regcache == NULL)
     return NULL;
   return deprecated_grub_regcache_for_registers (regcache);
@@ -176,14 +176,14 @@ pc_in_dummy_frame (CORE_ADDR pc)
 CORE_ADDR
 deprecated_read_register_dummy (CORE_ADDR pc, CORE_ADDR fp, int regno)
 {
-  struct regcache *dummy_regs = deprecated_find_dummy_frame_regcache (pc, fp);
+  struct regcache *dummy_regs = generic_find_dummy_frame (pc, fp);
 
   if (dummy_regs)
     {
       /* NOTE: cagney/2002-08-12: Replaced a call to
 	 regcache_raw_read_as_address() with a call to
 	 regcache_cooked_read_unsigned().  The old, ...as_address
-	 function was eventually calling extract_unsigned_integer (nee
+	 function was eventually calling extract_unsigned_integer (via
 	 extract_address) to unpack the registers value.  The below is
 	 doing an unsigned extract so that it is functionally
 	 equivalent.  The read needs to be cooked as, otherwise, it
@@ -443,7 +443,7 @@ fprint_dummy_frames (struct ui_file *file)
 }
 
 static void
-maintenance_print_dummy_frames (char *args, int from_tty)
+maintenance_print_dummy_frames (const char *args, int from_tty)
 {
   if (args == NULL)
     fprint_dummy_frames (gdb_stdout);

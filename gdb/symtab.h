@@ -219,6 +219,16 @@ extern char *symbol_demangled_name (struct general_symbol_info *symbol);
    "foo :: bar (int, long)".
    Evaluates to zero if the match fails, or nonzero if it succeeds. */
 
+/* FIXME: carlton/2003-02-27: This is an unholy mixture of linkage
+   names and natural names.  If you want to test the linkage names
+   with strcmp, do that.  If you want to test the natural names with
+   strcmp_iw, use SYMBOL_MATCHES_NATURAL_NAME.  */
+
+#define DEPRECATED_SYMBOL_MATCHES_NAME(symbol, name)			\
+  (STREQ (DEPRECATED_SYMBOL_NAME (symbol), (name))			\
+   || (SYMBOL_DEMANGLED_NAME (symbol) != NULL				\
+       && strcmp_iw (SYMBOL_DEMANGLED_NAME (symbol), (name)) == 0))
+
 /* Macro that tests a symbol for a match against a specified name
    string.  It tests against SYMBOL_NATURAL_NAME, and it ignores
    whitespace and trailing parentheses.  (See strcmp_iw for details
@@ -318,50 +328,50 @@ struct minimal_symbol
 
 /* Represent one symbol name; a variable, constant, function or typedef.  */
 
-/* Different name domains for symbols.  Looking up a symbol specifies a
-   domain and ignores symbol definitions in other name domains. */
+/* Different name spaces for symbols.  Looking up a symbol specifies a
+   namespace and ignores symbol definitions in other name spaces. */
 
 typedef enum
 {
-  /* UNDEF_DOMAIN is used when a domain has not been discovered or
+  /* UNDEF_NAMESPACE is used when a namespace has not been discovered or
      none of the following apply.  This usually indicates an error either
      in the symbol information or in gdb's handling of symbols. */
 
-  UNDEF_DOMAIN,
+  UNDEF_NAMESPACE,
 
-  /* VAR_DOMAIN is the usual domain.  In C, this contains variables,
+  /* VAR_NAMESPACE is the usual namespace.  In C, this contains variables,
      function names, typedef names and enum type values. */
 
-  VAR_DOMAIN,
+  VAR_NAMESPACE,
 
-  /* STRUCT_DOMAIN is used in C to hold struct, union and enum type names.
+  /* STRUCT_NAMESPACE is used in C to hold struct, union and enum type names.
      Thus, if `struct foo' is used in a C program, it produces a symbol named
-     `foo' in the STRUCT_DOMAIN. */
+     `foo' in the STRUCT_NAMESPACE. */
 
-  STRUCT_DOMAIN,
+  STRUCT_NAMESPACE,
 
-  /* LABEL_DOMAIN may be used for names of labels (for gotos);
+  /* LABEL_NAMESPACE may be used for names of labels (for gotos);
      currently it is not used and labels are not recorded at all.  */
 
-  LABEL_DOMAIN,
+  LABEL_NAMESPACE,
 
-  /* Searching domains. These overlap with VAR_DOMAIN, providing
+  /* Searching namespaces. These overlap with VAR_NAMESPACE, providing
      some granularity with the search_symbols function. */
 
-  /* Everything in VAR_DOMAIN minus FUNCTIONS_-, TYPES_-, and
-     METHODS_DOMAIN */
-  VARIABLES_DOMAIN,
+  /* Everything in VAR_NAMESPACE minus FUNCTIONS_-, TYPES_-, and
+     METHODS_NAMESPACE */
+  VARIABLES_NAMESPACE,
 
   /* All functions -- for some reason not methods, though. */
-  FUNCTIONS_DOMAIN,
+  FUNCTIONS_NAMESPACE,
 
   /* All defined types */
-  TYPES_DOMAIN,
+  TYPES_NAMESPACE,
 
   /* All class methods -- why is this separated out? */
-  METHODS_DOMAIN
+  METHODS_NAMESPACE
 }
-domain_enum;
+namespace_enum;
 
 /* An address-class says where to find the value of a symbol.  */
 
@@ -417,8 +427,8 @@ enum address_class
 
   LOC_LOCAL,
 
-  /* Value not used; definition in SYMBOL_TYPE.  Symbols in the domain
-     STRUCT_DOMAIN all have this class.  */
+  /* Value not used; definition in SYMBOL_TYPE.  Symbols in the namespace
+     STRUCT_NAMESPACE all have this class.  */
 
   LOC_TYPEDEF,
 
@@ -583,9 +593,14 @@ struct symbol
 
   struct type *type;
 
-  /* Domain code.  */
+  /* Name space code.  */
 
-  domain_enum domain BYTE_BITFIELD;
+#ifdef __MFC4__
+  /* FIXME: don't conflict with C++'s namespace */
+  /* would be safer to do a global change for all namespace identifiers. */
+#define namespace _namespace
+#endif
+  namespace_enum namespace BYTE_BITFIELD;
 
   /* Address class */
 
@@ -641,7 +656,7 @@ struct symbol
 };
 
 
-#define SYMBOL_DOMAIN(symbol)	(symbol)->domain
+#define SYMBOL_NAMESPACE(symbol)	(symbol)->namespace
 #define SYMBOL_CLASS(symbol)		(symbol)->aclass
 #define SYMBOL_TYPE(symbol)		(symbol)->type
 #define SYMBOL_LINE(symbol)		(symbol)->line
@@ -652,7 +667,7 @@ struct symbol
 #define SYMBOL_LOCATION_BATON(symbol)   (symbol)->aux_value.loc.baton
 #define SYMBOL_LOCATION_FUNCS(symbol)   (symbol)->aux_value.loc.funcs
 
-/* A partial_symbol records the name, domain, and address class of
+/* A partial_symbol records the name, namespace, and address class of
    symbols whose types we have not parsed yet.  For functions, it also
    contains their memory address, so we can find them from a PC value.
    Each partial_symbol sits in a partial_symtab, all of which are chained
@@ -668,7 +683,7 @@ struct partial_symbol
 
   /* Name space code.  */
 
-  domain_enum domain BYTE_BITFIELD;
+  namespace_enum namespace BYTE_BITFIELD;
 
   /* Address class (for info_symbols) */
 
@@ -676,7 +691,7 @@ struct partial_symbol
 
 };
 
-#define PSYMBOL_DOMAIN(psymbol)	(psymbol)->domain
+#define PSYMBOL_NAMESPACE(psymbol)	(psymbol)->namespace
 #define PSYMBOL_CLASS(psymbol)		(psymbol)->aclass
 
 
@@ -985,53 +1000,14 @@ extern struct symtab *lookup_symtab (const char *);
 /* lookup a symbol by name (optional block, optional symtab) */
 
 extern struct symbol *lookup_symbol (const char *, const struct block *,
-				     const domain_enum, int *,
+				     const namespace_enum, int *,
 				     struct symtab **);
-
-/* A default version of lookup_symbol_nonlocal for use by languages
-   that can't think of anything better to do.  */
-
-extern struct symbol *basic_lookup_symbol_nonlocal (const char *,
-						    const char *,
-						    const struct block *,
-						    const domain_enum,
-						    struct symtab **);
-
-/* Some helper functions for languages that need to write their own
-   lookup_symbol_nonlocal functions.  */
-
-/* Lookup a symbol in the static block associated to BLOCK, if there
-   is one; do nothing if BLOCK is NULL or a global block.  */
-
-extern struct symbol *lookup_symbol_static (const char *name,
-					    const char *linkage_name,
-					    const struct block *block,
-					    const domain_enum domain,
-					    struct symtab **symtab);
-
-/* Lookup a symbol in all files' global blocks (searching psymtabs if
-   necessary).  */
-
-extern struct symbol *lookup_symbol_global (const char *name,
-					    const char *linkage_name,
-					    const domain_enum domain,
-					    struct symtab **symtab);
-
-/* Lookup a symbol within the block BLOCK.  This, unlike
-   lookup_symbol_block, will set SYMTAB and BLOCK_FOUND correctly, and
-   will fix up the symbol if necessary.  */
-
-extern struct symbol *lookup_symbol_aux_block (const char *name,
-					       const char *linkage_name,
-					       const struct block *block,
-					       const domain_enum domain,
-					       struct symtab **symtab);
 
 /* lookup a symbol by name, within a specified block */
 
 extern struct symbol *lookup_block_symbol (const struct block *, const char *,
 					   const char *,
-					   const domain_enum);
+					   const namespace_enum);
 
 /* lookup a [struct, union, enum] by name, within a specified block */
 
@@ -1053,13 +1029,13 @@ extern struct symbol *find_pc_sect_function (CORE_ADDR, asection *);
 
 /* lookup function from address, return name, start addr and end addr */
 
-extern int find_pc_partial_function (CORE_ADDR, char **, CORE_ADDR *,
+extern int find_pc_partial_function (CORE_ADDR, const char **, CORE_ADDR *,
 				     CORE_ADDR *);
 
 extern void clear_pc_function_cache (void);
 
-extern int find_pc_sect_partial_function (CORE_ADDR, asection *,
-					  char **, CORE_ADDR *, CORE_ADDR *);
+extern int find_pc_sect_partial_function (CORE_ADDR, asection *, const char **,
+					  CORE_ADDR *, CORE_ADDR *);
 
 /* from symtab.c: */
 
@@ -1243,29 +1219,29 @@ extern void resolve_sal_pc (struct symtab_and_line *);
 /* Given a string, return the line specified by it.  For commands like "list"
    and "breakpoint".  */
 
-extern struct symtabs_and_lines decode_line_spec (char *, int);
+extern struct symtabs_and_lines decode_line_spec (const char *, int);
 
-extern struct symtabs_and_lines decode_line_spec_1 (char *, int);
+extern struct symtabs_and_lines decode_line_spec_1 (const char *, int);
 
 /* Symmisc.c */
 
-void maintenance_print_symbols (char *, int);
+void maintenance_print_symbols (const char *, int);
 
-void maintenance_print_psymbols (char *, int);
+void maintenance_print_psymbols (const char *, int);
 
-void maintenance_print_msymbols (char *, int);
+void maintenance_print_msymbols (const char *, int);
 
-void maintenance_print_objfiles (char *, int);
+void maintenance_print_objfiles (const char *, int);
 
-void maintenance_info_symtabs (char *, int);
+void maintenance_info_symtabs (const char *, int);
 
-void maintenance_info_psymtabs (char *, int);
+void maintenance_info_psymtabs (const char *, int);
 
-void maintenance_check_symtabs (char *, int);
+void maintenance_check_symtabs (const char *, int);
 
 /* maint.c */
 
-void maintenance_print_statistics (char *, int);
+void maintenance_print_statistics (const char *, int);
 
 extern void free_symtab (struct symtab *);
 
@@ -1344,7 +1320,7 @@ struct symbol_search
   struct symbol_search *next;
 };
 
-extern void search_symbols (char *, domain_enum, int, char **,
+extern void search_symbols (const char *, namespace_enum, int, char **,
 			    struct symbol_search **);
 extern void free_search_symbols (struct symbol_search *);
 extern struct cleanup *make_cleanup_free_search_symbols (struct symbol_search

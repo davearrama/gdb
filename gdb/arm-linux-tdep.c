@@ -73,7 +73,7 @@ LONGEST arm_linux_call_dummy_words[] =
    hidden behind the regcache abstraction.  */
 static void
 arm_linux_extract_return_value (struct type *type,
-				char regbuf[],
+				char regbuf[REGISTER_BYTES],
 				char *valbuf)
 {
   /* ScottB: This needs to be looked at to handle the different
@@ -193,7 +193,7 @@ arm_linux_push_arguments (int nargs, struct value **args, CORE_ADDR sp,
 	  && NULL != target_type
 	  && TYPE_CODE_FUNC == TYPE_CODE (target_type))
 	{
-	  CORE_ADDR regval = extract_unsigned_integer (val, len);
+	  CORE_ADDR regval = extract_address (val, len);
 	  if (arm_pc_is_thumb (regval))
 	    store_unsigned_integer (val, len, MAKE_THUMB_ADDR (regval));
 	}
@@ -208,7 +208,7 @@ arm_linux_push_arguments (int nargs, struct value **args, CORE_ADDR sp,
 	  if (argreg <= ARM_LAST_ARG_REGNUM)
 	    {
 	      /* It's an argument being passed in a general register.  */
-	      regval = extract_unsigned_integer (val, partial_len);
+	      regval = extract_address (val, partial_len);
 	      write_register (argreg++, regval);
 	    }
 	  else

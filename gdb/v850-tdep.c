@@ -973,7 +973,7 @@ v850_push_arguments (int nargs, struct value **args, CORE_ADDR sp,
 	  {
 	    CORE_ADDR regval;
 
-	    regval = extract_unsigned_integer (val, v850_register_raw_size (argreg));
+	    regval = extract_address (val, v850_register_raw_size (argreg));
 	    write_register (argreg, regval);
 
 	    len -= v850_register_raw_size (argreg);
@@ -1068,8 +1068,8 @@ v850_extract_return_value (struct type *type, char *regbuf, char *valbuf)
       /* Aggregates and return values > 8 bytes are returned in memory,
          pointed to by R6. */
       return_buffer =
-	extract_unsigned_integer (regbuf + REGISTER_BYTE (E_V0_REGNUM),
-				  REGISTER_RAW_SIZE (E_V0_REGNUM));
+	extract_address (regbuf + REGISTER_BYTE (E_V0_REGNUM),
+			 REGISTER_RAW_SIZE (E_V0_REGNUM));
 
       read_memory (return_buffer, valbuf, TYPE_LENGTH (type));
     }
@@ -1086,8 +1086,8 @@ v850_breakpoint_from_pc (CORE_ADDR *pcptr, int *lenptr)
 static CORE_ADDR
 v850_extract_struct_value_address (char *regbuf)
 {
-  return extract_unsigned_integer (regbuf + v850_register_byte (E_V0_REGNUM),
-				   v850_register_raw_size (E_V0_REGNUM));
+  return extract_address (regbuf + v850_register_byte (E_V0_REGNUM),
+			  v850_register_raw_size (E_V0_REGNUM));
 }
 
 static void
@@ -1230,7 +1230,7 @@ v850_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_pc_regnum (gdbarch, E_PC_REGNUM);
   set_gdbarch_register_name (gdbarch, v850_register_name);
   set_gdbarch_deprecated_register_size (gdbarch, v850_reg_size);
-  set_gdbarch_deprecated_register_bytes (gdbarch, E_ALL_REGS_SIZE);
+  set_gdbarch_register_bytes (gdbarch, E_ALL_REGS_SIZE);
   set_gdbarch_register_byte (gdbarch, v850_register_byte);
   set_gdbarch_register_raw_size (gdbarch, v850_register_raw_size);
   set_gdbarch_deprecated_max_register_raw_size (gdbarch, v850_reg_size);

@@ -44,7 +44,6 @@
 #include "block.h"
 #include "infcall.h"
 #include "valprint.h"
-#include "gdb_assert.h"
 
 #include <ctype.h>
 
@@ -76,6 +75,38 @@ struct objc_method {
   CORE_ADDR imp;
 };
 
+/* Complaints about ObjC classes, selectors, etc.  */
+
+#if (!defined __GNUC__ || __GNUC__ < 2 || __GNUC_MINOR__ < (defined __cplusplus ? 6 : 4))
+#define __CHECK_FUNCTION ((__const char *) 0)
+#else
+#define __CHECK_FUNCTION __PRETTY_FUNCTION__
+#endif
+
+#define CHECK(expression) \
+  ((void) ((expression) ? 0 : gdb_check (#expression, __FILE__, __LINE__, \
+                                         __CHECK_FUNCTION)))
+
+#define CHECK_FATAL(expression) \
+  ((void) ((expression) ? 0 : gdb_check_fatal (#expression, __FILE__, \
+                              __LINE__, __CHECK_FUNCTION)))
+
+static void 
+gdb_check (const char *str, const char *file, 
+	   unsigned int line, const char *func)
+{
+  error ("assertion failure on line %u of \"%s\" in function \"%s\": %s\n",
+	 line, file, func, str);
+}
+
+static void 
+gdb_check_fatal (const char *str, const char *file, 
+		 unsigned int line, const char *func)
+{
+  internal_error (file, line, 
+		  "assertion failure in function \"%s\": %s\n", func, str);
+}
+
 /* Lookup a structure type named "struct NAME", visible in lexical
    block BLOCK.  If NOERR is nonzero, return zero if NAME is not
    suitably defined.  */
@@ -85,7 +116,7 @@ lookup_struct_typedef (char *name, struct block *block, int noerr)
 {
   register struct symbol *sym;
 
-  sym = lookup_symbol (name, block, STRUCT_DOMAIN, 0, 
+  sym = lookup_symbol (name, block, STRUCT_NAMESPACE, 0, 
 		       (struct symtab **) NULL);
 
   if (sym == NULL)
@@ -341,6 +372,7 @@ objc_printstr (struct ui_file *stream, char *string,
   unsigned int things_printed = 0;
   int in_quotes = 0;
   int need_comma = 0;
+  extern int inspect_it;
 
   /* If the string was not truncated due to `set print elements', and
      the last byte of it is a null, we don't print that, in
@@ -627,7 +659,7 @@ static const struct op_print objc_op_print_tab[] =
     {"sizeof ", UNOP_SIZEOF, PREC_PREFIX, 0},
     {"++", UNOP_PREINCREMENT, PREC_PREFIX, 0},
     {"--", UNOP_PREDECREMENT, PREC_PREFIX, 0},
-    {NULL, OP_NULL, PREC_NULL, 0}
+    {NULL, 0, 0, 0}
 };
 
 struct type ** const (objc_builtin_types[]) = 
@@ -670,8 +702,6 @@ const struct language_defn objc_language_defn = {
   c_val_print,			/* Print a value using appropriate syntax */
   c_value_print,		/* Print a top-level value */
   objc_skip_trampoline, 	/* Language specific skip_trampoline */
-  value_of_this,		/* value_of_this */
-  basic_lookup_symbol_nonlocal,	/* lookup_symbol_nonlocal */
   objc_demangle,		/* Language specific symbol demangler */
   {"",     "",    "",  ""},	/* Binary format info */
   {"0%lo",  "0",   "o", ""},	/* Octal format info */
@@ -825,7 +855,7 @@ compare_selectors (const void *a, const void *b)
  */
 
 static void
-selectors_info (char *regexp, int from_tty)
+selectors_info (const char *regexp, int from_tty)
 {
   struct objfile	*objfile;
   struct minimal_symbol *msymbol;
@@ -976,7 +1006,7 @@ compare_classes (const void *a, const void *b)
  */
 
 static void
-classes_info (char *regexp, int from_tty)
+classes_info (const char *regexp, int from_tty)
 {
   struct objfile	*objfile;
   struct minimal_symbol *msymbol;
@@ -1122,7 +1152,7 @@ parse_selector (char *method, char **selector)
 
   char *nselector = NULL;
 
-  gdb_assert (selector != NULL);
+  CHECK (selector != NULL);
 
   s1 = method;
 
@@ -1181,10 +1211,10 @@ parse_method (char *method, char *type, char **class,
   char *ncategory = NULL;
   char *nselector = NULL;
 
-  gdb_assert (type != NULL);
-  gdb_assert (class != NULL);
-  gdb_assert (category != NULL);
-  gdb_assert (selector != NULL);
+  CHECK (type != NULL);
+  CHECK (class != NULL);
+  CHECK (category != NULL);
+  CHECK (selector != NULL);
   
   s1 = method;
 
@@ -1294,8 +1324,8 @@ find_methods (struct symtab *symtab, char type,
   static char *tmp = NULL;
   static unsigned int tmplen = 0;
 
-  gdb_assert (nsym != NULL);
-  gdb_assert (ndebug != NULL);
+  CHECK (nsym != NULL);
+  CHECK (ndebug != NULL);
 
   if (symtab)
     block = BLOCKVECTOR_BLOCK (BLOCKVECTOR (symtab), STATIC_BLOCK);
@@ -1389,9 +1419,10 @@ find_methods (struct symtab *symtab, char type,
     *ndebug = cdebug;
 }
 
-char *find_imps (struct symtab *symtab, struct block *block,
-		 char *method, struct symbol **syms, 
-		 unsigned int *nsym, unsigned int *ndebug)
+const char *
+find_imps (struct symtab *symtab, struct block *block,
+	   const char *method, struct symbol **syms, 
+	   unsigned int *nsym, unsigned int *ndebug)
 {
   char type = '\0';
   char *class = NULL;
@@ -1407,8 +1438,8 @@ char *find_imps (struct symtab *symtab, struct block *block,
   char *buf = NULL;
   char *tmp = NULL;
 
-  gdb_assert (nsym != NULL);
-  gdb_assert (ndebug != NULL);
+  CHECK (nsym != NULL);
+  CHECK (ndebug != NULL);
 
   if (nsym != NULL)
     *nsym = 0;
@@ -1421,6 +1452,7 @@ char *find_imps (struct symtab *symtab, struct block *block,
 
   if (tmp == NULL) {
     
+    struct symtab *sym_symtab = NULL;
     struct symbol *sym = NULL;
     struct minimal_symbol *msym = NULL;
     
@@ -1430,7 +1462,7 @@ char *find_imps (struct symtab *symtab, struct block *block,
     if (tmp == NULL)
       return NULL;
     
-    sym = lookup_symbol (selector, block, VAR_DOMAIN, 0, NULL);
+    sym = lookup_symbol (selector, block, VAR_NAMESPACE, 0, &sym_symtab);
     if (sym != NULL) 
       {
 	if (syms)
@@ -1519,7 +1551,7 @@ char *find_imps (struct symtab *symtab, struct block *block,
 }
 
 void 
-print_object_command (char *args, int from_tty)
+print_object_command (const char *args, int from_tty)
 {
   struct value *object, *function, *description;
   CORE_ADDR string_addr, object_addr;
@@ -1729,6 +1761,11 @@ static unsigned long FETCH_ARGUMENT (int i)
   internal_error (__FILE__, __LINE__, "FETCH_ARGUMENT not implemented");
   return 0;
 }
+static CORE_ADDR CONVERT_FUNCPTR (CORE_ADDR pc)
+{
+  internal_error (__FILE__, __LINE__, "CONVERT_FUNCPTR not implemented");
+  return pc;
+}
 #else
 #if defined (__powerpc__) || defined (__ppc__)
 static unsigned long FETCH_ARGUMENT (int i)
@@ -1755,6 +1792,20 @@ static unsigned long FETCH_ARGUMENT (int i)
 #error unknown architecture
 #endif
 
+#if defined (__hppa__) || defined (__hppa)
+static CORE_ADDR CONVERT_FUNCPTR (CORE_ADDR pc)
+{
+  if (pc & 0x2)
+    pc = (CORE_ADDR) read_memory_integer (pc & ~0x3, 4);
+
+  return pc;
+}
+#else
+static CORE_ADDR CONVERT_FUNCPTR (CORE_ADDR pc)
+{
+  return pc;
+}
+#endif
 #endif
 
 static void 
@@ -1775,7 +1826,7 @@ static void
 read_objc_methlist_method (CORE_ADDR addr, unsigned long num, 
 			   struct objc_method *method)
 {
-  gdb_assert (num < read_objc_methlist_nmethods (addr));
+  CHECK_FATAL (num < read_objc_methlist_nmethods (addr));
   read_objc_method (addr + 8 + (12 * num), method);
 }
   
@@ -1845,9 +1896,7 @@ find_implementation_from_class (CORE_ADDR class, CORE_ADDR sel)
 #endif
 
 	      if (meth_str.name == sel) 
-		/* FIXME: hppa arch was doing a pointer dereference
-		   here. There needs to be a better way to do that.  */
-		return meth_str.imp;
+		return CONVERT_FUNCPTR (meth_str.imp);
 	    }
 	  mlistnum++;
 	}

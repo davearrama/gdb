@@ -88,14 +88,14 @@ static void remote_async_resume (ptid_t ptid, int step,
 				 enum target_signal siggnal);
 static int remote_start_remote (struct ui_out *uiout, void *dummy);
 
-static void remote_open (char *name, int from_tty);
-static void remote_async_open (char *name, int from_tty);
+static void remote_open (const char *name, int from_tty);
+static void remote_async_open (const char *name, int from_tty);
 
-static void extended_remote_open (char *name, int from_tty);
-static void extended_remote_async_open (char *name, int from_tty);
+static void extended_remote_open (const char *name, int from_tty);
+static void extended_remote_async_open (const char *name, int from_tty);
 
-static void remote_open_1 (char *, int, struct target_ops *, int extended_p,
-			   int async_p);
+static void remote_open_1 (const char *, int, struct target_ops *,
+			   int extended_p, int async_p);
 
 static void remote_close (int quitting);
 
@@ -127,8 +127,8 @@ static void remote_async_kill (void);
 
 static int tohex (int nib);
 
-static void remote_detach (char *args, int from_tty);
-static void remote_async_detach (char *args, int from_tty);
+static void remote_detach (const char *args, int from_tty);
+static void remote_async_detach (const char *args, int from_tty);
 
 static void remote_interrupt (int signo);
 
@@ -172,13 +172,13 @@ static int hexnumnstr (char *, ULONGEST, int);
 
 static CORE_ADDR remote_address_masked (CORE_ADDR);
 
-static void print_packet (char *);
+static void print_packet (const char *);
 
 static unsigned long crc32 (unsigned char *, int, unsigned int);
 
-static void compare_sections_command (char *, int);
+static void compare_sections_command (const char *, int);
 
-static void packet_command (char *, int);
+static void packet_command (const char *, int);
 
 static int stub_unpack_int (char *buff, int fieldlength);
 
@@ -194,7 +194,7 @@ static int hex2bin (const char *hex, char *bin, int count);
 
 static int bin2hex (const char *bin, char *hex, int count);
 
-static int putpkt_binary (char *buf, int cnt);
+static int putpkt_binary (const char *buf, int cnt);
 
 static void check_binary_download (CORE_ADDR addr);
 
@@ -263,7 +263,7 @@ init_remote_state (struct gdbarch *gdbarch)
 
   /* Start out by having the remote protocol mimic the existing
      behavour - just copy in the description of the register cache.  */
-  rs->sizeof_g_packet = DEPRECATED_REGISTER_BYTES; /* OK */
+  rs->sizeof_g_packet = REGISTER_BYTES; /* OK use.   */
 
   /* Assume a 1:1 regnum<->pnum table.  */
   rs->regs = xcalloc (NUM_REGS + NUM_PSEUDO_REGS, sizeof (struct packet_reg));
@@ -468,7 +468,7 @@ get_memory_packet_size (struct memory_packet_config *config)
    something really big then do a sanity check. */
 
 static void
-set_memory_packet_size (char *args, struct memory_packet_config *config)
+set_memory_packet_size (const char *args, struct memory_packet_config *config)
 {
   int fixed_p = config->fixed_p;
   long size = config->size;
@@ -526,13 +526,13 @@ static struct memory_packet_config memory_write_packet_config =
 };
 
 static void
-set_memory_write_packet_size (char *args, int from_tty)
+set_memory_write_packet_size (const char *args, int from_tty)
 {
   set_memory_packet_size (args, &memory_write_packet_config);
 }
 
 static void
-show_memory_write_packet_size (char *args, int from_tty)
+show_memory_write_packet_size (const char *args, int from_tty)
 {
   show_memory_packet_size (&memory_write_packet_config);
 }
@@ -549,13 +549,13 @@ static struct memory_packet_config memory_read_packet_config =
 };
 
 static void
-set_memory_read_packet_size (char *args, int from_tty)
+set_memory_read_packet_size (const char *args, int from_tty)
 {
   set_memory_packet_size (args, &memory_read_packet_config);
 }
 
 static void
-show_memory_read_packet_size (char *args, int from_tty)
+show_memory_read_packet_size (const char *args, int from_tty)
 {
   show_memory_packet_size (&memory_read_packet_config);
 }
@@ -759,14 +759,14 @@ packet_ok (const char *buf, struct packet_config *config)
 static struct packet_config remote_protocol_qSymbol;
 
 static void
-set_remote_protocol_qSymbol_packet_cmd (char *args, int from_tty,
-				  struct cmd_list_element *c)
+set_remote_protocol_qSymbol_packet_cmd (const char *args, int from_tty,
+					struct cmd_list_element *c)
 {
   update_packet_config (&remote_protocol_qSymbol);
 }
 
 static void
-show_remote_protocol_qSymbol_packet_cmd (char *args, int from_tty,
+show_remote_protocol_qSymbol_packet_cmd (const char *args, int from_tty,
 					 struct cmd_list_element *c)
 {
   show_packet_config_cmd (&remote_protocol_qSymbol);
@@ -776,14 +776,14 @@ show_remote_protocol_qSymbol_packet_cmd (char *args, int from_tty,
 static struct packet_config remote_protocol_e;
 
 static void
-set_remote_protocol_e_packet_cmd (char *args, int from_tty,
+set_remote_protocol_e_packet_cmd (const char *args, int from_tty,
 				  struct cmd_list_element *c)
 {
   update_packet_config (&remote_protocol_e);
 }
 
 static void
-show_remote_protocol_e_packet_cmd (char *args, int from_tty,
+show_remote_protocol_e_packet_cmd (const char *args, int from_tty,
 				   struct cmd_list_element *c)
 {
   show_packet_config_cmd (&remote_protocol_e);
@@ -794,14 +794,14 @@ show_remote_protocol_e_packet_cmd (char *args, int from_tty,
 static struct packet_config remote_protocol_E;
 
 static void
-set_remote_protocol_E_packet_cmd (char *args, int from_tty,
+set_remote_protocol_E_packet_cmd (const char *args, int from_tty,
 				  struct cmd_list_element *c)
 {
   update_packet_config (&remote_protocol_E);
 }
 
 static void
-show_remote_protocol_E_packet_cmd (char *args, int from_tty,
+show_remote_protocol_E_packet_cmd (const char *args, int from_tty,
 				   struct cmd_list_element *c)
 {
   show_packet_config_cmd (&remote_protocol_E);
@@ -813,14 +813,14 @@ show_remote_protocol_E_packet_cmd (char *args, int from_tty,
 static struct packet_config remote_protocol_P;
 
 static void
-set_remote_protocol_P_packet_cmd (char *args, int from_tty,
+set_remote_protocol_P_packet_cmd (const char *args, int from_tty,
 				  struct cmd_list_element *c)
 {
   update_packet_config (&remote_protocol_P);
 }
 
 static void
-show_remote_protocol_P_packet_cmd (char *args, int from_tty,
+show_remote_protocol_P_packet_cmd (const char *args, int from_tty,
 				   struct cmd_list_element *c)
 {
   show_packet_config_cmd (&remote_protocol_P);
@@ -844,70 +844,70 @@ static struct packet_config remote_protocol_Z[NR_Z_PACKET_TYPES];
    command callback should include a context argument. */
 
 static void
-set_remote_protocol_Z_software_bp_packet_cmd (char *args, int from_tty,
+set_remote_protocol_Z_software_bp_packet_cmd (const char *args, int from_tty,
 					      struct cmd_list_element *c)
 {
   update_packet_config (&remote_protocol_Z[Z_PACKET_SOFTWARE_BP]);
 }
 
 static void
-show_remote_protocol_Z_software_bp_packet_cmd (char *args, int from_tty,
+show_remote_protocol_Z_software_bp_packet_cmd (const char *args, int from_tty,
 					       struct cmd_list_element *c)
 {
   show_packet_config_cmd (&remote_protocol_Z[Z_PACKET_SOFTWARE_BP]);
 }
 
 static void
-set_remote_protocol_Z_hardware_bp_packet_cmd (char *args, int from_tty,
+set_remote_protocol_Z_hardware_bp_packet_cmd (const char *args, int from_tty,
 					      struct cmd_list_element *c)
 {
   update_packet_config (&remote_protocol_Z[Z_PACKET_HARDWARE_BP]);
 }
 
 static void
-show_remote_protocol_Z_hardware_bp_packet_cmd (char *args, int from_tty,
+show_remote_protocol_Z_hardware_bp_packet_cmd (const char *args, int from_tty,
 					       struct cmd_list_element *c)
 {
   show_packet_config_cmd (&remote_protocol_Z[Z_PACKET_HARDWARE_BP]);
 }
 
 static void
-set_remote_protocol_Z_write_wp_packet_cmd (char *args, int from_tty,
-					      struct cmd_list_element *c)
+set_remote_protocol_Z_write_wp_packet_cmd (const char *args, int from_tty,
+					   struct cmd_list_element *c)
 {
   update_packet_config (&remote_protocol_Z[Z_PACKET_WRITE_WP]);
 }
 
 static void
-show_remote_protocol_Z_write_wp_packet_cmd (char *args, int from_tty,
+show_remote_protocol_Z_write_wp_packet_cmd (const char *args, int from_tty,
 					    struct cmd_list_element *c)
 {
   show_packet_config_cmd (&remote_protocol_Z[Z_PACKET_WRITE_WP]);
 }
 
 static void
-set_remote_protocol_Z_read_wp_packet_cmd (char *args, int from_tty,
-					      struct cmd_list_element *c)
+set_remote_protocol_Z_read_wp_packet_cmd (const char *args, int from_tty,
+					  struct cmd_list_element *c)
 {
   update_packet_config (&remote_protocol_Z[Z_PACKET_READ_WP]);
 }
 
 static void
-show_remote_protocol_Z_read_wp_packet_cmd (char *args, int from_tty,
+show_remote_protocol_Z_read_wp_packet_cmd (const char *args, int from_tty,
 					   struct cmd_list_element *c)
 {
   show_packet_config_cmd (&remote_protocol_Z[Z_PACKET_READ_WP]);
 }
 
 static void
-set_remote_protocol_Z_access_wp_packet_cmd (char *args, int from_tty,
-					      struct cmd_list_element *c)
+set_remote_protocol_Z_access_wp_packet_cmd (const char *args, int from_tty,
+					    struct cmd_list_element *c)
 {
   update_packet_config (&remote_protocol_Z[Z_PACKET_ACCESS_WP]);
 }
 
 static void
-show_remote_protocol_Z_access_wp_packet_cmd (char *args, int from_tty,
+show_remote_protocol_Z_access_wp_packet_cmd (const char *args, int from_tty,
 					     struct cmd_list_element *c)
 {
   show_packet_config_cmd (&remote_protocol_Z[Z_PACKET_ACCESS_WP]);
@@ -919,7 +919,7 @@ show_remote_protocol_Z_access_wp_packet_cmd (char *args, int from_tty,
 static enum auto_boolean remote_Z_packet_detect;
 
 static void
-set_remote_protocol_Z_packet_cmd (char *args, int from_tty,
+set_remote_protocol_Z_packet_cmd (const char *args, int from_tty,
 				  struct cmd_list_element *c)
 {
   int i;
@@ -931,7 +931,7 @@ set_remote_protocol_Z_packet_cmd (char *args, int from_tty,
 }
 
 static void
-show_remote_protocol_Z_packet_cmd (char *args, int from_tty,
+show_remote_protocol_Z_packet_cmd (const char *args, int from_tty,
 				   struct cmd_list_element *c)
 {
   int i;
@@ -965,7 +965,7 @@ static int use_threadinfo_query;
 static int use_threadextra_query;
 
 static void
-set_remote_protocol_binary_download_cmd (char *args,
+set_remote_protocol_binary_download_cmd (const char *args,
 					 int from_tty,
 					 struct cmd_list_element *c)
 {
@@ -973,7 +973,7 @@ set_remote_protocol_binary_download_cmd (char *args,
 }
 
 static void
-show_remote_protocol_binary_download_cmd (char *args, int from_tty,
+show_remote_protocol_binary_download_cmd (const char *args, int from_tty,
 					  struct cmd_list_element *c)
 {
   show_packet_config_cmd (&remote_protocol_binary_download);
@@ -2153,14 +2153,14 @@ remote_start_remote (struct ui_out *uiout, void *dummy)
    NAME is the filename used for communication.  */
 
 static void
-remote_open (char *name, int from_tty)
+remote_open (const char *name, int from_tty)
 {
   remote_open_1 (name, from_tty, &remote_ops, 0, 0);
 }
 
 /* Just like remote_open, but with asynchronous support. */
 static void
-remote_async_open (char *name, int from_tty)
+remote_async_open (const char *name, int from_tty)
 {
   remote_open_1 (name, from_tty, &remote_async_ops, 0, 1);
 }
@@ -2169,7 +2169,7 @@ remote_async_open (char *name, int from_tty)
    remote gdb protocol.  NAME is the filename used for communication.  */
 
 static void
-extended_remote_open (char *name, int from_tty)
+extended_remote_open (const char *name, int from_tty)
 {
   remote_open_1 (name, from_tty, &extended_remote_ops, 1 /*extended_p */,
 		 0 /* async_p */);
@@ -2177,7 +2177,7 @@ extended_remote_open (char *name, int from_tty)
 
 /* Just like extended_remote_open, but with asynchronous support. */
 static void
-extended_remote_async_open (char *name, int from_tty)
+extended_remote_async_open (const char *name, int from_tty)
 {
   remote_open_1 (name, from_tty, &extended_async_remote_ops,
 		 1 /*extended_p */, 1 /* async_p */);
@@ -2240,7 +2240,7 @@ remote_check_symbols (struct objfile *objfile)
 }
 
 static struct serial *
-remote_serial_open (char *name)
+remote_serial_open (const char *name)
 {
   static int udp_warning = 0;
 
@@ -2260,7 +2260,7 @@ remote_serial_open (char *name)
 }
 
 static void
-remote_open_1 (char *name, int from_tty, struct target_ops *target,
+remote_open_1 (const char *name, int from_tty, struct target_ops *target,
 	       int extended_p, int async_p)
 {
   int ex;
@@ -2403,7 +2403,7 @@ remote_open_1 (char *name, int from_tty, struct target_ops *target,
    die when it hits one.  */
 
 static void
-remote_detach (char *args, int from_tty)
+remote_detach (const char *args, int from_tty)
 {
   struct remote_state *rs = get_remote_state ();
   char *buf = alloca (rs->remote_packet_size);
@@ -2423,7 +2423,7 @@ remote_detach (char *args, int from_tty)
 
 /* Same as remote_detach, but with async support. */
 static void
-remote_async_detach (char *args, int from_tty)
+remote_async_detach (const char *args, int from_tty)
 {
   struct remote_state *rs = get_remote_state ();
   char *buf = alloca (rs->remote_packet_size);
@@ -3529,7 +3529,7 @@ remote_prepare_to_store (void)
          forcing the register cache to read its and not the target
          registers.  */
       deprecated_read_register_bytes (0, (char *) NULL,
-				      DEPRECATED_REGISTER_BYTES); /* OK */
+				      REGISTER_BYTES); /* OK use.  */
       break;
     case PACKET_ENABLE:
       break;
@@ -4109,7 +4109,7 @@ remote_send (char *buf,
    string notation.  */
 
 static void
-print_packet (char *buf)
+print_packet (const char *buf)
 {
   puts_filtered ("\"");
   fputstr_filtered (buf, '"', gdb_stdout);
@@ -4117,7 +4117,7 @@ print_packet (char *buf)
 }
 
 int
-putpkt (char *buf)
+putpkt (const char *buf)
 {
   return putpkt_binary (buf, strlen (buf));
 }
@@ -4128,7 +4128,7 @@ putpkt (char *buf)
    debugging (remote_debug) and want to print the sent packet as a string */
 
 static int
-putpkt_binary (char *buf, int cnt)
+putpkt_binary (const char *buf, int cnt)
 {
   struct remote_state *rs = get_remote_state ();
   int i;
@@ -4624,12 +4624,11 @@ extended_remote_async_create_inferior (char *exec_file, char *args, char **env)
 }
 
 
-/* On some machines, e.g. 68k, we may use a different breakpoint
-   instruction than other targets; in those use REMOTE_BREAKPOINT
-   instead of just BREAKPOINT_FROM_PC.  Also, bi-endian targets may
-   define LITTLE_REMOTE_BREAKPOINT and BIG_REMOTE_BREAKPOINT.  If none
-   of these are defined, we just call the standard routines that are
-   in mem-break.c.  */
+/* On some machines, e.g. 68k, we may use a different breakpoint instruction
+   than other targets; in those use REMOTE_BREAKPOINT instead of just
+   BREAKPOINT.  Also, bi-endian targets may define LITTLE_REMOTE_BREAKPOINT
+   and BIG_REMOTE_BREAKPOINT.  If none of these are defined, we just call
+   the standard routines that are in mem-break.c.  */
 
 /* FIXME, these ought to be done in a more dynamic fashion.  For instance,
    the choice of breakpoint instruction affects target program design and
@@ -4653,13 +4652,13 @@ static unsigned char little_break_insn[] = LITTLE_REMOTE_BREAKPOINT;
 
 #endif /* REMOTE_BREAKPOINT */
 
-/* Insert a breakpoint on targets that don't have any better
-   breakpoint support.  We read the contents of the target location
-   and stash it, then overwrite it with a breakpoint instruction.
-   ADDR is the target location in the target machine.  CONTENTS_CACHE
-   is a pointer to memory allocated for saving the target contents.
-   It is guaranteed by the caller to be long enough to save the number
-   of bytes returned by BREAKPOINT_FROM_PC.  */
+/* Insert a breakpoint on targets that don't have any better breakpoint
+   support.  We read the contents of the target location and stash it,
+   then overwrite it with a breakpoint instruction.  ADDR is the target
+   location in the target machine.  CONTENTS_CACHE is a pointer to 
+   memory allocated for saving the target contents.  It is guaranteed
+   by the caller to be long enough to save sizeof BREAKPOINT bytes (this
+   is accomplished via BREAKPOINT_MAX).  */
 
 static int
 remote_insert_breakpoint (CORE_ADDR addr, char *contents_cache)
@@ -5030,7 +5029,7 @@ crc32 (unsigned char *buf, int len, unsigned int crc)
    generic_load()) to make use of this target functionality. */
 
 static void
-compare_sections_command (char *args, int from_tty)
+compare_sections_command (const char *args, int from_tty)
 {
   struct remote_state *rs = get_remote_state ();
   asection *s;
@@ -5174,7 +5173,7 @@ remote_query (int query_type, char *buf, char *outbuf, int *bufsiz)
 }
 
 static void
-remote_rcmd (char *command,
+remote_rcmd (const char *command,
 	     struct ui_file *outbuf)
 {
   struct remote_state *rs = get_remote_state ();
@@ -5232,7 +5231,7 @@ remote_rcmd (char *command,
 }
 
 static void
-packet_command (char *args, int from_tty)
+packet_command (const char *args, int from_tty)
 {
   struct remote_state *rs = get_remote_state ();
   char *buf = alloca (rs->remote_packet_size);
@@ -5259,26 +5258,26 @@ packet_command (char *args, int from_tty)
 
 static void display_thread_info (struct gdb_ext_thread_info *info);
 
-static void threadset_test_cmd (char *cmd, int tty);
+static void threadset_test_cmd (const char *cmd, int tty);
 
-static void threadalive_test (char *cmd, int tty);
+static void threadalive_test (const char *cmd, int tty);
 
-static void threadlist_test_cmd (char *cmd, int tty);
+static void threadlist_test_cmd (const char *cmd, int tty);
 
 int get_and_display_threadinfo (threadref * ref);
 
-static void threadinfo_test_cmd (char *cmd, int tty);
+static void threadinfo_test_cmd (const char *cmd, int tty);
 
 static int thread_display_step (threadref * ref, void *context);
 
-static void threadlist_update_test_cmd (char *cmd, int tty);
+static void threadlist_update_test_cmd (const char *cmd, int tty);
 
 static void init_remote_threadtests (void);
 
 #define SAMPLE_THREAD  0x05060708	/* Truncated 64 bit threadid */
 
 static void
-threadset_test_cmd (char *cmd, int tty)
+threadset_test_cmd (const char *cmd, int tty)
 {
   int sample_thread = SAMPLE_THREAD;
 
@@ -5311,7 +5310,7 @@ output_threadid (char *title, threadref *ref)
 }
 
 static void
-threadlist_test_cmd (char *cmd, int tty)
+threadlist_test_cmd (const char *cmd, int tty)
 {
   int startflag = 1;
   threadref nextthread;
@@ -5356,7 +5355,7 @@ get_and_display_threadinfo (threadref *ref)
 }
 
 static void
-threadinfo_test_cmd (char *cmd, int tty)
+threadinfo_test_cmd (const char *cmd, int tty)
 {
   int athread = SAMPLE_THREAD;
   threadref thread;
@@ -5376,7 +5375,7 @@ thread_display_step (threadref *ref, void *context)
 }
 
 static void
-threadlist_update_test_cmd (char *cmd, int tty)
+threadlist_update_test_cmd (const char *cmd, int tty)
 {
   printf_filtered ("Remote Threadlist update test\n");
   remote_threadlist_iterator (thread_display_step, 0, CRAZY_MAX_THREADS);
@@ -5494,7 +5493,7 @@ Specify the serial device it is connected to (e.g. /dev/ttya).",
  */
 
 static void
-remote_info_process (char *args, int from_tty)
+remote_info_process (const char *args, int from_tty)
 {
   struct remote_state *rs = get_remote_state ();
   char *buf = alloca (rs->remote_packet_size);
@@ -5523,7 +5522,7 @@ remote_info_process (char *args, int from_tty)
  */
 
 static void
-remote_cisco_open (char *name, int from_tty)
+remote_cisco_open (const char *name, int from_tty)
 {
   int ex;
   if (name == 0)
@@ -6001,12 +6000,12 @@ Specify the serial device it is connected to (e.g. /dev/ttya).",
 }
 
 static void
-set_remote_cmd (char *args, int from_tty)
+set_remote_cmd (const char *args, int from_tty)
 {
 }
 
 static void
-show_remote_cmd (char *args, int from_tty)
+show_remote_cmd (const char *args, int from_tty)
 {
   /* FIXME: cagney/2002-06-15: This function should iterate over
      remote_show_cmdlist for a list of sub commands to show.  */

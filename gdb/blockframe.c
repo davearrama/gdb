@@ -97,7 +97,7 @@ inside_main_func (CORE_ADDR pc)
     {
       struct symbol *mainsym;
 
-      mainsym = lookup_symbol (main_name (), NULL, VAR_DOMAIN, NULL, NULL);
+      mainsym = lookup_symbol (main_name (), NULL, VAR_NAMESPACE, NULL, NULL);
       if (mainsym && SYMBOL_CLASS (mainsym) == LOC_BLOCK)
 	{
 	  symfile_objfile->ei.main_func_lowpc =
@@ -144,7 +144,7 @@ inside_entry_func (CORE_ADDR pc)
 int
 frameless_look_for_prologue (struct frame_info *frame)
 {
-  CORE_ADDR func_start;
+  CORE_ADDR func_start, after_prologue;
 
   func_start = get_frame_func (frame);
   if (func_start)
@@ -223,31 +223,28 @@ get_frame_block (struct frame_info *frame, CORE_ADDR *addr_in_block)
 CORE_ADDR
 get_pc_function_start (CORE_ADDR pc)
 {
-  struct block *bl;
-  struct minimal_symbol *msymbol;
+  register struct block *bl;
+  register struct symbol *symbol;
+  register struct minimal_symbol *msymbol;
+  CORE_ADDR fstart;
 
-  bl = block_for_pc (pc);
-  if (bl)
+  if ((bl = block_for_pc (pc)) != NULL &&
+      (symbol = block_function (bl)) != NULL)
     {
-      struct symbol *symbol = block_function (bl);
-
-      if (symbol)
-	{
-	  bl = SYMBOL_BLOCK_VALUE (symbol);
-	  return BLOCK_START (bl);
-	}
+      bl = SYMBOL_BLOCK_VALUE (symbol);
+      fstart = BLOCK_START (bl);
     }
-
-  msymbol = lookup_minimal_symbol_by_pc (pc);
-  if (msymbol)
+  else if ((msymbol = lookup_minimal_symbol_by_pc (pc)) != NULL)
     {
-      CORE_ADDR fstart = SYMBOL_VALUE_ADDRESS (msymbol);
-
-      if (find_pc_section (fstart))
-	return fstart;
+      fstart = SYMBOL_VALUE_ADDRESS (msymbol);
+      if (!find_pc_section (fstart))
+	return 0;
     }
-
-  return 0;
+  else
+    {
+      fstart = 0;
+    }
+  return (fstart);
 }
 
 /* Return the symbol for the function executing in frame FRAME.  */
@@ -288,7 +285,7 @@ find_pc_function (CORE_ADDR pc)
 
 static CORE_ADDR cache_pc_function_low = 0;
 static CORE_ADDR cache_pc_function_high = 0;
-static char *cache_pc_function_name = 0;
+static const char *cache_pc_function_name = 0;
 static struct sec *cache_pc_function_section = NULL;
 
 /* Clear cache, e.g. when symbol table is discarded. */
@@ -314,8 +311,9 @@ clear_pc_function_cache (void)
    returns 0.  */
 
 int
-find_pc_sect_partial_function (CORE_ADDR pc, asection *section, char **name,
-			       CORE_ADDR *address, CORE_ADDR *endaddr)
+find_pc_sect_partial_function (CORE_ADDR pc, asection *section,
+			       const char **name, CORE_ADDR *address,
+			       CORE_ADDR *endaddr)
 {
   struct partial_symtab *pst;
   struct symbol *f;
@@ -480,7 +478,7 @@ find_pc_sect_partial_function (CORE_ADDR pc, asection *section, char **name,
 /* Backward compatibility, no section argument.  */
 
 int
-find_pc_partial_function (CORE_ADDR pc, char **name, CORE_ADDR *address,
+find_pc_partial_function (CORE_ADDR pc, const char **name, CORE_ADDR *address,
 			  CORE_ADDR *endaddr)
 {
   asection *section;

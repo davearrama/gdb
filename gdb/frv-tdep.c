@@ -762,8 +762,8 @@ frv_extract_return_value (struct type *type, char *regbuf, char *valbuf)
 static CORE_ADDR
 frv_extract_struct_value_address (char *regbuf)
 {
-  return extract_unsigned_integer (regbuf + frv_register_byte (struct_return_regnum),
-				   4);
+  return extract_address (regbuf + frv_register_byte (struct_return_regnum),
+			  4);
 }
 
 static void
@@ -859,7 +859,7 @@ frv_push_arguments (int nargs, struct value **args, CORE_ADDR sp,
 
 	  if (argreg < 14)
 	    {
-	      regval = extract_unsigned_integer (val, partial_len);
+	      regval = extract_address (val, partial_len);
 #if 0
 	      printf("  Argnum %d data %x -> reg %d\n",
 		     argnum, (int) regval, argreg);
@@ -1058,7 +1058,7 @@ frv_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   set_gdbarch_register_name (gdbarch, frv_register_name);
   set_gdbarch_deprecated_register_size (gdbarch, 4);
-  set_gdbarch_deprecated_register_bytes (gdbarch, frv_num_regs * 4);
+  set_gdbarch_register_bytes (gdbarch, frv_num_regs * 4);
   set_gdbarch_register_byte (gdbarch, frv_register_byte);
   set_gdbarch_register_raw_size (gdbarch, frv_register_raw_size);
   set_gdbarch_deprecated_max_register_raw_size (gdbarch, 4);
@@ -1108,6 +1108,7 @@ frv_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   set_gdbarch_decr_pc_after_break (gdbarch, 0);
   set_gdbarch_function_start_offset (gdbarch, 0);
+  set_gdbarch_register_convertible (gdbarch, generic_register_convertible_not);
 
   set_gdbarch_remote_translate_xfer_address
     (gdbarch, frv_remote_translate_xfer_address);

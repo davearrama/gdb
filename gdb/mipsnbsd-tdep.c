@@ -1,5 +1,5 @@
 /* Target-dependent code for MIPS systems running NetBSD.
-   Copyright 2002, 2003 Free Software Foundation, Inc.
+   Copyright 2002 Free Software Foundation, Inc.
    Contributed by Wasabi Systems, Inc.
 
    This file is part of GDB.
@@ -105,7 +105,7 @@ fetch_core_registers (char *core_reg_sect, unsigned core_reg_size, int which,
   mipsnbsd_supply_reg (regs, -1);
 
   /* Floating point registers.  */
-  mipsnbsd_supply_fpreg (fpregs, -1);
+  mipsnbsd_supply_fpreg (regs, -1);
 }
 
 static void
@@ -218,7 +218,7 @@ mipsnbsd_sigtramp_offset (CORE_ADDR pc)
 }
 
 static int
-mipsnbsd_pc_in_sigtramp (CORE_ADDR pc, char *func_name)
+mipsnbsd_pc_in_sigtramp (CORE_ADDR pc, const char *func_name)
 {
   return (nbsd_pc_in_sigtramp (pc, func_name)
 	  || mipsnbsd_sigtramp_offset (pc) >= 0);
@@ -250,7 +250,7 @@ mipsnbsd_get_longjmp_target (CORE_ADDR *pc)
   			  NBSD_MIPS_JB_ELEMENT_SIZE))
     return 0;
 
-  *pc = extract_unsigned_integer (buf, NBSD_MIPS_JB_ELEMENT_SIZE);
+  *pc = extract_address (buf, NBSD_MIPS_JB_ELEMENT_SIZE);
 
   return 1;
 }

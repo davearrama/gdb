@@ -40,6 +40,11 @@ extern CORE_ADDR generic_cannot_extract_struct_value_address (char *dummy);
    being passed */
 extern gdbarch_frame_num_args_ftype frame_num_args_unknown;
 
+/* Implementation of breakpoint from PC using any of the deprecated
+   macros BREAKPOINT, LITTLE_BREAKPOINT, BIG_BREAPOINT.  For legacy
+   targets that don't yet implement their own breakpoint_from_pc(). */
+extern gdbarch_breakpoint_from_pc_ftype legacy_breakpoint_from_pc;
+
 /* Implementation of extract return value that grubs around in the
    register cache.  */
 extern gdbarch_extract_return_value_ftype legacy_extract_return_value;
@@ -143,9 +148,9 @@ extern gdbarch_virtual_frame_pointer_ftype legacy_virtual_frame_pointer;
 
 extern CORE_ADDR generic_skip_trampoline_code (CORE_ADDR pc);
 
-extern int generic_in_solib_call_trampoline (CORE_ADDR pc, char *name);
+extern int generic_in_solib_call_trampoline (CORE_ADDR pc, const char *name);
 
-extern int generic_in_solib_return_trampoline (CORE_ADDR pc, char *name);
+extern int generic_in_solib_return_trampoline (CORE_ADDR pc, const char *name);
 
 extern int generic_in_function_epilogue_p (struct gdbarch *gdbarch, CORE_ADDR pc);
 
@@ -158,7 +163,7 @@ extern int generic_register_size (int regnum);
 extern int generic_register_byte (int regnum);
 
 /* Prop up old targets that use various IN_SIGTRAMP() macros.  */
-extern int legacy_pc_in_sigtramp (CORE_ADDR pc, char *name);
+extern int legacy_pc_in_sigtramp (CORE_ADDR pc, const char *name);
 
 /* The orginal register_convert*() functions were overloaded.  They
    were used to both: convert between virtual and raw register formats
