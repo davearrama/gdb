@@ -1,34 +1,15 @@
-2004-03-01  Richard Sandiford  <rsandifo@redhat.com>
+2004-04-09  Daniel Jacobowitz  <drow@mvista.com>
 
-	* configure.in (mips64*-*-linux*): Override mips*-*-linux* case
-	and disable libgcj.
-	* configure: Regenerated.
-
-2004-02-28  Nathanael Nerode  <neroden@gcc.gnu.org>
-
-	PR bootstrap/7087
-	* Makefile.tpl: Guard XFOO sed statements better.
-	* Makefile.tpl: Add dependency for configure-target-libada.
-	* Makefile.in: Regenerate (incidentally fixes broken
-	commit when libada-branch was merged).
-
-2004-02-28  Andrew Cagney  <cagney@redhat.com>
-
+	Merge from mainline:
+	2004-02-28  Andrew Cagney  <cagney@redhat.com>
 	* src-release (CVS_NAMES): Define.
 	(do-tar, do-tar): Prune $(CVS_NAMES).
 
-2004-02-23  Andrew Cagney  <cagney@redhat.com>
-
+	2004-02-23  Andrew Cagney  <cagney@redhat.com>
 	* texinfo/texinfo.tex: Update from version 2003-02-03.16 to
 	2004-02-19.09.
 
-2004-02-19  Nathanael Nerode  <neroden@gcc.gnu.org>
-
-	PR bootstrap/11932
-	* mkinstalldirs, install-sh: Import from automake CVS HEAD.
-
-2004-02-19  Andrew Cagney  <cagney@redhat.com>
-
+	2004-02-19  Andrew Cagney  <cagney@redhat.com>
 	* config.guess: Update from version 2003-06-12 to 2004-02-16.
 	* config.sub: Update from version 2003-06-13 to 2004-02-16.
 
