@@ -396,6 +396,12 @@ void
 unblock_async_io (void)
 {
   sigset_t sigio_set;
+
+  /* HACK */
+  extern int restarting_program;
+  if (restarting_program)
+    return;
+
   sigemptyset (&sigio_set);
   sigaddset (&sigio_set, SIGIO);
   sigprocmask (SIG_UNBLOCK, &sigio_set, NULL);
@@ -681,11 +687,9 @@ prepare_resume_reply (char *buf, char status, unsigned char signo)
 
       if (using_threads)
 	{
-	  unsigned int gdb_id_from_wait;
-
 	  /* FIXME right place to set this? */
 	  thread_from_wait = ((struct inferior_list_entry *)current_inferior)->id;
-	  gdb_id_from_wait = thread_to_gdb_id (current_inferior);
+	  unsigned int gdb_id_from_wait = thread_to_gdb_id (current_inferior);
 
 	  if (debug_threads)
 	    fprintf (stderr, "Writing resume reply for %ld\n\n", thread_from_wait);
