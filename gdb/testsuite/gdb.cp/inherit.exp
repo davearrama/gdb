@@ -1,5 +1,5 @@
 # Copyright 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2001, 2002, 2003,
-# 2004, 2006 Free Software Foundation, Inc.
+# 2004 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -373,127 +373,6 @@ proc test_print_mi_members {} {
     gdb_test "print g_E.E::x" "$vhn = 32"
 }
 
-# Multiple inheritance, print individual member types.
-
-proc test_print_mi_member_types {} {
-    global gdb_prompt
-    global nl
-    global vhn
-
-    # Print the types of some members of g_D without qualifying them.
-    gdb_test "ptype g_D.b" "type = int"
-    gdb_test "ptype g_D.c" "type = int"
-    gdb_test "ptype g_D.d" "type = int"
-
-    # Print the types of qualified members; none of these tests pass today.
-
-    # Print all members of g_A.
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_A.A::a" "type = int"
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_A.A::x" "type = int"
-
-    # Print all members of g_B.
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_B.A::a" "type = int"
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_B.A::x" "type = int"
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_B.B::b" "type = int"
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_B.B::x" "type = int"
-
-    # Print all members of g_C.
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_C.A::a" "type = int"
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_C.A::x" "type = int"
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_C.C::c" "type = int"
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_C.C::x" "type = int"
-
-    # Print all members of g_D.
-    #
-    # g_D.A::a and g_D.A::x are ambiguous member accesses, and gdb
-    # should detect these.  There are no ways to PASS these tests
-    # because I don't know what the gdb message will be.  -- chastain
-    # 2004-01-27.
-
-    set name "ptype g_D.A::a"
-    gdb_test_multiple "ptype g_D.A::a" $name {
-	-re "Attempt to take address of non-lval$nl$gdb_prompt $" {
-	    kfail "gdb/2092" "$name"
-	}
-	-re "type = int$nl$gdb_prompt $" {
-	    kfail "gdb/68" "ptype g_D.A::a"
-	}
-    }
-
-    set name "ptype g_D.A::x"
-    gdb_test_multiple "ptype g_D.A::x" $name {
-	-re "Attempt to take address of non-lval$nl$gdb_prompt $" {
-	    kfail "gdb/2092" "$name"
-	}
-	-re "type = int$nl$gdb_prompt $" {
-	    kfail "gdb/68" "ptype g_D.A::x"
-	}
-    }
-
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_D.B::b" "type = int"
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_D.B::x" "type = int"
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_D.C::c" "type = int"
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_D.C::x" "type = int"
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_D.D::d" "type = int"
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_D.D::x" "type = int"
-
-    # Print all members of g_E.
-    # g_E.A::a and g_E.A::x are ambiguous.
-
-    set name "ptype g_E.A::a"
-    gdb_test_multiple "ptype g_E.A::a" $name {
-	-re "Attempt to take address of non-lval$nl$gdb_prompt $" {
-	    kfail "gdb/2092" "$name"
-	}
-	-re "type = int$nl$gdb_prompt $" {
-	    kfail "gdb/68" "ptype g_E.A::a"
-	}
-    }
-
-    set name "ptype g_E.A::x"
-    gdb_test_multiple "ptype g_E.A::x" $name {
-	-re "Attempt to take address of non-lval$nl$gdb_prompt $" {
-	    kfail "gdb/2092" "$name"
-	}
-	-re "type = int$nl$gdb_prompt $" {
-	    kfail "gdb/68" "ptype g_E.A::x"
-	}
-    }
-
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_E.B::b" "type = int"
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_E.B::x" "type = int"
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_E.C::c" "type = int"
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_E.C::x" "type = int"
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_E.D::d" "type = int"
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_E.D::x" "type = int"
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_E.E::e" "type = int"
-    setup_kfail "gdb/2092" "*-*-*"
-    gdb_test "ptype g_E.E::x" "type = int"
-}
-
 # Multiple inheritance, print complete classes.
 
 proc test_print_mi_classes { } {
@@ -598,6 +477,7 @@ proc test_print_svi_classes { } {
     # Print all members of g_vB.
     set re_vbptr_2	"(_vb.2vA|_vb.vA)"
     set re_vbptr_3	"_vptr.vB"
+    set re_vbptr_ARM	"__vptr"
 
     set name "print g_vB"
     gdb_test_multiple "print g_vB" $name {
@@ -613,6 +493,9 @@ proc test_print_svi_classes { } {
 	    # gcc HEAD 2004-07-31 -gdwarf-2
 	    pass "$name (FIXME v3 vtbl ptr)"
 	}
+	-re "$vhn = \{<vA> = \{va = 3, vx = 4\}, $re_vbptr_ARM = $hex, vb = 5, vx = 6\}$nl$gdb_prompt $" {
+	    pass "$name (FIXME ARM vtbl ptr)"
+	}
 	-re "$vhn = \{<vA> = \{va = 3, vx = 4\}, $re_vbptr_3 = $hex <VTT for vB>, vb = 5, vx = 6\}$nl$gdb_prompt $" {
 	    # gcc 3.3.4 -gstabs+
 	    pass $name
@@ -626,6 +509,7 @@ proc test_print_svi_classes { } {
     # Print all members of g_vC.
     set re_vbptr_2	"(_vb.2vA|_vb.vA)"
     set re_vbptr_3	"_vptr.vC"
+    set re_vbptr_ARM	"__vptr"
 
     set name "print g_vC"
     gdb_test_multiple "print g_vC" $name {
@@ -640,6 +524,9 @@ proc test_print_svi_classes { } {
 	    # gcc 3.4.1 -gstabs+
 	    # gcc HEAD 2004-07-31 -gdwarf-2
 	    pass "$name (FIXME v3 vtbl ptr)"
+	}
+	-re "$vhn = \{<vA> = \{va = 7, vx = 8\}, $re_vbptr_ARM = $hex, vc = 9, vx = 10\}$nl$gdb_prompt $" {
+	    pass "$name (FIXME ARM vtbl ptr)"
 	}
 	-re "$vhn = \{<vA> = \{va = 7, vx = 8\}, $re_vbptr_3 = $hex <VTT for vC>, vc = 9, vx = 10\}$nl$gdb_prompt $" {
 	    # gcc 3.3.4 -gstabs+
@@ -700,6 +587,7 @@ proc test_print_mvi_classes { } {
     set re_vbptr_3_vC	"_vptr.vC"
     set re_vbptr_3_vD	"_vptr.vD"
     set re_vbptr_3_vE	"_vptr.vE"
+    set re_vbptr_ARM	"__vptr"
 
     # Print all members of g_vD.
 
@@ -715,6 +603,9 @@ proc test_print_mvi_classes { } {
 	    # gcc HEAD 2004-01-21 -gdwarf-2
 	    # gcc HEAD 2004-01-21 -gstabs+
 	    pass "$name (FIXME v3 vtbl ptr)"
+	}
+	-re "$vhn = \{<vB> = \{<vA> = \{va = 19, vx = 20\}, $re_vbptr_ARM = $hex, vb = 21, vx = 22\}, <vC> = \{$re_vbptr_ARM = $hex, vc = 23, vx = 24\}, $re_vbptr_ARM = $hex, vd = 25, vx = 26\}$nl$gdb_prompt $" {
+	    pass "$name (FIXME ARM vtbl ptr)"
 	}
 	-re "$vhn = \{<vB> = \{<vA> = \{va = 19, vx = 20\}, $re_vbptr_3_vB = $hex, vb = 21, vx = 22\}, <vC> = \{$re_vbptr_3_vC = $hex <VTT for vD>, vc = 23, vx = 24\}, $re_vbptr_3_vD = $hex, vd = 25, vx = 26\}$nl$gdb_prompt $" {
 	    # gcc 3.3.2 -gstabs+
@@ -738,6 +629,9 @@ proc test_print_mvi_classes { } {
 	    # gcc 3.4.1 -gstabs+
 	    # gcc HEAD 2004-07-31 -gdwarf-2
 	    pass "$name (FIXME v3 vtbl ptr)"
+	}
+	-re "$vhn = \{<vD> = \{<vB> = \{<vA> = \{va = 0, vx = 0\}, $re_vbptr_ARM = $hex, vb = 0, vx = 0\}, <vC> = \{$re_vbptr_ARM = $hex, vc = 0, vx = 0\}, $re_vbptr_ARM = $hex, vd = 0, vx = 0\}, $re_vbptr_ARM = $hex, ve = 27, vx = 28\}$nl$gdb_prompt $" {
+	    pass "$name (FIXME ARM vtbl ptr)"
 	}
 	-re "$vhn = \{<vD> = \{<vB> = \{<vA> = \{va = 0, vx = 0\}, $re_vbptr_3_vB = $hex, vb = 0, vx = 0\}, <vC> = \{$re_vbptr_3_vC = $hex <VTT for vD>, vc = 0, vx = 0\}, $re_vbptr_3_vD = $hex, vd = 0, vx = 0\}, $re_vbptr_3_vE = $hex, ve = 27, vx = 28\}$nl$gdb_prompt $" {
 	    # gcc 3.2.7-rh -gstabs+
@@ -789,7 +683,6 @@ proc do_tests { } {
     test_print_si_members
     test_print_si_classes
     test_print_mi_members
-    test_print_mi_member_types
     test_print_mi_classes
     test_print_anon_union
 

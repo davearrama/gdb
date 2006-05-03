@@ -1271,7 +1271,7 @@ lookup_struct_elt_type (struct type *type, char *name, int noerr)
     {
       struct type *t;
 
-      t = lookup_struct_elt_type (TYPE_BASECLASS (type, i), name, 1);
+      t = lookup_struct_elt_type (TYPE_BASECLASS (type, i), name, noerr);
       if (t != NULL)
 	{
 	  return t;
@@ -2452,6 +2452,8 @@ rank_one_type (struct type *parm, struct type *arg)
 		  else
 		    return INTEGER_CONVERSION_BADNESS;	/* signed/unsigned char -> plain char */
 		}
+	      else if (TYPE_NOSIGN (arg))
+		return INTEGER_CONVERSION_BADNESS;	/* plain char -> signed/unsigned char */
 	      else if (TYPE_UNSIGNED (parm))
 		{
 		  if (TYPE_UNSIGNED (arg))
