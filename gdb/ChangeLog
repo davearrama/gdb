@@ -1,46 +1,6 @@
-2006-05-16  Jim Blandy  <jimb@codesourcery.com>
+2006-05-16  Joel Brobecker  <brobecker@adacore.com>
 
-	* MAINTAINERS (Authorized Committers): Gaius Mulley has accepted
-	the Global Maintainers' invitation to be an authorized committer
-	for the Modula-2 support.
-
-2006-05-15  Mark Kettenis  <kettenis@gnu.org>
-
-	* ppcobsd-nat.c: Include "gdb_assert.h".
-	[PT_GETFPREGS] (getfpregs_supplies): New function.
-	(ppcobsd_fetch_registers, ppcobsd_fetch_registers): Hanlde OS
-	versions that have PT_GETFPREGS.
-	(_initialize_ppcobsd_nat) [PT_GETFPREGS]: Initialize
-	ppcobsd_fpreg_offsets.
-	* ppcobsd-tdep.h (ppcobsd_fpreg_offsets, ppcobsd_fpregset):
-	Declare.
-	* ppcobsd-tdep.c (ppcobsd_fpreg_offsets, ppcobsd_fpregset): New
-	variables.
-	(_initialize_ppcobsd_tdep): Initialize ppcobsd_fpreg_offsets.
-	* Makefile.in (ppcobsd-nat.o): Update dependencies.
-
-2006-05-15  Daniel Jacobowitz  <dan@codesourcery.com>
-
-	* configure.ac: Use GCC_HEADER_STDINT.
-	* acinclude.m4: Include stdint.m4.
-	* Makefile.in (gdb_stdint_h): Define.
-	(distclean): Remove gdb_stdint.h.
-	(Makefile, stamp-h): Update rules to generate only the correct
-	files.
-	(gdb_stdint.h, stamp-int): New rules.
-	* config.in, configure: Regenerated.
-
-2006-05-15  Daniel Jacobowitz  <dan@codesourcery.com>
-
-	* valprint.c: Include "exceptions.h".
-	(val_print): If something goes wrong while printing, supply an
-	error message.
-
-2006-05-15  Peter O'Gorman  <gdb-patches@mlists.thewrittenword.com>
-
-	* source.c (get_current_source_symtab_and_line)
-	(set_current_source_symtab_and_line): Use { 0 }.
-	* cli/cli-cmds.c (list_command): Likewise.
+	* version.in: Update to 6.4.90.
 
 2006-05-14  Nick Roberts  <nickrob@snap.net.nz>
 
