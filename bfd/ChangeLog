@@ -1,39 +1,7 @@
-2006-05-15  Paul Brook  <paul@codesourcery.com>
+2006-05-24  Alan Modra  <amodra@bigpond.net.au>
 
-	* cpu-arm.c (bfd_is_arm_mapping_symbol_name): Rename ...
-	(bfd_is_arm_special_symbol_name): ... to this.  Add type argument.
-	Check symbol name is of specified type.
-	* elf32-arm.c (elf32_arm_is_target_special_symbol,
-	arm_elf_find_function, elf32_arm_output_symbol_hook): Use
-	bfd_is_arm_special_symbol_name.
-	* bfd-in.h (BFD_ARM_SPECIAL_SYM_TYPE_MAP,
-	BFD_ARM_SPECIAL_SYM_TYPE_TAG, BFD_ARM_SPECIAL_SYM_TYPE_OTHER,
-	BFD_ARM_SPECIAL_SYM_TYPE_ANY): Define.
-	(bfd_is_arm_mapping_symbol_name): Remove prototype.
-	(bfd_is_arm_special_symbol_name): Add prototype.
-	* bfd-in2.h: Regenerate.
-
-2006-05-15  David Heine  <dlheine@tensilica.com>
-	    Bob Wilson  <bob.wilson@acm.org>
-
-	* elf32-xtensa.c (check_loop_aligned): Fix reversed check for
-	undefined opcode.  Clean up assertions.
-	(narrow_instruction, widen_instruction): Remove "do_it" parameters.
-	Factor most of the code into separate functions....
-	(can_narrow_instruction, can_widen_instruction): New.
-	(prev_instr_is_a_loop): New.
-	(compute_ebb_proposed_actions): Combine error handling code for
-	decode errors.  Replace call to insn_decode_len with inline code.
-	Use can_narrow_instruction and can_widen_instruction.  Handle errors
-	from call to xtensa_opcode_is_loop.
-	(relax_section): Adjust calls to narrow_instruction and 
-	widen_instruction.
-
-2006-05-15  Alan Modra  <amodra@bigpond.net.au>
-
-	PR 2658
-	* elf32-ppc.c (ppc_elf_relax_section): Don't segfault on non-pic
-	-shared link.
+	* elf64-ppc.c (compare_symbols): Prefer strong dynamic global
+	function syms over other syms.
 
 2006-05-11  Michael Matz  <matz@suse.de>
 
