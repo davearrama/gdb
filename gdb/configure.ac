@@ -422,9 +422,6 @@ AC_CHECK_HEADERS(term.h, [], [],
 # unconditionally, so what's the point in checking these?
 AC_CHECK_HEADERS(ctype.h time.h)
 
-# Create a header we can use portably to get the standard integer types.
-GCC_HEADER_STDINT(gdb_stdint.h)
-
 # ------------------------- #
 # Checks for declarations.  #
 # ------------------------- #
@@ -1124,11 +1121,6 @@ AC_ARG_ENABLE(werror,
      no | n)  ERROR_ON_WARNING="no" ;;
      *) AC_MSG_ERROR(bad value ${enableval} for --enable-werror) ;;
    esac])
-
-# Enable -Werror by default when using gcc
-if test "${GCC}" = yes -a -z "${ERROR_ON_WARNING}" ; then
-    ERROR_ON_WARNING=yes
-fi
 
 WERROR_CFLAGS=""
 if test "${ERROR_ON_WARNING}" = yes ; then
