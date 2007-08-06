@@ -1,7 +1,6 @@
 2007-08-06  Daniel Jacobowitz  <dan@codesourcery.com>
 
-	* configure.in: Update version to 2.18.50.
-	* configure: Regenerated.
+	* po/bfd.pot: Regenerate.
 
 2007-08-06  Paul Brook  <paul@codesourcery.com>
 
