@@ -1,39 +1,7 @@
-2007-09-10  Daniel Jacobowitz  <dan@codesourcery.com>
+2007-09-11  Joel Brobecker  <brobecker@adacore.com>
 
-	* thread.c (free_thread): Do not delete the step resume breakpoint
-	right away.
-
-2007-09-10  Daniel Jacobowitz  <dan@codesourcery.com>
-
-	* arch-utils.c (gdbarch_info_fill): Also try core_bfd.
-	* corelow.c (core_read_description): New.
-	(init_core_ops): Set to_read_description.
-	* gdbarch.sh: Add gdbarch_core_read_description.
-	* mips-linux-tdep.c (mips_linux_core_read_description): New.
-	(mips_linux_init_abi): Call set_gdbarch_core_read_description.
-	* mips-tdep.c (mips_tdesc_gp32, mips_tdesc_gp64): New.
-	(mips_register_g_packet_guesses): Use them.
-	(_initialize_mips_tdep): Initialize them.
-	* mips-tdep.h (mips_tdesc_gp32, mips_tdesc_gp64): Declare.
-	* gdbarch.h, gdbarch.c: Regenerated.
-
-2007-09-10  Ulrich Weigand  <uweigand@de.ibm.com>
-
-	* infrun.c (stepping_past_breakpoint): New global variable.
-	(stepping_past_breakpoint_ptid): Likewise.
-	(prepare_to_proceed): Add STEP parameter.  Do not check for Ctrl-C.
-	Only switch threads if we need to single-step over a breakpoint hit
-	in the previously selected thread.  If stepping, remember previous
-	thread to switch back to in STEPPING_PAST_BREAKPOINT[_PTID].  Call
-	switch_to_thread instead of copying its contents.
-	(proceed): Pass STEP to prepare_to_proceed.  Always set ONEPROC if
-	prepare_to_proceed returns true.
-	(init_wait_for_inferior): Reset STEPPING_PAST_BREAKPOINT.
-	(context_switch): Call switch_to_thread.
-	(handle_inferior_event): Switch back to previous thread if requested
-	in STEPPING_PAST_BREAKPOINT[_PTID] by prepare_to_proceed.
-	* gdbthread.h (switch_to_thread): Add prototype.
-	* thread.c (switch_to_thread): Make global.
+	GDB 6.7 branch created (branch timestamp: 2007-09-07 14:00 UTC)
+	* version.in: Bump version to 6.6.90.20070907-cvs.
 
 2007-09-07  2007-09-07  Pierre Muller  <muller@ics.u-strasbg.fr>
 
