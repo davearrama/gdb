@@ -165,9 +165,6 @@ static int mips_debug = 0;
 #define PROPERTY_GP32 "internal: transfers-32bit-registers"
 #define PROPERTY_GP64 "internal: transfers-64bit-registers"
 
-struct target_desc *mips_tdesc_gp32;
-struct target_desc *mips_tdesc_gp64;
-
 /* MIPS specific per-architecture information */
 struct gdbarch_tdep
 {
@@ -2174,14 +2171,15 @@ mips_stub_frame_cache (struct frame_info *next_frame, void **this_cache)
   /* The return address is in the link register.  */
   trad_frame_set_reg_realreg (this_trad_cache,
 			      gdbarch_pc_regnum (current_gdbarch),
-			      MIPS_RA_REGNUM);
+			      (gdbarch_num_regs (current_gdbarch)
+			       + MIPS_RA_REGNUM));
 
   /* Frame ID, since it's a frameless / stackless function, no stack
      space is allocated and SP on entry is the current SP.  */
   pc = frame_pc_unwind (next_frame);
   find_pc_partial_function (pc, NULL, &start_addr, NULL);
   stack_addr = frame_unwind_register_signed (next_frame, MIPS_SP_REGNUM);
-  trad_frame_set_id (this_trad_cache, frame_id_build (start_addr, stack_addr));
+  trad_frame_set_id (this_trad_cache, frame_id_build (stack_addr, start_addr));
 
   /* Assume that the frame's base is the same as the
      stack-pointer.  */
@@ -2222,8 +2220,13 @@ static const struct frame_unwind mips_stub_frame_unwind =
 static const struct frame_unwind *
 mips_stub_frame_sniffer (struct frame_info *next_frame)
 {
+  gdb_byte dummy[4];
   struct obj_section *s;
   CORE_ADDR pc = frame_unwind_address_in_block (next_frame, NORMAL_FRAME);
+
+  /* Use the stub unwinder for unreadable code.  */
+  if (target_read_memory (frame_pc_unwind (next_frame), dummy, 4) != 0)
+    return &mips_stub_frame_unwind;
 
   if (in_plt_section (pc, NULL))
     return &mips_stub_frame_unwind;
@@ -4869,16 +4872,30 @@ global_mips_abi (void)
 static void
 mips_register_g_packet_guesses (struct gdbarch *gdbarch)
 {
+  static struct target_desc *tdesc_gp32, *tdesc_gp64;
+
+  if (tdesc_gp32 == NULL)
+    {
+      /* Create feature sets with the appropriate properties.  The values
+	 are not important.  */
+
+      tdesc_gp32 = allocate_target_description ();
+      set_tdesc_property (tdesc_gp32, PROPERTY_GP32, "");
+
+      tdesc_gp64 = allocate_target_description ();
+      set_tdesc_property (tdesc_gp64, PROPERTY_GP64, "");
+    }
+
   /* If the size matches the set of 32-bit or 64-bit integer registers,
      assume that's what we've got.  */
-  register_remote_g_packet_guess (gdbarch, 38 * 4, mips_tdesc_gp32);
-  register_remote_g_packet_guess (gdbarch, 38 * 8, mips_tdesc_gp64);
+  register_remote_g_packet_guess (gdbarch, 38 * 4, tdesc_gp32);
+  register_remote_g_packet_guess (gdbarch, 38 * 8, tdesc_gp64);
 
   /* If the size matches the full set of registers GDB traditionally
      knows about, including floating point, for either 32-bit or
      64-bit, assume that's what we've got.  */
-  register_remote_g_packet_guess (gdbarch, 90 * 4, mips_tdesc_gp32);
-  register_remote_g_packet_guess (gdbarch, 90 * 8, mips_tdesc_gp64);
+  register_remote_g_packet_guess (gdbarch, 90 * 4, tdesc_gp32);
+  register_remote_g_packet_guess (gdbarch, 90 * 8, tdesc_gp64);
 
   /* Otherwise we don't have a useful guess.  */
 }
@@ -5684,14 +5701,6 @@ _initialize_mips_tdep (void)
   gdbarch_register (bfd_arch_mips, mips_gdbarch_init, mips_dump_tdep);
 
   mips_pdr_data = register_objfile_data ();
-
-  /* Create feature sets with the appropriate properties.  The values
-     are not important.  */
-  mips_tdesc_gp32 = allocate_target_description ();
-  set_tdesc_property (mips_tdesc_gp32, PROPERTY_GP32, "");
-
-  mips_tdesc_gp64 = allocate_target_description ();
-  set_tdesc_property (mips_tdesc_gp64, PROPERTY_GP64, "");
 
   /* Add root prefix command for all "set mips"/"show mips" commands */
   add_prefix_cmd ("mips", no_class, set_mips_command,
