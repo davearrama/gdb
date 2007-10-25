@@ -53,9 +53,8 @@ extern "C" {
 /* This is a utility macro to handle the situation where the code
    wants to place a constant string into the code, followed by a
    comma and then the length of the string.  Doing this by hand
-   is error prone, so using this macro is safer.  The macro will
-   also safely handle the case where a NULL is passed as the arg.  */
-#define STRING_COMMA_LEN(STR) (STR), ((STR) ? sizeof (STR) - 1 : 0)
+   is error prone, so using this macro is safer.  */
+#define STRING_COMMA_LEN(STR) (STR), (sizeof (STR) - 1)
 /* Unfortunately it is not possible to use the STRING_COMMA_LEN macro
    to create the arguments to another macro, since the preprocessor
    will mis-count the number of arguments to the outer macro (by not
@@ -1772,9 +1771,6 @@ enum bfd_architecture
 #define bfd_mach_mcf_isa_c 26
 #define bfd_mach_mcf_isa_c_mac 27
 #define bfd_mach_mcf_isa_c_emac 28
-#define bfd_mach_mcf_isa_c_nodiv 29
-#define bfd_mach_mcf_isa_c_nodiv_mac 30
-#define bfd_mach_mcf_isa_c_nodiv_emac 31
   bfd_arch_vax,       /* DEC Vax */
   bfd_arch_i960,      /* Intel 960 */
     /* The order of the following is important.
