@@ -1818,19 +1818,8 @@ argument to @value{GDBN} (@pxref{Invocation, ,Getting In and Out of
 
 If you are running your program in an execution environment that
 supports processes, @code{run} creates an inferior process and makes
-that process run your program.  In some environments without processes,
-@code{run} jumps to the start of your program.  Other targets,
-like @samp{remote}, are always running.  If you get an error
-message like this one:
-
-@smallexample
-The "remote" target does not support "run".
-Try "help target" or "continue".
-@end smallexample
-
-@noindent
-then use @code{continue} to run your program.  You may need @code{load}
-first (@pxref{load}).
+that process run your program.  (In environments without processes,
+@code{run} jumps to the start of your program.)
 
 The execution of a program is affected by certain information it
 receives from its superior.  @value{GDBN} provides ways to specify this
@@ -12680,7 +12669,6 @@ Show the current status of displaying communications between
 
 @kindex load @var{filename}
 @item load @var{filename}
-@anchor{load}
 Depending on what remote debugging facilities are configured into
 @value{GDBN}, the @code{load} command may be available.  Where it exists, it
 is meant to make @var{filename} (an executable) available for debugging
@@ -12859,9 +12847,8 @@ program has already exited, this will have no effect.)
 @end table
 
 Once the connection has been established, you can use all the usual
-commands to examine and change data.  The remote program is already
-running; you can use @kbd{step} and @kbd{continue}, and you do not
-need to use @kbd{run}.
+commands to examine and change data and to step and continue the
+remote program.
 
 @cindex interrupting remote programs
 @cindex remote programs, interrupting
@@ -16400,14 +16387,6 @@ until the next time you connect to a target or use the @code{run} command.
 @item show debug target
 Displays the current state of displaying @value{GDBN} target debugging
 info.
-@item set debug timestamp
-@cindex timestampping debugging info
-Turns on or off display of timestamps with @value{GDBN} debugging info.
-When enabled, seconds and microseconds are displayed before each debugging
-message.
-@item show debug timestamp
-Displays the current state of displaying timestamps with @value{GDBN}
-debugging info.
 @item set debugvarobj
 @cindex variable object debugging info
 Turns on or off display of @value{GDBN} variable object debugging
@@ -26767,7 +26746,9 @@ registers using the capitalization used in the description.
 
 @menu
 * ARM Features::
+* MIPS Features::
 * M68K Features::
+* PowerPC Features::
 @end menu
 
 
@@ -26787,6 +26768,7 @@ it should contain at least registers @samp{wR0} through @samp{wR15} and
 @samp{wCGR0} through @samp{wCGR3}.  The @samp{wCID}, @samp{wCon},
 @samp{wCSSF}, and @samp{wCASF} registers are optional.
 
+@node MIPS Features
 @subsection MIPS Features
 @cindex target descriptions, MIPS features
 
@@ -26828,6 +26810,7 @@ This feature is optional.  If present, it should contain registers
 @samp{fpiaddr}.
 @end table
 
+@node PowerPC Features
 @subsection PowerPC Features
 @cindex target descriptions, PowerPC features
 
