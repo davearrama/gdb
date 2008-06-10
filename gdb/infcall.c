@@ -1,14 +1,14 @@
 /* Perform an inferior function call, for GDB, the GNU debugger.
 
    Copyright (C) 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995,
-   1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007,
-   2008 Free Software Foundation, Inc.
+   1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 3 of the License, or
+   the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
 
    This program is distributed in the hope that it will be useful,
@@ -17,7 +17,9 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin Street, Fifth Floor,
+   Boston, MA 02110-1301, USA.  */
 
 #include "defs.h"
 #include "breakpoint.h"
@@ -34,7 +36,6 @@
 #include "gdb_string.h"
 #include "infcall.h"
 #include "dummy-frame.h"
-#include "ada-lang.h"
 
 /* NOTE: cagney/2003-04-16: What's the future of this code?
 
@@ -92,30 +93,18 @@ Unwinding of stack if a signal is received while in a call dummy is %s.\n"),
 
 
 /* Perform the standard coercions that are specified
-   for arguments to be passed to C or Ada functions.
+   for arguments to be passed to C functions.
 
    If PARAM_TYPE is non-NULL, it is the expected parameter type.
-   IS_PROTOTYPED is non-zero if the function declaration is prototyped.
-   SP is the stack pointer were additional data can be pushed (updating
-   its value as needed).  */
+   IS_PROTOTYPED is non-zero if the function declaration is prototyped.  */
 
 static struct value *
 value_arg_coerce (struct value *arg, struct type *param_type,
-		  int is_prototyped, CORE_ADDR *sp)
+		  int is_prototyped)
 {
   struct type *arg_type = check_typedef (value_type (arg));
   struct type *type
     = param_type ? check_typedef (param_type) : arg_type;
-
-  /* Perform any Ada-specific coercion first.  */
-  if (current_language->la_language == language_ada)
-    arg = ada_convert_actual (arg, type, sp);
-
-  /* Force the value to the target if we will need its address.  At
-     this point, we could allocate arguments on the stack instead of
-     calling malloc if we knew that their addresses would not be
-     saved by the called function.  */
-  arg = value_coerce_to_target (arg);
 
   switch (TYPE_CODE (type))
     {
@@ -233,24 +222,8 @@ find_function_addr (struct value *function, struct type **retval_type)
       if (TYPE_LENGTH (ftype) == 1)
 	funaddr = value_as_address (value_addr (function));
       else
-	{
-	  /* Handle function descriptors lacking debug info.  */
-	  int found_descriptor = 0;
-	  if (VALUE_LVAL (function) == lval_memory)
-	    {
-	      CORE_ADDR nfunaddr;
-	      funaddr = value_as_address (value_addr (function));
-	      nfunaddr = funaddr;
-	      funaddr = gdbarch_convert_from_func_ptr_addr (current_gdbarch,
-							    funaddr,
-							    &current_target);
-	      if (funaddr != nfunaddr)
-		found_descriptor = 1;
-	    }
-	  if (!found_descriptor)
-	    /* Handle integer used as address of a function.  */
-	    funaddr = (CORE_ADDR) value_as_long (function);
-	}
+	/* Handle integer used as address of a function.  */
+	funaddr = (CORE_ADDR) value_as_long (function);
 
       value_type = builtin_type_int;
     }
@@ -259,7 +232,7 @@ find_function_addr (struct value *function, struct type **retval_type)
 
   if (retval_type != NULL)
     *retval_type = value_type;
-  return funaddr + gdbarch_deprecated_function_start_offset (current_gdbarch);
+  return funaddr + DEPRECATED_FUNCTION_START_OFFSET;
 }
 
 /* Call breakpoint_auto_delete on the current contents of the bpstat
@@ -273,11 +246,10 @@ breakpoint_auto_delete_contents (void *arg)
 
 static CORE_ADDR
 generic_push_dummy_code (struct gdbarch *gdbarch,
-			 CORE_ADDR sp, CORE_ADDR funaddr,
+			 CORE_ADDR sp, CORE_ADDR funaddr, int using_gcc,
 			 struct value **args, int nargs,
 			 struct type *value_type,
-			 CORE_ADDR *real_pc, CORE_ADDR *bp_addr,
-			 struct regcache *regcache)
+			 CORE_ADDR *real_pc, CORE_ADDR *bp_addr)
 {
   /* Something here to findout the size of a breakpoint and then
      allocate space for it on the stack.  */
@@ -313,20 +285,17 @@ generic_push_dummy_code (struct gdbarch *gdbarch,
 
 static CORE_ADDR
 push_dummy_code (struct gdbarch *gdbarch,
-		 CORE_ADDR sp, CORE_ADDR funaddr,
+		 CORE_ADDR sp, CORE_ADDR funaddr, int using_gcc,
 		 struct value **args, int nargs,
 		 struct type *value_type,
-		 CORE_ADDR *real_pc, CORE_ADDR *bp_addr,
-		 struct regcache *regcache)
+		 CORE_ADDR *real_pc, CORE_ADDR *bp_addr)
 {
   if (gdbarch_push_dummy_code_p (gdbarch))
-    return gdbarch_push_dummy_code (gdbarch, sp, funaddr,
-				    args, nargs, value_type, real_pc, bp_addr,
-				    regcache);
+    return gdbarch_push_dummy_code (gdbarch, sp, funaddr, using_gcc,
+				    args, nargs, value_type, real_pc, bp_addr);
   else    
-    return generic_push_dummy_code (gdbarch, sp, funaddr,
-				    args, nargs, value_type, real_pc, bp_addr,
-				    regcache);
+    return generic_push_dummy_code (gdbarch, sp, funaddr, using_gcc,
+				    args, nargs, value_type, real_pc, bp_addr);
 }
 
 /* All this stuff with a dummy frame may seem unnecessarily complicated
@@ -352,23 +321,21 @@ call_function_by_hand (struct value *function, int nargs, struct value **args)
 {
   CORE_ADDR sp;
   CORE_ADDR dummy_addr;
-  struct type *values_type, *target_values_type;
-  unsigned char struct_return = 0, lang_struct_return = 0;
+  struct type *values_type;
+  unsigned char struct_return;
   CORE_ADDR struct_addr = 0;
   struct regcache *retbuf;
   struct cleanup *retbuf_cleanup;
   struct inferior_status *inf_status;
   struct cleanup *inf_status_cleanup;
   CORE_ADDR funaddr;
+  int using_gcc;		/* Set to version of gcc in use, or zero if not gcc */
   CORE_ADDR real_pc;
   struct type *ftype = check_typedef (value_type (function));
   CORE_ADDR bp_addr;
   struct regcache *caller_regcache;
   struct cleanup *caller_regcache_cleanup;
   struct frame_id dummy_id;
-  struct cleanup *args_cleanup;
-  struct frame_info *frame;
-  struct gdbarch *gdbarch;
 
   if (TYPE_CODE (ftype) == TYPE_CODE_PTR)
     ftype = check_typedef (TYPE_TARGET_TYPE (ftype));
@@ -376,17 +343,14 @@ call_function_by_hand (struct value *function, int nargs, struct value **args)
   if (!target_has_execution)
     noprocess ();
 
-  frame = get_current_frame ();
-  gdbarch = get_frame_arch (frame);
-
-  if (!gdbarch_push_dummy_call_p (gdbarch))
+  if (!gdbarch_push_dummy_call_p (current_gdbarch))
     error (_("This target does not support function calls"));
 
   /* Create a cleanup chain that contains the retbuf (buffer
      containing the register values).  This chain is create BEFORE the
      inf_status chain so that the inferior status can cleaned up
      (restored or discarded) without having the retbuf freed.  */
-  retbuf = regcache_xmalloc (gdbarch);
+  retbuf = regcache_xmalloc (current_gdbarch);
   retbuf_cleanup = make_cleanup_regcache_xfree (retbuf);
 
   /* A cleanup for the inferior status.  Create this AFTER the retbuf
@@ -399,26 +363,26 @@ call_function_by_hand (struct value *function, int nargs, struct value **args)
      callee returns.  To allow nested calls the registers are (further
      down) pushed onto a dummy frame stack.  Include a cleanup (which
      is tossed once the regcache has been pushed).  */
-  caller_regcache = frame_save_as_regcache (frame);
+  caller_regcache = frame_save_as_regcache (get_current_frame ());
   caller_regcache_cleanup = make_cleanup_regcache_xfree (caller_regcache);
 
   /* Ensure that the initial SP is correctly aligned.  */
   {
-    CORE_ADDR old_sp = get_frame_sp (frame);
-    if (gdbarch_frame_align_p (gdbarch))
+    CORE_ADDR old_sp = read_sp ();
+    if (gdbarch_frame_align_p (current_gdbarch))
       {
-	sp = gdbarch_frame_align (gdbarch, old_sp);
+	sp = gdbarch_frame_align (current_gdbarch, old_sp);
 	/* NOTE: cagney/2003-08-13: Skip the "red zone".  For some
 	   ABIs, a function can use memory beyond the inner most stack
 	   address.  AMD64 called that region the "red zone".  Skip at
 	   least the "red zone" size before allocating any space on
 	   the stack.  */
-	if (gdbarch_inner_than (gdbarch, 1, 2))
-	  sp -= gdbarch_frame_red_zone_size (gdbarch);
+	if (INNER_THAN (1, 2))
+	  sp -= gdbarch_frame_red_zone_size (current_gdbarch);
 	else
-	  sp += gdbarch_frame_red_zone_size (gdbarch);
+	  sp += gdbarch_frame_red_zone_size (current_gdbarch);
 	/* Still aligned?  */
-	gdb_assert (sp == gdbarch_frame_align (gdbarch, sp));
+	gdb_assert (sp == gdbarch_frame_align (current_gdbarch, sp));
 	/* NOTE: cagney/2002-09-18:
 	   
 	   On a RISC architecture, a void parameterless generic dummy
@@ -441,17 +405,15 @@ call_function_by_hand (struct value *function, int nargs, struct value **args)
 	   to pay :-).  */
 	if (sp == old_sp)
 	  {
-	    if (gdbarch_inner_than (gdbarch, 1, 2))
+	    if (INNER_THAN (1, 2))
 	      /* Stack grows down.  */
-	      sp = gdbarch_frame_align (gdbarch, old_sp - 1);
+	      sp = gdbarch_frame_align (current_gdbarch, old_sp - 1);
 	    else
 	      /* Stack grows up.  */
-	      sp = gdbarch_frame_align (gdbarch, old_sp + 1);
+	      sp = gdbarch_frame_align (current_gdbarch, old_sp + 1);
 	  }
-	gdb_assert ((gdbarch_inner_than (gdbarch, 1, 2)
-		    && sp <= old_sp)
-		    || (gdbarch_inner_than (gdbarch, 2, 1)
-		       && sp >= old_sp));
+	gdb_assert ((INNER_THAN (1, 2) && sp <= old_sp)
+		    || (INNER_THAN (2, 1) && sp >= old_sp));
       }
     else
       /* FIXME: cagney/2002-09-18: Hey, you loose!
@@ -462,7 +424,7 @@ call_function_by_hand (struct value *function, int nargs, struct value **args)
 	 pushed) GDB won't be able to correctly perform back traces.
 	 If a target is having trouble with backtraces, first thing to
 	 do is add FRAME_ALIGN() to the architecture vector. If that
-	 fails, try dummy_id().
+	 fails, try unwind_dummy_id().
 
          If the ABI specifies a "Red Zone" (see the doco) the code
          below will quietly trash it.  */
@@ -472,30 +434,16 @@ call_function_by_hand (struct value *function, int nargs, struct value **args)
   funaddr = find_function_addr (function, &values_type);
   CHECK_TYPEDEF (values_type);
 
-  /* Are we returning a value using a structure return (passing a
-     hidden argument pointing to storage) or a normal value return?
-     There are two cases: language-mandated structure return and
-     target ABI structure return.  The variable STRUCT_RETURN only
-     describes the latter.  The language version is handled by passing
-     the return location as the first parameter to the function,
-     even preceding "this".  This is different from the target
-     ABI version, which is target-specific; for instance, on ia64
-     the first argument is passed in out0 but the hidden structure
-     return pointer would normally be passed in r8.  */
+  {
+    struct block *b = block_for_pc (funaddr);
+    /* If compiled without -g, assume GCC 2.  */
+    using_gcc = (b == NULL ? 2 : BLOCK_GCC_COMPILED (b));
+  }
 
-  if (language_pass_by_reference (values_type))
-    {
-      lang_struct_return = 1;
+  /* Are we returning a value using a structure return or a normal
+     value return? */
 
-      /* Tell the target specific argument pushing routine not to
-	 expect a value.  */
-      target_values_type = builtin_type_void;
-    }
-  else
-    {
-      struct_return = using_struct_return (value_type (function), values_type);
-      target_values_type = values_type;
-    }
+  struct_return = using_struct_return (values_type, using_gcc);
 
   /* Determine the location of the breakpoint (and possibly other
      stuff) that the called function will return to.  The SPARC, for a
@@ -506,24 +454,24 @@ call_function_by_hand (struct value *function, int nargs, struct value **args)
   /* The actual breakpoint (at BP_ADDR) is inserted separatly so there
      is no need to write that out.  */
 
-  switch (gdbarch_call_dummy_location (gdbarch))
+  switch (CALL_DUMMY_LOCATION)
     {
     case ON_STACK:
       /* "dummy_addr" is here just to keep old targets happy.  New
 	 targets return that same information via "sp" and "bp_addr".  */
-      if (gdbarch_inner_than (gdbarch, 1, 2))
+      if (INNER_THAN (1, 2))
 	{
-	  sp = push_dummy_code (gdbarch, sp, funaddr,
-				args, nargs, target_values_type,
-				&real_pc, &bp_addr, get_current_regcache ());
+	  sp = push_dummy_code (current_gdbarch, sp, funaddr,
+				using_gcc, args, nargs, values_type,
+				&real_pc, &bp_addr);
 	  dummy_addr = sp;
 	}
       else
 	{
 	  dummy_addr = sp;
-	  sp = push_dummy_code (gdbarch, sp, funaddr,
-				args, nargs, target_values_type,
-				&real_pc, &bp_addr, get_current_regcache ());
+	  sp = push_dummy_code (current_gdbarch, sp, funaddr,
+				using_gcc, args, nargs, values_type,
+				&real_pc, &bp_addr);
 	}
       break;
     case AT_ENTRY_POINT:
@@ -531,7 +479,7 @@ call_function_by_hand (struct value *function, int nargs, struct value **args)
       dummy_addr = entry_point_address ();
       /* Make certain that the address points at real code, and not a
          function descriptor.  */
-      dummy_addr = gdbarch_convert_from_func_ptr_addr (gdbarch,
+      dummy_addr = gdbarch_convert_from_func_ptr_addr (current_gdbarch,
 						       dummy_addr,
 						       &current_target);
       /* A call dummy always consists of just a single breakpoint, so
@@ -554,7 +502,7 @@ call_function_by_hand (struct value *function, int nargs, struct value **args)
 	  dummy_addr = entry_point_address ();
 	/* Make certain that the address points at real code, and not
 	   a function descriptor.  */
-	dummy_addr = gdbarch_convert_from_func_ptr_addr (gdbarch,
+	dummy_addr = gdbarch_convert_from_func_ptr_addr (current_gdbarch,
 							 dummy_addr,
 							 &current_target);
 	/* A call dummy always consists of just a single breakpoint,
@@ -589,74 +537,145 @@ call_function_by_hand (struct value *function, int nargs, struct value **args)
 	  param_type = TYPE_FIELD_TYPE (ftype, i);
 	else
 	  param_type = NULL;
+	
+	args[i] = value_arg_coerce (args[i], param_type, prototyped);
 
-	args[i] = value_arg_coerce (args[i], param_type, prototyped, &sp);
+	/* elz: this code is to handle the case in which the function
+	   to be called has a pointer to function as parameter and the
+	   corresponding actual argument is the address of a function
+	   and not a pointer to function variable.  In aCC compiled
+	   code, the calls through pointers to functions (in the body
+	   of the function called by hand) are made via
+	   $$dyncall_external which requires some registers setting,
+	   this is taken care of if we call via a function pointer
+	   variable, but not via a function address.  In cc this is
+	   not a problem. */
 
-	if (param_type != NULL && language_pass_by_reference (param_type))
-	  args[i] = value_addr (args[i]);
+	if (using_gcc == 0)
+	  {
+	    if (param_type != NULL && TYPE_CODE (ftype) != TYPE_CODE_METHOD)
+	      {
+		/* if this parameter is a pointer to function.  */
+		if (TYPE_CODE (param_type) == TYPE_CODE_PTR)
+		  if (TYPE_CODE (TYPE_TARGET_TYPE (param_type)) == TYPE_CODE_FUNC)
+		    /* elz: FIXME here should go the test about the
+		       compiler used to compile the target. We want to
+		       issue the error message only if the compiler
+		       used was HP's aCC.  If we used HP's cc, then
+		       there is no problem and no need to return at
+		       this point.  */
+		    /* Go see if the actual parameter is a variable of
+		       type pointer to function or just a function.  */
+		    if (VALUE_LVAL (args[i]) == not_lval)
+		      {
+			char *arg_name;
+			/* NOTE: cagney/2005-01-02: THIS IS BOGUS.  */
+			if (find_pc_partial_function ((CORE_ADDR) value_contents (args[i])[0], &arg_name, NULL, NULL))
+			  error (_("\
+You cannot use function <%s> as argument. \n\
+You must use a pointer to function type variable. Command ignored."), arg_name);
+		      }
+	      }
+	  }
       }
   }
+
+  if (DEPRECATED_REG_STRUCT_HAS_ADDR_P ())
+    {
+      int i;
+      /* This is a machine like the sparc, where we may need to pass a
+	 pointer to the structure, not the structure itself.  */
+      for (i = nargs - 1; i >= 0; i--)
+	{
+	  struct type *arg_type = check_typedef (value_type (args[i]));
+	  if ((TYPE_CODE (arg_type) == TYPE_CODE_STRUCT
+	       || TYPE_CODE (arg_type) == TYPE_CODE_UNION
+	       || TYPE_CODE (arg_type) == TYPE_CODE_ARRAY
+	       || TYPE_CODE (arg_type) == TYPE_CODE_STRING
+	       || TYPE_CODE (arg_type) == TYPE_CODE_BITSTRING
+	       || TYPE_CODE (arg_type) == TYPE_CODE_SET
+	       || (TYPE_CODE (arg_type) == TYPE_CODE_FLT
+		   && TYPE_LENGTH (arg_type) > 8)
+	       )
+	      && DEPRECATED_REG_STRUCT_HAS_ADDR (using_gcc, arg_type))
+	    {
+	      CORE_ADDR addr;
+	      int len;		/*  = TYPE_LENGTH (arg_type); */
+	      int aligned_len;
+	      arg_type = check_typedef (value_enclosing_type (args[i]));
+	      len = TYPE_LENGTH (arg_type);
+
+	      aligned_len = len;
+	      if (INNER_THAN (1, 2))
+		{
+		  /* stack grows downward */
+		  sp -= aligned_len;
+		  /* ... so the address of the thing we push is the
+		     stack pointer after we push it.  */
+		  addr = sp;
+		}
+	      else
+		{
+		  /* The stack grows up, so the address of the thing
+		     we push is the stack pointer before we push it.  */
+		  addr = sp;
+		  sp += aligned_len;
+		}
+	      /* Push the structure.  */
+	      write_memory (addr, value_contents_all (args[i]), len);
+	      /* The value we're going to pass is the address of the
+		 thing we just pushed.  */
+	      /*args[i] = value_from_longest (lookup_pointer_type (values_type),
+		(LONGEST) addr); */
+	      args[i] = value_from_pointer (lookup_pointer_type (arg_type),
+					    addr);
+	    }
+	}
+    }
+
 
   /* Reserve space for the return structure to be written on the
      stack, if necessary.  Make certain that the value is correctly
      aligned. */
 
-  if (struct_return || lang_struct_return)
+  if (struct_return)
     {
       int len = TYPE_LENGTH (values_type);
-      if (gdbarch_inner_than (gdbarch, 1, 2))
+      if (INNER_THAN (1, 2))
 	{
 	  /* Stack grows downward.  Align STRUCT_ADDR and SP after
              making space for the return value.  */
 	  sp -= len;
-	  if (gdbarch_frame_align_p (gdbarch))
-	    sp = gdbarch_frame_align (gdbarch, sp);
+	  if (gdbarch_frame_align_p (current_gdbarch))
+	    sp = gdbarch_frame_align (current_gdbarch, sp);
 	  struct_addr = sp;
 	}
       else
 	{
 	  /* Stack grows upward.  Align the frame, allocate space, and
              then again, re-align the frame??? */
-	  if (gdbarch_frame_align_p (gdbarch))
-	    sp = gdbarch_frame_align (gdbarch, sp);
+	  if (gdbarch_frame_align_p (current_gdbarch))
+	    sp = gdbarch_frame_align (current_gdbarch, sp);
 	  struct_addr = sp;
 	  sp += len;
-	  if (gdbarch_frame_align_p (gdbarch))
-	    sp = gdbarch_frame_align (gdbarch, sp);
+	  if (gdbarch_frame_align_p (current_gdbarch))
+	    sp = gdbarch_frame_align (current_gdbarch, sp);
 	}
     }
-
-  if (lang_struct_return)
-    {
-      struct value **new_args;
-
-      /* Add the new argument to the front of the argument list.  */
-      new_args = xmalloc (sizeof (struct value *) * (nargs + 1));
-      new_args[0] = value_from_pointer (lookup_pointer_type (values_type),
-					struct_addr);
-      memcpy (&new_args[1], &args[0], sizeof (struct value *) * nargs);
-      args = new_args;
-      nargs++;
-      args_cleanup = make_cleanup (xfree, args);
-    }
-  else
-    args_cleanup = make_cleanup (null_cleanup, NULL);
 
   /* Create the dummy stack frame.  Pass in the call dummy address as,
      presumably, the ABI code knows where, in the call dummy, the
      return address should be pointed.  */
-  sp = gdbarch_push_dummy_call (gdbarch, function, get_current_regcache (),
-				bp_addr, nargs, args,
-				sp, struct_return, struct_addr);
-
-  do_cleanups (args_cleanup);
+  sp = gdbarch_push_dummy_call (current_gdbarch, function, current_regcache,
+				bp_addr, nargs, args, sp, struct_return,
+				struct_addr);
 
   /* Set up a frame ID for the dummy frame so we can pass it to
      set_momentary_breakpoint.  We need to give the breakpoint a frame
      ID so that the breakpoint code can correctly re-identify the
      dummy breakpoint.  */
   /* Sanity.  The exact same SP value is returned by PUSH_DUMMY_CALL,
-     saved as the dummy-frame TOS, and used by dummy_id to form
+     saved as the dummy-frame TOS, and used by unwind_dummy_id to form
      the frame ID's stack address.  */
   dummy_id = frame_id_build (sp, bp_addr);
 
@@ -671,7 +690,7 @@ call_function_by_hand (struct value *function, int nargs, struct value **args)
     sal.section = find_pc_overlay (sal.pc);
     /* Sanity.  The exact same SP value is returned by
        PUSH_DUMMY_CALL, saved as the dummy-frame TOS, and used by
-       dummy_id to form the frame ID's stack address.  */
+       unwind_dummy_id to form the frame ID's stack address.  */
     bpt = set_momentary_breakpoint (sal, dummy_id, bp_call_dummy);
     bpt->disposition = disp_del;
   }
@@ -761,7 +780,7 @@ call_function_by_hand (struct value *function, int nargs, struct value **args)
 	     signal.  Further execution of the FUNCTION is not
 	     allowed. */
 
-	  if (unwind_on_signal_p)
+	  if (unwind_on_signal_p || 1 /* FIXME restoring state */)
 	    {
 	      /* The user wants the context restored. */
 
@@ -800,6 +819,12 @@ Evaluation of the expression containing the function (%s) will be abandoned."),
 	    }
 	}
 
+      if (!stop_stack_dummy && 1 /* FIXME restoring state */)
+	{
+	  error (_("\
+The program being debugged stopped while in a function called from GDB.\n\
+GDB has restored the context to what it was before the call."));
+	}
       if (!stop_stack_dummy)
 	{
 	  /* We hit a breakpoint inside the FUNCTION. */
@@ -842,9 +867,7 @@ the function call)."), name);
   {
     struct value *retval = NULL;
 
-    if (lang_struct_return)
-      retval = value_at (values_type, struct_addr);
-    else if (TYPE_CODE (target_values_type) == TYPE_CODE_VOID)
+    if (TYPE_CODE (values_type) == TYPE_CODE_VOID)
       {
 	/* If the function returns void, don't bother fetching the
 	   return value.  */
@@ -852,15 +875,16 @@ the function call)."), name);
       }
     else
       {
-	switch (gdbarch_return_value (gdbarch, value_type (function),
-				      target_values_type, NULL, NULL, NULL))
+	struct gdbarch *arch = current_gdbarch;
+
+	switch (gdbarch_return_value (arch, values_type, NULL, NULL, NULL))
 	  {
 	  case RETURN_VALUE_REGISTER_CONVENTION:
 	  case RETURN_VALUE_ABI_RETURNS_ADDRESS:
 	  case RETURN_VALUE_ABI_PRESERVES_ADDRESS:
 	    retval = allocate_value (values_type);
-	    gdbarch_return_value (gdbarch, value_type (function), values_type,
-				  retbuf, value_contents_raw (retval), NULL);
+	    gdbarch_return_value (current_gdbarch, values_type, retbuf,
+				  value_contents_raw (retval), NULL);
 	    break;
 	  case RETURN_VALUE_STRUCT_CONVENTION:
 	    retval = value_at (values_type, struct_addr);
