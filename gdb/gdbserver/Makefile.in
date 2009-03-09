@@ -126,7 +126,7 @@ SFILES=	$(srcdir)/gdbreplay.c $(srcdir)/inferiors.c \
 	$(srcdir)/linux-ia64-low.c $(srcdir)/linux-low.c \
 	$(srcdir)/linux-m32r-low.c \
 	$(srcdir)/linux-m68k-low.c $(srcdir)/linux-mips-low.c \
-	$(srcdir)/linux-ppc-low.c \
+	$(srcdir)/linux-ppc-low.c $(srcdir)/linux-ppc64-low.c \
 	$(srcdir)/linux-s390-low.c \
 	$(srcdir)/linux-sh-low.c $(srcdir)/linux-x86-64-low.c \
 	$(srcdir)/linux-xtensa-low.c \
@@ -149,6 +149,7 @@ XM_CLIBS = @LIBS@
 
 # XML files to compile in to gdbserver, if any.
 XML_DIR = $(srcdir)/../features
+XML_TARGET = @srv_xmltarget@
 XML_FILES = @srv_xmlfiles@
 XML_BUILTIN = @srv_xmlbuiltin@
 
@@ -221,7 +222,7 @@ clean:
 	rm -f reg-cris.c reg-crisv32.c reg-x86-64-linux.c reg-xtensa.c
 	rm -f arm-with-iwmmxt.c mips-linux.c mips64-linux.c
 	rm -f powerpc-32.c powerpc-64.c powerpc-e500.c
-	rm -f xml-builtin.c stamp-xml
+	rm -f xml-builtin.c stamp-xml target.xml
 
 maintainer-clean realclean distclean: clean
 	rm -f nm.h tm.h xm.h config.status config.h stamp-h config.log
@@ -247,6 +248,10 @@ version.c: Makefile $(srcdir)/../version.in
 	mv version.c-tmp version.c
 version.o: version.c $(server_h)
 
+target.xml: $(XML_TARGET)
+	rm -f target.xml
+	cp $(XML_TARGET) target.xml
+
 xml-builtin.c: stamp-xml; @true
 stamp-xml: $(XML_DIR)/feature_to_c.sh Makefile $(XML_FILES)
 	rm -f xml-builtin.tmp
@@ -254,7 +259,7 @@ stamp-xml: $(XML_DIR)/feature_to_c.sh Makefile $(XML_FILES)
 	$(SHELL) $(srcdir)/../../move-if-change xml-builtin.tmp xml-builtin.c
 	echo stamp > stamp-xml
 
-.PRECIOUS: xml-builtin.c
+.PRECIOUS: target.xml xml-builtin.c
 
 # GNU Make has an annoying habit of putting *all* the Makefile variables
 # into the environment, unless you include this target as a circumvention.
@@ -307,6 +312,7 @@ linux-m32r-low.o: linux-m32r-low.c $(linux_low_h) $(server_h)
 linux-mips-low.o: linux-mips-low.c $(linux_low_h) $(server_h) \
 	$(gdb_proc_service_h)
 linux-ppc-low.o: linux-ppc-low.c $(linux_low_h) $(server_h)
+linux-ppc64-low.o: linux-ppc64-low.c $(linux_low_h) $(server_h)
 linux-s390-low.o: linux-s390-low.c $(linux_low_h) $(server_h)
 linux-sh-low.o: linux-sh-low.c $(linux_low_h) $(server_h)
 linux-x86-64-low.o: linux-x86-64-low.c $(linux_low_h) $(server_h) \
@@ -322,6 +328,9 @@ win32-i386-low.o: win32-i386-low.c $(win32_low_h) $(server_h)
 
 spu-low.o: spu-low.c $(server_h)
 
+reg-arc.o : reg-arc.c $(regdef_h)
+reg-arc.c : $(srcdir)/../regformats/reg-arc.dat $(regdat_sh)
+	sh $(regdat_sh) $(srcdir)/../regformats/reg-arc.dat reg-arc.c
 reg-arm.o : reg-arm.c $(regdef_h)
 reg-arm.c : $(srcdir)/../regformats/reg-arm.dat $(regdat_sh)
 	$(SHELL) $(regdat_sh) $(srcdir)/../regformats/reg-arm.dat reg-arm.c

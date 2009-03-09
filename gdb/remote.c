@@ -2761,6 +2761,7 @@ remote_open_1 (char *name, int from_tty, struct target_ops *target,
       if (exec_bfd) 	/* No use without an exec file.  */
 	remote_check_symbols (symfile_objfile);
     }
+  observer_notify_inferior_created (&current_target, from_tty);
 }
 
 /* This takes a program previously attached to and detaches it.  After
@@ -3403,12 +3404,8 @@ remote_wait (ptid_t ptid, struct target_waitstatus *status)
       switch (buf[0])
 	{
 	case 'E':		/* Error of some sort.  */
-	  /* We're out of sync with the target now.  Did it continue or not?
-	     Not is more likely, so report a stop.  */
 	  warning (_("Remote failure reply: %s"), buf);
-	  status->kind = TARGET_WAITKIND_STOPPED;
-	  status->value.sig = TARGET_SIGNAL_0;
-	  goto got_status;
+	  continue;
 	case 'F':		/* File-I/O request.  */
 	  remote_fileio_request (buf);
 	  continue;
@@ -3635,12 +3632,8 @@ remote_async_wait (ptid_t ptid, struct target_waitstatus *status)
       switch (buf[0])
 	{
 	case 'E':		/* Error of some sort.  */
-	  /* We're out of sync with the target now.  Did it continue or not?
-	     Not is more likely, so report a stop.  */
 	  warning (_("Remote failure reply: %s"), buf);
-	  status->kind = TARGET_WAITKIND_STOPPED;
-	  status->value.sig = TARGET_SIGNAL_0;
-	  goto got_status;
+	  continue;
 	case 'F':		/* File-I/O request.  */
 	  remote_fileio_request (buf);
 	  continue;

@@ -60,6 +60,18 @@ alpha*-*-*)
 	gdb_target_obs="alpha-tdep.o"
 	;;
 
+arc*-*-linux*)
+	gdb_target_obs="arc-tdep.o arc-linux-tdep.o solib.o solib-svr4.o \
+			solib-legacy.o corelow.o"
+	build_gdbserver=yes
+	;;
+arc-a4-*)
+	gdb_target_obs="arc-tdep.o arc-jtag.o arc-jtag-tdep.o arc-jtag-ops.o"
+	;;
+arc*-*-*)
+	gdb_target_obs="arc-tdep.o arc-jtag.o arc-jtag-tdep.o arc-jtag-ops.o"
+	;;
+
 am33_2.0*-*-linux*)
 	# Target: Matsushita mn10300 (AM33) running Linux
 	gdb_target_obs="mn10300-tdep.o mn10300-linux-tdep.o corelow.o \
@@ -367,10 +379,11 @@ score-*-*)
 	gdb_target_obs="score-tdep.o"
 	;;
 
-sh*-*-linux*)
+# FIXME should that be sh*-*-linux*, perhaps?
+sh-*-linux*)
 	# Target: GNU/Linux Super-H
 	gdb_target_obs="sh-tdep.o sh64-tdep.o sh-linux-tdep.o monitor.o \
-			dsrec.o solib.o solib-svr4.o symfile-mem.o glibc-tdep.o"
+			dsrec.o solib.o solib-svr4.o symfile-mem.o"
 	gdb_sim=../sim/sh/libsim.a
 	build_gdbserver=yes
 	;;
